@@ -59,6 +59,36 @@ Each stage saves its output and can be resumed independently.
 - Python 3.12
 - EvermemOS environment configured (see main project's `env.template`)
 
+### Data Preparation
+
+Place your dataset files in the `evaluation/data/` directory:
+
+**LoCoMo** (native format, no conversion needed):
+
+```
+evaluation/data/locomo/
+└── locomo10.json
+```
+
+**LongMemEval** (auto-converts to LoCoMo format):
+
+```
+evaluation/data/longmemeval/
+└── longmemeval_s_cleaned.json  # Original file
+# → Will auto-generate: longmemeval_s_locomo_style.json
+```
+
+**PersonaMem** (auto-converts to LoCoMo format):
+
+```
+evaluation/data/personamem/
+├── questions_32k.csv           # Original file
+└── shared_contexts_32k.jsonl   # Original file
+# → Will auto-generate: personamem_32k_locomo_style.json
+```
+
+The framework will automatically detect and convert non-LoCoMo formats on first run. You don't need to manually run any conversion scripts.
+
 ### Installation
 
 Install evaluation-specific dependencies:
