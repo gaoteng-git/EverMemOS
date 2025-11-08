@@ -242,6 +242,7 @@ class SemanticMemoryItem:
     """
 
     content: str
+    evidence: Optional[str] = None  # 原始证据，支持该联想预测的具体事实（不超过30字）
     start_time: Optional[str] = None  # 事件开始时间，格式：YYYY-MM-DD
     end_time: Optional[str] = None  # 事件结束时间，格式：YYYY-MM-DD
     duration_days: Optional[int] = None  # 持续时间（天数）
@@ -251,6 +252,7 @@ class SemanticMemoryItem:
     def to_dict(self) -> Dict[str, Any]:
         return {
             "content": self.content,
+            "evidence": self.evidence,
             "start_time": self.start_time,
             "end_time": self.end_time,
             "duration_days": self.duration_days,

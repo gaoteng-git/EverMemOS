@@ -768,43 +768,6 @@ def _convert_memcell_to_document(
         email_fields = {}
         linkdoc_fields = {}
 
-        # 动态导入以避免循环依赖
-        try:
-            from memory_layer.memcell_extractor.linkdoc_memcell_extractor import (
-                LinkDocMemCell,
-            )
-            from memory_layer.memcell_extractor.email_memcell_extractor import (
-                EmailMemCell,
-            )
-
-            if isinstance(memcell, LinkDocMemCell):
-                linkdoc_fields = {
-                    "clips": memcell.clips,
-                    "file_name": memcell.file_name,
-                    "file_type": memcell.file_type,
-                    "source_type": memcell.source_type,
-                    "file_id": memcell.file_id,
-                    "third_party_user_id": memcell.third_party_user_id,
-                    "download_url": memcell.download_url,
-                    "size": memcell.size,
-                    "parent_ids": memcell.parent_ids,
-                }
-                logger.debug(
-                    f"提取LinkDocMemCell扩展字段: {list(linkdoc_fields.keys())}"
-                )
-            elif isinstance(memcell, EmailMemCell):
-                email_fields = {
-                    "clips": memcell.clips,
-                    "email_address": memcell.email_address,
-                    "thread_id": memcell.thread_id,
-                    "is_read": memcell.is_read,
-                    "importance": memcell.importance,  # 直接使用字符串类型
-                    "body_type": memcell.body_type,
-                    "email_type": memcell.email_type,
-                }
-                logger.debug(f"提取EmailMemCell扩展字段: {list(email_fields.keys())}")
-        except ImportError as e:
-            logger.debug(f"导入MemCell扩展类失败: {e}")
 
         # 准备 semantic_memories（转为字典列表）
         semantic_memories_list = None
