@@ -20,29 +20,58 @@
 
 > 💡 **提示**：提取和对话的语言必须一致，否则找不到 Profile 文件
 
-## 📂 内容
+## 📂 目录结构
 
-### 核心演示脚本
+```
+demo/
+├── chat_with_memory.py          # 🎯 核心：记忆增强对话
+├── extract_memory.py            # 🎯 核心：对话记忆提取
+│
+├── chat/                        # 聊天系统组件
+│   ├── orchestrator.py         # 聊天应用编排器
+│   ├── session.py              # 会话管理
+│   ├── ui.py                   # 用户界面
+│   └── selectors.py            # 语言/场景/群组选择器
+│
+├── extract/                     # 记忆提取组件
+│   ├── extractor.py            # 记忆提取逻辑
+│   └── validator.py            # 结果验证
+│
+├── memory_config.py             # 两个脚本的共享配置
+├── memory_utils.py              # 共享工具函数
+├── i18n_texts.py                # 国际化文本资源
+│
+├── chat_history/                # 📁 输出：对话记录（自动生成）
+├── memcell_outputs/             # 📁 输出：提取的记忆（自动生成）
+│
+├── README.md                    # 📖 文档（英文）
+└── README_zh.md                 # 📖 文档（中文）
+```
 
-- **`extract_memory.py`** - 从对话数据中提取记忆
-  - 处理 `data/` 目录中的对话文件
-  - 提取记忆单元（MemCells）并生成用户画像
-  - 将结果保存到配置的数据库（MongoDB）和本地输出
+## 🎯 核心脚本
 
-- **`chat_with_memory.py`** - 与记忆增强 AI 进行交互式对话
-  - 用于与 AI 智能体对话的命令行界面
-  - 利用提取的记忆进行上下文感知的回应
-  - 演示端到端的记忆检索和使用
+### 1. `extract_memory.py` - 记忆提取
+- 处理 `data/` 目录中的对话文件
+- 提取记忆单元（MemCells）并生成用户画像
+- 将结果保存到配置的数据库（MongoDB）和本地输出
+- **依赖**: `extract/` 模块, `memory_config.py`, `memory_utils.py`
+
+### 2. `chat_with_memory.py` - 记忆增强对话
+- 用于与 AI 智能体对话的命令行界面
+- 利用提取的记忆进行上下文感知的回应
+- 演示端到端的记忆检索和使用
+- **依赖**: `chat/` 模块, `memory_config.py`, `memory_utils.py`, `i18n_texts.py`
+
+## 📦 支持模块
 
 ### 配置文件
+- **`memory_config.py`** - 提取和对话的共享配置
+- **`memory_utils.py`** - 通用工具函数（MongoDB、序列化）
+- **`i18n_texts.py`** - 双语文本资源（中文/英文）
 
-- **`memory_config.py`** - 记忆系统配置
-- **`memory_utils.py`** - 记忆操作的工具函数
-
-### 输出目录
-
-- **`chat_history/`** - 保存的聊天对话记录（自动生成）
-- **`memcell_outputs/`** - 提取的 MemCell 输出（自动生成）
+### 模块化组件
+- **`chat/`** - 聊天系统实现（编排器、会话、界面、选择器）
+- **`extract/`** - 记忆提取实现（提取器、验证器）
 
 ## 🚀 快速开始
 
@@ -97,9 +126,12 @@ EXTRACT_CONFIG = ExtractModeConfig(
 运行提取脚本从对话数据中提取记忆：
 
 ```bash
+# 推荐：使用 uv（从项目根目录执行）
+uv run python src/bootstrap.py demo/extract_memory.py
+
+# 备选：直接执行（从 demo 目录执行）
 cd demo
 python extract_memory.py
-# 或使用 uv: uv run python src/bootstrap.py demo/extract_memory.py
 ```
 
 系统会自动：
@@ -113,9 +145,12 @@ python extract_memory.py
 运行对话脚本开始与 AI 对话：
 
 ```bash
+# 推荐：使用 uv（从项目根目录执行）
+uv run python src/bootstrap.py demo/chat_with_memory.py
+
+# 备选：直接执行（从 demo 目录执行）
 cd demo
 python chat_with_memory.py
-# 或使用 uv: uv run python src/bootstrap.py demo/chat_with_memory.py
 ```
 
 **交互选择**：
@@ -138,16 +173,18 @@ scenario_type=ScenarioType.GROUP_CHAT,
 language="zh",
 ```
 
-运行提取 → 启动对话 → 选择 `[1] 中文` + `[2] 群聊模式`
-
 **试试问**：「Alex 在情绪识别项目中做了什么工作？」
 
 #### 场景 2：英文助手
 
 ```python
 # extract_memory.py - 修改配置
-scenario_type=ScenarioType.ASSISTANT,
-language="en",
+EXTRACT_CONFIG = ExtractModeConfig(
+    data_file=PROJECT_ROOT / "data" / "assistant_chat_en.json",
+    prompt_language="en",
+    scenario_type=ScenarioType.ASSISTANT,
+    output_dir=Path(__file__).parent / "memcell_outputs" / "assistant_en",
+)
 ```
 
 运行提取 → 启动对话 → 选择 `[2] English` + `[1] Assistant Mode`
@@ -202,12 +239,57 @@ demo/memcell_outputs/
 
 ### 快速配置（推荐）
 
-只需修改 `extract_memory.py` 中的两个参数：
+所有配置都在 `extract_memory.py` 中完成。只需修改这些参数：
 
 ```python
+# 获取项目根目录
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
 EXTRACT_CONFIG = ExtractModeConfig(
-    scenario_type=ScenarioType.GROUP_CHAT,  # 场景类型
-    language="zh",                          # 语言模式
+    # 📁 数据文件路径（必填）
+    data_file=PROJECT_ROOT / "data" / "assistant_chat_zh.json",
+    
+    # 🌏 Prompt 语言（必填："zh" 或 "en"）
+    prompt_language="zh",
+    
+    # 🎯 场景类型
+    scenario_type=ScenarioType.ASSISTANT,  # 或 ScenarioType.GROUP_CHAT
+    
+    # 📂 输出目录（可选，默认为 demo/memcell_outputs/）
+    output_dir=Path(__file__).parent / "memcell_outputs" / "assistant_zh",
+    
+    # 其他配置
+    enable_profile_extraction=False,  # V4: 暂不支持 Profile 提取
+)
+```
+
+**🌏 Prompt 语言参数 - 关键配置**
+
+`prompt_language` 参数控制提取时使用的 Prompt 语言：
+- `prompt_language="zh"` → 使用 `src/memory_layer/prompts/zh/` 中的中文 Prompt
+- `prompt_language="en"` → 使用 `src/memory_layer/prompts/en/` 中的英文 Prompt
+
+确保 MemCell、Profile、Episode、Semantic 记忆提取都使用正确语言的 Prompt。
+
+> 💡 **最佳实践**：Prompt 语言应与数据语言匹配。中文对话使用 `"zh"`，英文对话使用 `"en"`。
+
+**配置示例：**
+
+```python
+# 示例 1：中文数据 + 中文 Prompt
+EXTRACT_CONFIG = ExtractModeConfig(
+    data_file=PROJECT_ROOT / "data" / "group_chat_zh.json",
+    prompt_language="zh",
+    scenario_type=ScenarioType.GROUP_CHAT,
+    output_dir=Path(__file__).parent / "memcell_outputs" / "group_chat_zh",
+)
+
+# 示例 2：英文数据 + 英文 Prompt
+EXTRACT_CONFIG = ExtractModeConfig(
+    data_file=PROJECT_ROOT / "data" / "assistant_chat_en.json",
+    prompt_language="en",
+    scenario_type=ScenarioType.ASSISTANT,
+    output_dir=Path(__file__).parent / "memcell_outputs" / "assistant_en",
 )
 ```
 

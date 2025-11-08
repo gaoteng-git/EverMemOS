@@ -121,20 +121,26 @@ class ExtractModeConfig:
     用于配置记忆提取脚本的参数，包括数据源、输出路径、处理策略等。
     """
 
-    # 场景类型（决定使用哪种 Profile 提取器和数据文件）
+    # ============================================================================
+    # 🌏 核心配置（用户必须配置的参数）
+    # ============================================================================
+    
+    # 数据文件路径（必填）
+    data_file: Path = field(default=None)
+    
+    # Prompt 语言（必填："zh" 或 "en"）
+    # 💡 此参数控制提取时使用的 Prompt 语言（中文 Prompt 或英文 Prompt）
+    prompt_language: str = "zh"
+    
+    # 场景类型（决定使用哪种 Profile 提取器）
     scenario_type: ScenarioType = ScenarioType.GROUP_CHAT
-    # scenario_type: ScenarioType = ScenarioType.ASSISTANT
 
-    # 🌏 语言模式（决定数据文件和输出目录的语言后缀）
-    language: str = "zh"  # "zh" 或 "en"
-
-    # 数据文件路径（自动根据场景类型和语言绑定，也可手动覆盖）
-    data_file: Optional[Path] = None
-
-    # 输出目录
-    output_dir: Path = field(
-        default_factory=lambda: Path(__file__).parent / "memcell_outputs"
-    )
+    # ============================================================================
+    # 输出配置
+    # ============================================================================
+    
+    # 输出目录（可选，默认为 memcell_outputs/）
+    output_dir: Optional[Path] = None
 
     # 群组 ID（用于标识对话来源）
     group_id: str = "ai_group"
@@ -179,9 +185,21 @@ class ExtractModeConfig:
     enable_semantic_extraction: Optional[bool] = None
 
     def __post_init__(self):
-        """初始化配置，自动绑定路径和默认值"""
+        """初始化配置，设置默认值"""
+        # 验证必填参数
+        if self.data_file is None:
+            raise ValueError("data_file 是必填参数，请指定数据文件路径")
+        
+        # 验证 Prompt 语言
+        if self.prompt_language not in ["zh", "en"]:
+            raise ValueError(f"prompt_language 必须是 'zh' 或 'en'，当前值: {self.prompt_language}")
+        
+        # 设置默认输出目录
+        if self.output_dir is None:
+            self.output_dir = Path(__file__).parent / "memcell_outputs"
+        
+        # 设置默认消息类型
         if self.supported_msg_types is None:
-            # 默认支持常见的群聊消息类型
             self.supported_msg_types = {
                 "text",
                 "image",
@@ -191,31 +209,13 @@ class ExtractModeConfig:
                 "link",
                 "system",
             }
-
-        # 🔥 根据场景类型和语言自动绑定数据文件（如果未手动设置）
-        if self.data_file is None:
-            # 获取项目根目录（demo 的父目录）
-            project_root = Path(__file__).parent.parent
-            data_dir = project_root / "data"
-
-            # 数据文件格式：{scenario_type}_chat_{language}.json
-            if self.scenario_type == ScenarioType.ASSISTANT:
-                self.data_file = data_dir / f"assistant_chat_{self.language}.json"
-            elif self.scenario_type == ScenarioType.GROUP_CHAT:
-                self.data_file = data_dir / f"group_chat_{self.language}.json"
-
-        # 🔥 根据场景类型和语言自动调整输出目录
-        # 目录格式：memcell_outputs/{scenario_type}_{language}/
-        scenario_name = (
-            "assistant" if self.scenario_type == ScenarioType.ASSISTANT else "group_chat"
-        )
-        self.output_dir = self.output_dir / f"{scenario_name}_{self.language}"
         
         # 根据场景类型设置语义提取选项
-        if self.scenario_type == ScenarioType.ASSISTANT:
-            self.enable_semantic_extraction = True
-        elif self.scenario_type == ScenarioType.GROUP_CHAT:
-            self.enable_semantic_extraction = False
+        if self.enable_semantic_extraction is None:
+            if self.scenario_type == ScenarioType.ASSISTANT:
+                self.enable_semantic_extraction = True
+            elif self.scenario_type == ScenarioType.GROUP_CHAT:
+                self.enable_semantic_extraction = False
 
         # 根据场景类型自动调整默认配置
         if self.scenario_type == ScenarioType.GROUP_CHAT:
