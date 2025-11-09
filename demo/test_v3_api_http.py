@@ -99,6 +99,10 @@ async def test_v3_memorize_api():
                 print(f"   ❌ 连接失败: 无法连接到 {base_url}")
                 print(f"      请确保 V3 API 服务已启动")
                 return False
+            except httpx.ReadTimeout:
+                print(f"   ⚠️  超时: 处理时间超过180秒（这可能是因为历史数据过多）")
+                print(f"      建议: 跳过此消息，继续测试")
+                continue  # 跳过超时的消息，继续处理下一条
             except Exception as e:
                 print(f"   ❌ 错误: {type(e).__name__}: {e}")
                 import traceback

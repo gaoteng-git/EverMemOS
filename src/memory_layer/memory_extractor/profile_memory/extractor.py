@@ -12,9 +12,12 @@ from typing import AbstractSet, Any, Dict, List, Optional, Set
 from core.observation.logger import get_logger
 
 from ...llm.llm_provider import LLMProvider
-from ...prompts.en.profile_mem_part1_prompts import CONVERSATION_PROFILE_PART1_EXTRACTION_PROMPT
-from ...prompts.en.profile_mem_part2_prompts import CONVERSATION_PROFILE_PART2_EXTRACTION_PROMPT
-from ...prompts.en.profile_mem_part3_prompts import CONVERSATION_PROFILE_PART3_EXTRACTION_PROMPT
+# 使用动态语言提示词导入（根据 MEMORY_LANGUAGE 环境变量自动选择）
+from ...prompts import (
+    CONVERSATION_PROFILE_PART1_EXTRACTION_PROMPT,
+    CONVERSATION_PROFILE_PART2_EXTRACTION_PROMPT,
+    CONVERSATION_PROFILE_PART3_EXTRACTION_PROMPT,
+)
 from ...types import MemoryType, MemCell
 from .conversation import (
     annotate_relative_dates,

@@ -106,14 +106,25 @@ async def clear_all_memories(verbose: bool = True):
             total_deleted = 0
             # 删除每个索引中的所有文档
             for index_name in alias_info.keys():
-                response = await es_client.delete_by_query(
-                    index=index_name,
-                    body={"query": {"match_all": {}}}
-                )
-                deleted_count = response.get('deleted', 0) if isinstance(response, dict) else 0
-                total_deleted += deleted_count
-                if verbose:
-                    print(f"      - 清空索引 {index_name}: {deleted_count} 条文档")
+                # 持续删除直到没有更多文档
+                while True:
+                    response = await es_client.delete_by_query(
+                        index=index_name,
+                        body={"query": {"match_all": {}}},
+                        conflicts="proceed",  # 忽略版本冲突
+                        refresh=True,  # 立即刷新索引
+                        scroll_size=5000,  # 每批处理5000条
+                        wait_for_completion=True  # 等待完成
+                    )
+                    deleted_count = response.get('deleted', 0) if isinstance(response, dict) else 0
+                    total_deleted += deleted_count
+                    
+                    if verbose and deleted_count > 0:
+                        print(f"      - 清空索引 {index_name}: 本轮删除 {deleted_count} 条文档")
+                    
+                    # 如果没有删除任何文档，说明已经清空
+                    if deleted_count == 0:
+                        break
             
             if verbose:
                 print(f"      ✅ Elasticsearch 已清空（总计删除 {total_deleted} 条文档）")
