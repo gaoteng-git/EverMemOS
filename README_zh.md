@@ -379,6 +379,19 @@ uv run python src/bootstrap.py evaluation/locomo_evaluation/stage5_eval.py
 
 #### 🔌 调用 API 接口
 
+**前置条件：启动 API 服务器**
+
+在调用 API 之前，请确保已启动 API 服务器：
+
+```bash
+# 启动 API 服务器
+uv run python src/bootstrap.py start_server.py
+```
+
+> 💡 **提示**：API 服务器需要一直运行，请保持此终端打开。下面的 API 调用需要在另一个终端中进行。
+
+---
+
 使用 V3 API 存储单条消息记忆：
 
 ```bash
@@ -395,6 +408,14 @@ curl -X POST http://localhost:1995/api/v3/agentic/memorize \
   }'
 ```
 
+**API 功能说明**：
+
+- **`/api/v3/agentic/memorize`**: 存储单条消息记忆
+- **`/api/v3/agentic/retrieve_lightweight`**: 轻量级记忆检索（Embedding + BM25 + RRF）
+- **`/api/v3/agentic/retrieve_agentic`**: Agentic 记忆检索（LLM 引导的多轮智能检索）
+
+更多 API 详情请参考 [Agentic V3 API 文档](docs/api_docs/agentic_v3_api_zh.md)。
+
 ---
 
 #### 📦 批量存储群聊记忆
@@ -402,14 +423,19 @@ curl -X POST http://localhost:1995/api/v3/agentic/memorize \
 EverMemOS 支持标准化的群聊数据格式（[GroupChatFormat](data_format/group_chat/group_chat_format.md)），可以使用脚本批量存储：
 
 ```bash
-# 使用脚本批量存储
+# 使用脚本批量存储（中文数据）
 uv run python src/bootstrap.py src/run_memorize.py \
-  --input data/group_chat.json \
+  --input data/group_chat_zh.json \
+  --api-url http://localhost:1995/api/v3/agentic/memorize
+
+# 或者使用英文数据
+uv run python src/bootstrap.py src/run_memorize.py \
+  --input data/group_chat_en.json \
   --api-url http://localhost:1995/api/v3/agentic/memorize
 
 # 验证文件格式
 uv run python src/bootstrap.py src/run_memorize.py \
-  --input data/group_chat.json \
+  --input data/group_chat_zh.json \
   --validate-only
 ```
 

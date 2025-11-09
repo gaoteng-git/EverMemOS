@@ -384,6 +384,19 @@ Each script corresponds to a stage in the evaluation pipeline, from data process
 
 #### 🔌 Call API Endpoints
 
+**Prerequisites: Start the API Server**
+
+Before calling the API, make sure the API server is running:
+
+```bash
+# Start the API server
+uv run python src/bootstrap.py start_server.py
+```
+
+> 💡 **Tip**: Keep the API server running throughout. All following API calls should be performed in another terminal.
+
+---
+
 Use V3 API to store single message memory:
 
 ```bash
@@ -400,6 +413,14 @@ curl -X POST http://localhost:1995/api/v3/agentic/memorize \
   }'
 ```
 
+**API Features**:
+
+- **`/api/v3/agentic/memorize`**: Store single message memory
+- **`/api/v3/agentic/retrieve_lightweight`**: Lightweight memory retrieval (Embedding + BM25 + RRF)
+- **`/api/v3/agentic/retrieve_agentic`**: Agentic memory retrieval (LLM-guided multi-round intelligent retrieval)
+
+For more API details, please refer to [Agentic V3 API Documentation](docs/api_docs/agentic_v3_api.md).
+
 ---
 
 #### 📦 Batch Store Group Chat Memory
@@ -407,14 +428,19 @@ curl -X POST http://localhost:1995/api/v3/agentic/memorize \
 EverMemOS supports a standardized group chat data format ([GroupChatFormat](data_format/group_chat/group_chat_format.md)). You can use scripts for batch storage:
 
 ```bash
-# Use script for batch storage
+# Use script for batch storage (Chinese data)
 uv run python src/bootstrap.py src/run_memorize.py \
-  --input data/group_chat.json \
+  --input data/group_chat_zh.json \
+  --api-url http://localhost:1995/api/v3/agentic/memorize
+
+# Or use English data
+uv run python src/bootstrap.py src/run_memorize.py \
+  --input data/group_chat_en.json \
   --api-url http://localhost:1995/api/v3/agentic/memorize
 
 # Validate file format
 uv run python src/bootstrap.py src/run_memorize.py \
-  --input data/group_chat.json \
+  --input data/group_chat_en.json \
   --validate-only
 ```
 
