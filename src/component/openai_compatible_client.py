@@ -79,11 +79,6 @@ class OpenAICompatibleClient:
                 else:
                     raise ValueError(f"Unsupported provider type: {provider}")
 
-                # 自动包装审计功能（未启动审计时返回原adapter）
-                from audit.adapter_wrapper import wrap_adapter_with_audit
-
-                adapter = wrap_adapter_with_audit(adapter, backend_name=backend_name)
-
                 self._adapters[backend_name] = adapter
                 return adapter
             except Exception as e:
