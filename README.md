@@ -353,32 +353,67 @@ This will launch a command-line interface where you can converse with an agent t
 
 #### 📊 Run Evaluation: Performance Testing
 
-The evaluation framework provides a systematic way to measure the performance of the memory system, based on the LoCoMo evaluation dataset.
+The evaluation framework provides a unified, modular way to benchmark memory systems on standard datasets (LoCoMo, LongMemEval, PersonaMem).
+
+**Quick Test (Smoke Test)**:
 
 ```bash
-# Stage 1: MemCell Extraction
-uv run python src/bootstrap.py evaluation/locomo_evaluation/stage1_memcells_extraction.py
+# Test with limited data to verify everything works
+# Default: first conversation, first 10 messages, first 3 questions
+uv run python -m evaluation.cli --dataset locomo --system evermemos --smoke
 
-# Stage 2: Index Building
-uv run python src/bootstrap.py evaluation/locomo_evaluation/stage2_index_building.py
+# Custom smoke test: 20 messages, 5 questions
+uv run python -m evaluation.cli --dataset locomo --system evermemos \
+    --smoke --smoke-messages 20 --smoke-questions 5
 
-# Stage 3: Memory Retrieval
-uv run python src/bootstrap.py evaluation/locomo_evaluation/stage3_memory_retrivel.py
+# Test different datasets
+uv run python -m evaluation.cli --dataset longmemeval --system evermemos --smoke
+uv run python -m evaluation.cli --dataset personamem --system evermemos --smoke
 
-# Stage 4: Response Generation
-uv run python src/bootstrap.py evaluation/locomo_evaluation/stage4_response.py
+# Test specific stages (e.g., only search and answer)
+uv run python -m evaluation.cli --dataset locomo --system evermemos \
+    --smoke --stages search answer
 
-# Stage 5: Evaluation
-uv run python src/bootstrap.py evaluation/locomo_evaluation/stage5_eval.py
+# View smoke test results quickly
+cat evaluation/results/locomo-evermemos-smoke/report.txt
 ```
 
-Each script corresponds to a stage in the evaluation pipeline, from data processing to performance scoring.
+**Full Evaluation**:
+
+```bash
+# Evaluate EvermemOS on LoCoMo benchmark
+uv run python -m evaluation.cli --dataset locomo --system evermemos
+
+# Evaluate on other datasets
+uv run python -m evaluation.cli --dataset longmemeval --system evermemos
+uv run python -m evaluation.cli --dataset personamem --system evermemos
+
+# Use --run-name to distinguish multiple runs (useful for A/B testing)
+uv run python -m evaluation.cli --dataset locomo --system evermemos --run-name baseline
+uv run python -m evaluation.cli --dataset locomo --system evermemos --run-name experiment1
+
+# Resume from checkpoint if interrupted (automatic)
+# Just re-run the same command - it will detect and resume from checkpoint
+uv run python -m evaluation.cli --dataset locomo --system evermemos
+```
+
+**View Results**:
+
+```bash
+# Results are saved to evaluation/results/{dataset}-{system}[-{run-name}]/
+cat evaluation/results/locomo-evermemos/report.txt          # Summary metrics
+cat evaluation/results/locomo-evermemos/eval_results.json   # Detailed per-question results
+cat evaluation/results/locomo-evermemos/pipeline.log        # Execution logs
+```
+
+The evaluation pipeline consists of 4 stages (add → search → answer → evaluate) with automatic checkpointing and resume support.
 
 > **⚙️ Evaluation Configuration**:
-> Before running the evaluation, you can modify the `evaluation/locomo_evaluation/config.py` file to adjust the experiment settings:
-> - **`ExperimentConfig.experiment_name`**: Change this to alter the save directory for the results.
-> - **`ExperimentConfig.llm_service`**: Select the LLM service to use and configure its parameters (e.g., `"openai"` or `"vllm"`).
-> - **`ExperimentConfig.llm_config`**: Configure parameters for the selected LLM service in this dictionary, such as the model, `base_url`, and `api_key`.
+> - **Data Preparation**: Place datasets in `evaluation/data/` (see `evaluation/README.md`)
+> - **Environment**: Configure `.env` with LLM API keys (see `env.template`)
+> - **Installation**: Run `uv sync --group evaluation` to install dependencies
+> - **Custom Config**: Copy and modify YAML files in `evaluation/config/systems/` or `evaluation/config/datasets/`
+> - **Advanced Usage**: See `evaluation/README.md` for checkpoint management, stage-specific runs, and system comparisons
 
 ---
 
