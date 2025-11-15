@@ -93,7 +93,7 @@
 <td width="50%" valign="top">
 
 - [📖 项目介绍](#-项目介绍)
-- [🎯 核心概念](#-核心概念)
+- [🎯 系统框架](#-系统框架)
 - [📁 项目结构](#-项目结构)
 - [🚀 快速开始](#-快速开始)
   - [环境要求](#环境要求)
@@ -205,7 +205,7 @@ memsys-opensource/
 ├── demo/                             # 演示代码
 ├── data/                             # 示例对话数据
 ├── evaluation/                       # 评估脚本
-│   └── locomo_evaluation/            # LoCoMo 基准测试
+│   └── src/                          # 评估框架源代码
 ├── data_format/                      # 数据格式定义
 ├── docs/                             # 文档
 ├── config.json                       # 配置文件
@@ -222,7 +222,8 @@ memsys-opensource/
 
 - Python 3.10+
 - uv
-- Docker 和 Docker Compose
+- Docker 20.10+ 和 Docker Compose 2.0+
+- **至少 4GB 可用内存**（用于 Elasticsearch 和 Milvus）
 
 ### 安装步骤
 
@@ -233,7 +234,7 @@ memsys-opensource/
 ```bash
 # 1. 克隆项目
 git clone https://github.com/EverMind-AI/EverMemOS.git
-cd memsys_opensource
+cd EverMemOS
 
 # 2. 启动 Docker 服务
 docker-compose up -d
@@ -260,15 +261,18 @@ cp env.template .env
 | **MongoDB** | 27017 | 27017 | 主数据库，存储记忆单元和画像 |
 | **Elasticsearch** | 19200 | 9200 | 关键词检索引擎（BM25） |
 | **Milvus** | 19530 | 19530 | 向量数据库，语义检索 |
-| **Redis** | 6479 | 6379 | 缓存服务 |
+| **Redis** | 6379 | 6379 | 缓存服务 |
 
-> 💡 连接时请使用**宿主机端口**（如 `localhost:19200` 访问 Elasticsearch）
-
-> 💡 详细的 Docker 配置和管理，请参考 [Docker 部署指南](DOCKER_DEPLOYMENT.md)
+> 💡 **连接提示**：
+> - 连接时使用**宿主机端口**（如 `localhost:19200` 访问 Elasticsearch）
+> - MongoDB 凭据：`admin` / `memsys123`（仅用于本地开发）
+> - 停止服务：`docker-compose down` | 查看日志：`docker-compose logs -f`
 
 > 📖 MongoDB 详细安装指南：[MongoDB Installation Guide](docs/usage/MONGODB_GUIDE_zh.md)
 
 ---
+
+### 如何使用
 
 #### 🎯 运行演示：记忆提取和交互式聊天
 
@@ -436,7 +440,7 @@ uv run python src/bootstrap.py src/run.py --port 8001
 使用 V3 API 存储单条消息记忆：
 
 ```bash
-curl -X POST http://localhost:1995/api/v3/agentic/memorize \
+curl -X POST http://localhost:8001/api/v3/agentic/memorize \
   -H "Content-Type: application/json" \
   -d '{
     "message_id": "msg_001",
@@ -540,13 +544,13 @@ EverMemOS 支持标准化的群聊数据格式（[GroupChatFormat](data_format/g
 # 使用脚本批量存储（中文数据）
 uv run python src/bootstrap.py src/run_memorize.py \
   --input data/group_chat_zh.json \
-  --api-url http://localhost:1995/api/v3/agentic/memorize \
+  --api-url http://localhost:8001/api/v3/agentic/memorize \
   --scene group_chat
 
 # 或者使用英文数据
 uv run python src/bootstrap.py src/run_memorize.py \
   --input data/group_chat_en.json \
-  --api-url http://localhost:1995/api/v3/agentic/memorize \
+  --api-url http://localhost:8001/api/v3/agentic/memorize \
   --scene group_chat
 
 # 验证文件格式
@@ -556,7 +560,11 @@ uv run python src/bootstrap.py src/run_memorize.py \
   --validate-only
 ```
 
-> ℹ️ `scene` 为必填字段，仅支持 `assistant` 或 `group_chat`，用于指定记忆提取策略。
+> ℹ️ **Scene 参数说明**：`scene` 为必填字段，用于指定记忆提取策略：
+> - 使用 `assistant` 用于一对一助手对话
+> - 使用 `group_chat` 用于多人群聊讨论
+> 
+> **注意**：在数据文件中，您可能会看到 `scene` 值为 `work` 或 `company` - 这些是数据格式中的内部场景描述符。命令行参数 `--scene` 使用不同的值（`assistant`/`group_chat`）来指定应用哪个提取流水线。
 
 **GroupChatFormat 格式示例**：
 
@@ -602,11 +610,9 @@ uv run python src/bootstrap.py src/run_memorize.py \
 - [快速开始指南](docs/dev_docs/getting_started.md) - 安装、配置和启动
 - [开发指南](docs/dev_docs/development_guide.md) - 架构设计和最佳实践
 - [Bootstrap 使用](docs/dev_docs/bootstrap_usage.md) - 脚本运行器
-- [依赖管理](docs/dev_docs/project_deps_manage.md) - 包管理和版本控制
 
 ### API 文档
-- [Agentic V3 API](docs/api_docs/agentic_v3_api.md) - 智能体层 API
-- [Agentic V2 API](docs/api_docs/agentic_v2_api.md) - 智能体层 API（旧版）
+- [Agentic V3 API](docs/api_docs/agentic_v3_api_zh.md) - 智能体层 API
 
 ### 核心框架
 - [依赖注入框架](src/core/di/README.md) - DI 容器使用指南
@@ -614,7 +620,7 @@ uv run python src/bootstrap.py src/run_memorize.py \
 ### 演示与评估
 - [📖 演示指南](demo/README_zh.md) - 交互式示例和记忆提取演示
 - [📊 数据指南](data/README_zh.md) - 示例对话数据和格式规范
-- [📊 评估指南](evaluation/locomo_evaluation/README_zh.md) - 在公开数据集LoCoMo上测试基于EverMemOS的方法
+- [📊 评估指南](evaluation/README_zh.md) - 在标准基准测试上测试基于EverMemOS的方法
 
 ## 🏗️ 架构设计
 
@@ -631,13 +637,9 @@ EverMemOS 采用分层架构设计，主要包括：
 
 ## 🤝 贡献
 
-我们欢迎所有形式的贡献！无论是报告 Bug、提出新功能建议，还是提交代码改进。
+我们欢迎所有形式的贡献！无论是报告 Bug、提出新功能建议，还是提交代码改进，都非常感谢。
 
-在开始贡献之前，请阅读我们的 [贡献指南](CONTRIBUTING.md)，了解：
-- 开发环境设置
-- 代码规范和最佳实践
-- Git 提交规范
-- Pull Request 流程
+在开始之前，请阅读我们的 [贡献指南](CONTRIBUTING.md)，快速了解开发环境、代码规范、Git 提交流程与 Pull Request 要求。
 
 ## 🌟 加入我们
 
