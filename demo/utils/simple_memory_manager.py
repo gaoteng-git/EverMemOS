@@ -113,10 +113,11 @@ class SimpleMemoryManager:
             "content": content,
             "group_id": self.group_id,
             "group_name": self.group_name,
+            "scene": "assistant",
         }
         
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
+            async with httpx.AsyncClient(timeout=500.0) as client:
                 response = await client.post(self.memorize_url, json=message_data)
                 response.raise_for_status()
                 result = response.json()
@@ -163,11 +164,11 @@ class SimpleMemoryManager:
         """
         payload = {
             "query": query,
-            "user_id": "demo_user",
             "top_k": top_k,
             "data_source": "episode",
             "retrieval_mode": mode,
-            "memory_scope": "all",
+            "memory_scope": "group",
+            "group_id": self.group_id,
         }
         
         try:
@@ -177,6 +178,7 @@ class SimpleMemoryManager:
                 result = response.json()
                 
                 if result.get("status") == "ok":
+                    print(result)
                     memories = result.get("result", {}).get("memories", [])
                     metadata = result.get("result", {}).get("metadata", {})
                     latency = metadata.get("total_latency_ms", 0)

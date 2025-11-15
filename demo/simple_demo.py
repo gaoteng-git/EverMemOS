@@ -40,6 +40,14 @@ async def main():
     await memory.store("I also enjoy watching basketball, NBA is my favorite")
     await asyncio.sleep(2)
     
+    await memory.store("I will sleep now")
+    await asyncio.sleep(2)
+
+    await memory.store("The weather is good today")
+    await asyncio.sleep(2)
+    
+    await memory.store("The universe is expanding")
+    await asyncio.sleep(2)
     # ========== Step 2: Wait for Indexing ==========
     print("\n⏳ Step 2: Wait for Index Building")
     memory.print_separator()
