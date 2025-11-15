@@ -197,7 +197,7 @@ async def memcell_extraction_from_conversation(
             smart_mask_flag=smart_mask_flag,
             # group_id="group_1",
         )
-        for i in range(5):
+        for i in range(10):
             try:
                 result = await memcell_extractor.extract_memcell(
                     request,
@@ -206,7 +206,7 @@ async def memcell_extraction_from_conversation(
                 break
             except Exception as e:
                 print('retry: ', i)
-                if i == 4:
+                if i == 9:
                     raise Exception("Memcell extraction failed")
                 continue
         memcell_result = result[0]

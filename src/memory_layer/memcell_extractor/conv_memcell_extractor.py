@@ -370,7 +370,7 @@ class ConvMemCellExtractor(MemCellExtractor):
             )
 
             # 自动触发情景记忆提取
-            max_retries = 3
+            max_retries = 5
             for attempt in range(max_retries):
                 try:
                     episode_request = EpisodeMemoryExtractRequest(
@@ -395,25 +395,24 @@ class ConvMemCellExtractor(MemCellExtractor):
                         # GROUP_EPISODE_GENERATION_PROMPT 模式：返回包含情景记忆的 MemCell
                         logger.info(f"✅ 成功生成情景记忆并存储到 MemCell 中")
                         # Attach embedding info to MemCell (episode preferred)
-                        try:
-                            text_for_embed = (
-                                episode_result.episode or episode_result.summary or ""
+                        
+                        text_for_embed = (
+                            episode_result.episode or episode_result.summary or ""
+                        )
+                        if text_for_embed:
+                            vs = get_vectorize_service()
+                            vec = await vs.get_embedding(text_for_embed)
+                            episode_result.extend = episode_result.extend or {}
+                            episode_result.extend["embedding"] = (
+                                vec.tolist()
+                                if hasattr(vec, "tolist")
+                                else list(vec)
                             )
-                            if text_for_embed:
-                                vs = get_vectorize_service()
-                                vec = await vs.get_embedding(text_for_embed)
-                                episode_result.extend = episode_result.extend or {}
-                                episode_result.extend["embedding"] = (
-                                    vec.tolist()
-                                    if hasattr(vec, "tolist")
-                                    else list(vec)
-                                )
-                                episode_result.extend["vector_model"] = (
-                                    vs.get_model_name()
-                                )
+                            episode_result.extend["vector_model"] = (
+                                vs.get_model_name()
+                            )
 
-                        except Exception:
-                            logger.debug("Embedding attach failed; continue without it")
+                        
                         
                         # 提交到聚类器（如果存在）
                         if hasattr(self, '_cluster_worker') and self._cluster_worker:
