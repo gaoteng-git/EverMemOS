@@ -252,7 +252,7 @@ cp env.template .env
 #   - DEEPINFRA_API_KEY: 填入您的 DeepInfra API Key（用于 Embedding 和 Rerank）
 ```
 
-**Docker 服务说明**：
+**Docker 服务说明**（宿主机端口）：
 - **MongoDB** (27017): 主数据库，存储记忆单元和画像
 - **Elasticsearch** (19200): 关键词检索引擎（BM25）
 - **Milvus** (19530): 向量数据库，语义检索
@@ -348,32 +348,67 @@ uv run python src/bootstrap.py demo/chat_with_memory.py
 
 #### 📊 运行评估：性能测试
 
-评估框架提供了一种系统化的方法来衡量记忆系统的性能，基于 LoCoMo 评估数据集。
+评估框架提供了一种统一的模块化方法来对标准数据集（LoCoMo、LongMemEval、PersonaMem）上的记忆系统进行基准测试。
+
+**快速测试（冒烟测试）**：
 
 ```bash
-# 阶段 1: 记忆单元提取
-uv run python src/bootstrap.py evaluation/locomo_evaluation/stage1_memcells_extraction.py
+# 使用有限数据测试以验证一切正常
+# 默认：第一个对话，前 10 条消息，前 3 个问题
+uv run python -m evaluation.cli --dataset locomo --system evermemos --smoke
 
-# 阶段 2: 索引构建
-uv run python src/bootstrap.py evaluation/locomo_evaluation/stage2_index_building.py
+# 自定义冒烟测试：20 条消息，5 个问题
+uv run python -m evaluation.cli --dataset locomo --system evermemos \
+    --smoke --smoke-messages 20 --smoke-questions 5
 
-# 阶段 3: 记忆检索
-uv run python src/bootstrap.py evaluation/locomo_evaluation/stage3_memory_retrivel.py
+# 测试不同数据集
+uv run python -m evaluation.cli --dataset longmemeval --system evermemos --smoke
+uv run python -m evaluation.cli --dataset personamem --system evermemos --smoke
 
-# 阶段 4: 回应生成
-uv run python src/bootstrap.py evaluation/locomo_evaluation/stage4_response.py
+# 测试特定阶段（例如只测试搜索和回答阶段）
+uv run python -m evaluation.cli --dataset locomo --system evermemos \
+    --smoke --stages search answer
 
-# 阶段 5: 评估
-uv run python src/bootstrap.py evaluation/locomo_evaluation/stage5_eval.py
+# 快速查看冒烟测试结果
+cat evaluation/results/locomo-evermemos-smoke/report.txt
 ```
 
-每个脚本对应评估流水线中的一个阶段，从数据处理到性能评分。
+**完整评估**：
+
+```bash
+# 在 LoCoMo 基准上评估 EvermemOS
+uv run python -m evaluation.cli --dataset locomo --system evermemos
+
+# 在其他数据集上评估
+uv run python -m evaluation.cli --dataset longmemeval --system evermemos
+uv run python -m evaluation.cli --dataset personamem --system evermemos
+
+# 使用 --run-name 区分多次运行（用于 A/B 测试）
+uv run python -m evaluation.cli --dataset locomo --system evermemos --run-name baseline
+uv run python -m evaluation.cli --dataset locomo --system evermemos --run-name experiment1
+
+# 如果中断则从检查点恢复（自动）
+# 只需重新运行相同命令 - 它会检测并从检查点恢复
+uv run python -m evaluation.cli --dataset locomo --system evermemos
+```
+
+**查看结果**：
+
+```bash
+# 结果保存到 evaluation/results/{dataset}-{system}[-{run-name}]/
+cat evaluation/results/locomo-evermemos/report.txt          # 摘要指标
+cat evaluation/results/locomo-evermemos/eval_results.json   # 每个问题的详细结果
+cat evaluation/results/locomo-evermemos/pipeline.log        # 执行日志
+```
+
+评估流程包含 4 个阶段（添加 → 搜索 → 回答 → 评估），支持自动检查点和恢复。
 
 > **⚙️ 评估配置**:
-> 在运行评估前，您可以修改 `evaluation/locomo_evaluation/config.py` 文件来调整实验设置：
-> - **`ExperimentConfig.experiment_name`**: 修改此变量可以更改实验结果的保存目录。
-> - **`ExperimentConfig.llm_service`**: 选择要使用的 LLM 服务，并设置相应参数 (例如, `"openai"` 或 `"vllm"`)。
-> - **`ExperimentConfig.llm_config`**: 在此字典中配置所选 LLM 服务的具体参数，如模型、API 地址 (`base_url`) 和密钥 (`api_key`)。
+> - **数据准备**：需要将数据集放置在 `evaluation/data/` 中（参见 `evaluation/README.md`）
+> - **环境配置**：在 `.env` 中配置 LLM API 密钥（参见 `env.template`）
+> - **安装依赖**：运行 `uv sync --group evaluation` 安装依赖
+> - **自定义配置**：复制并修改 `evaluation/config/systems/` 或 `evaluation/config/datasets/` 中的 YAML 文件
+> - **高级用法**：参见 `evaluation/README.md` 了解检查点管理、特定阶段运行和系统对比
 
 ---
 
@@ -534,8 +569,8 @@ EverMemOS 采用分层架构设计，主要包括：
 
 ### 联系方式
 
-- **GitHub Issues**: [提交问题和建议](https://github.com/your-org/memsys_opensource/issues)
-- **讨论区**: [参与讨论](https://github.com/your-org/memsys_opensource/discussions)
+- **GitHub Issues**: [提交问题和建议](https://github.com/EverMind-AI/EverMemOS/issues)
+- **讨论区**: [参与讨论](https://github.com/EverMind-AI/EverMemOS/discussions)
 - **邮箱**: []
 - **社区**: []
 
