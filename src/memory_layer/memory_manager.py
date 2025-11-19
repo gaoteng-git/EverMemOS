@@ -45,9 +45,6 @@ class MemorizeRequest:
     # 可选的提取控制参数
     enable_semantic_extraction: bool = True  # 是否提取语义记忆
     enable_event_log_extraction: bool = True  # 是否提取事件日志
-    # 对话元数据字段（对应 ConversationMeta）
-    scene: Optional[str] = None  # 场景标识符，如 "company"、"work" 等
-    scene_desc: Optional[dict] = None  # 场景描述信息，如 {"bot_ids": ["aaa", "bbb"]}
 
 
 @dataclass
@@ -62,14 +59,12 @@ class MemoryManager:
         self.conv_memcall_llm_provider = LLMProvider(
             provider_type=os.getenv("LLM_PROVIDER", "openai"),
             model=os.getenv("LLM_MODEL", "Qwen3-235B"),
-            base_url=os.getenv(
-                "LLM_BASE_URL"
-            ),
+            base_url=os.getenv("LLM_BASE_URL"),
             api_key=os.getenv("LLM_API_KEY", "123"),
             temperature=float(os.getenv("LLM_TEMPERATURE", "0.3")),
             max_tokens=int(os.getenv("LLM_MAX_TOKENS", "16384")),
         )
-        
+
         # Event Log Extractor LLM Provider - 从环境变量读取配置
         self.event_log_llm_provider = LLMProvider(
             provider_type=os.getenv("LLM_PROVIDER", "openai"),
@@ -79,7 +74,7 @@ class MemoryManager:
             temperature=float(os.getenv("LLM_TEMPERATURE", "0.3")),
             max_tokens=int(os.getenv("LLM_MAX_TOKENS", "16384")),
         )
-        
+
         # Event Log Extractor - 延迟初始化
         self._event_log_extractor = None
 
@@ -87,9 +82,7 @@ class MemoryManager:
         self.episode_memory_extractor_llm_provider = LLMProvider(
             provider_type=os.getenv("LLM_PROVIDER", "openai"),
             model=os.getenv("LLM_MODEL", "Qwen3-235B"),
-            base_url=os.getenv(
-                "LLM_BASE_URL"
-            ),
+            base_url=os.getenv("LLM_BASE_URL"),
             api_key=os.getenv("LLM_API_KEY", "123"),
             temperature=float(os.getenv("LLM_TEMPERATURE", "0.3")),
             max_tokens=int(os.getenv("LLM_MAX_TOKENS", "16384")),
@@ -99,15 +92,11 @@ class MemoryManager:
         self.profile_memory_extractor_llm_provider = LLMProvider(
             provider_type=os.getenv("LLM_PROVIDER", "openai"),
             model=os.getenv("LLM_MODEL", "Qwen3-235B"),
-            base_url=os.getenv(
-                "LLM_BASE_URL"
-            ),
+            base_url=os.getenv("LLM_BASE_URL"),
             api_key=os.getenv("LLM_API_KEY", "123"),
             temperature=float(os.getenv("LLM_TEMPERATURE", "0.3")),
             max_tokens=int(os.getenv("LLM_MAX_TOKENS", "16384")),
         )
-
-        
 
     async def extract_memcell(
         self,
@@ -123,7 +112,7 @@ class MemoryManager:
     ) -> tuple[Optional[MemCell], Optional[StatusResult]]:
         """
         提取 MemCell（包含可选的语义记忆和事件日志提取）
-        
+
         Args:
             history_raw_data_list: 历史消息列表
             new_raw_data_list: 新消息列表
@@ -134,13 +123,13 @@ class MemoryManager:
             old_memory_list: 历史记忆列表
             enable_semantic_extraction: 是否提取语义记忆（默认True）
             enable_event_log_extraction: 是否提取事件日志（默认True）
-            
+
         Returns:
             (MemCell, StatusResult) 或 (None, StatusResult)
         """
         logger = get_logger(__name__)
         now = time.time()
-        
+
         # 1. 提取基础 MemCell（包括可选的语义记忆）
         request = ConversationMemCellExtractRequest(
             history_raw_data_list,
@@ -152,32 +141,37 @@ class MemoryManager:
         )
         extractor = ConvMemCellExtractor(self.conv_memcall_llm_provider)
         memcell, status_result = await extractor.extract_memcell(
-            request, 
-            use_semantic_extraction=enable_semantic_extraction
+            request, use_semantic_extraction=enable_semantic_extraction
         )
-        
+
         # 2. 如果成功提取 MemCell，且启用了 Event Log 提取
-        if memcell and enable_event_log_extraction and hasattr(memcell, 'episode') and memcell.episode:
+        if (
+            memcell
+            and enable_event_log_extraction
+            and hasattr(memcell, 'episode')
+            and memcell.episode
+        ):
             if self._event_log_extractor is None:
-                self._event_log_extractor = EventLogExtractor(llm_provider=self.event_log_llm_provider)
-            
+                self._event_log_extractor = EventLogExtractor(
+                    llm_provider=self.event_log_llm_provider
+                )
+
             logger.debug(f"开始提取 Event Log: {memcell.event_id}")
             event_log = await self._event_log_extractor.extract_event_log(
-                episode_text=memcell.episode,
-                timestamp=memcell.timestamp
+                episode_text=memcell.episode, timestamp=memcell.timestamp
             )
-            
+
             if event_log:
                 memcell.event_log = event_log
                 logger.debug(f"Event Log 提取成功: {memcell.event_id}")
-        
+
         logger.debug(
             f"提取MemCell完成, raw_data_type: {raw_data_type}, "
             f"semantic_extraction={enable_semantic_extraction}, "
             f"event_log_extraction={enable_event_log_extraction}, "
             f"耗时: {time.time() - now}秒"
         )
-        
+
         return memcell, status_result
 
     async def extract_memory(
@@ -193,16 +187,16 @@ class MemoryManager:
     ):
         """
         提取记忆
-        
+
         Returns:
-            - EPISODE_SUMMARY/PROFILE/GROUP_PROFILE: 返回 List[Memory]
-            - SEMANTIC_SUMMARY: 返回 List[SemanticMemoryItem]
-            - EVENT_LOG: 返回 EventLog
+            - EPISODE_MEMORY/PROFILE/GROUP_PROFILE: 返回 List[Memory]
+            - SEMANTIC_MEMORY: 返回 List[SemanticMemoryItem]
+            - PERSONAL_EVENT_LOG: 返回 EventLog
         """
         extractor = None
         request = None
 
-        if memory_type == MemoryType.EPISODE_SUMMARY:
+        if memory_type == MemoryType.EPISODE_MEMORY:
             extractor = EpisodeMemoryExtractor(
                 self.episode_memory_extractor_llm_provider
             )
@@ -235,36 +229,36 @@ class MemoryManager:
                 old_memory_list=old_memory_list,
                 user_organization=None,
             )
-        elif memory_type == MemoryType.SEMANTIC_SUMMARY and episode_memory:
+        elif memory_type == MemoryType.SEMANTIC_MEMORY and episode_memory:
             # 为个人 episode 提取语义记忆
-            logger.debug(f"开始为个人 episode 提取语义记忆: user_id={episode_memory.user_id}")
-            
+            logger.debug(
+                f"开始为个人 episode 提取语义记忆: user_id={episode_memory.user_id}"
+            )
+
             extractor = SemanticMemoryExtractor(
                 llm_provider=self.episode_memory_extractor_llm_provider
             )
-            
+
             semantic_memories = await extractor.generate_semantic_memories_for_episode(
                 episode_memory
             )
-                        
+
             return semantic_memories
-        
-        elif memory_type == MemoryType.EVENT_LOG and episode_memory:
+
+        elif memory_type == MemoryType.PERSONAL_EVENT_LOG and episode_memory:
             # 为个人 episode 提取事件日志
-            logger.debug(f"开始为个人 episode 提取事件日志: user_id={episode_memory.user_id}")
-            
-            extractor = EventLogExtractor(
-                    llm_provider=self.event_log_llm_provider
-                )
-            
-            event_log = await extractor.extract_event_log(
-                episode_text=episode_memory.episode,
-                timestamp=episode_memory.timestamp
+            logger.debug(
+                f"开始为个人 episode 提取事件日志: user_id={episode_memory.user_id}"
             )
-            
+
+            extractor = EventLogExtractor(llm_provider=self.event_log_llm_provider)
+
+            event_log = await extractor.extract_event_log(
+                episode_text=episode_memory.episode, timestamp=episode_memory.timestamp
+            )
+
             return event_log
 
         if extractor == None or request == None:
             return []
         return await extractor.extract_memory(request)
-

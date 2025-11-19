@@ -50,8 +50,8 @@ class EpisodeMemory(Memory):
     event_id: str = field(default=None)
 
     def __post_init__(self):
-        """Set memory_type to EPISODE_SUMMARY and call parent __post_init__."""
-        self.memory_type = MemoryType.EPISODE_SUMMARY
+        """Set memory_type to EPISODE_MEMORY and call parent __post_init__."""
+        self.memory_type = MemoryType.EPISODE_MEMORY
         super().__post_init__()
 
 
@@ -61,8 +61,10 @@ class EpisodeMemoryExtractRequest(MemoryExtractRequest):
 
 
 class EpisodeMemoryExtractor(MemoryExtractor):
-    def __init__(self, llm_provider: LLMProvider | None = None, use_eval_prompts: bool = False):
-        super().__init__(MemoryType.EPISODE_SUMMARY)
+    def __init__(
+        self, llm_provider: LLMProvider | None = None, use_eval_prompts: bool = False
+    ):
+        super().__init__(MemoryType.EPISODE_MEMORY)
         self.llm_provider = llm_provider
         self.semantic_extractor = SemanticMemoryExtractor(self.llm_provider)
         self.use_eval_prompts = use_eval_prompts
@@ -338,35 +340,44 @@ class EpisodeMemoryExtractor(MemoryExtractor):
 
         # 构建 prompt
         if use_group_prompt:
-            format_params = {
-                time_key: start_time_str,
-                content_key: combined_content,
-                "custom_instructions": self.default_custom_instructions,
-            }
-            prompt = prompt_template.format(**format_params)
-            response = await self.llm_provider.generate(prompt)
-            # 首先尝试提取代码块中的JSON
-            if '```json' in response:
-                # 提取代码块中的JSON内容
-                start = response.find('```json') + 7
-                end = response.find('```', start)
-                if end > start:
-                    json_str = response[start:end].strip()
-                    data = json.loads(json_str)
-                else:
-                    # 尝试解析整个响应为JSON
-                    data = json.loads(response)
-            else:
-                # 尝试匹配包含title和content的JSON对象
-                json_match = re.search(
-                    r'\{[^{}]*"title"[^{}]*"content"[^{}]*\}', response, re.DOTALL
-                )
-                if json_match:
-                    data = json.loads(json_match.group())
-                else:
-                    # 尝试解析整个响应为JSON
-                    data = json.loads(response)
-
+            for i in range(5):
+                try:
+                    format_params = {
+                        time_key: start_time_str,
+                        content_key: combined_content,
+                        "custom_instructions": self.default_custom_instructions,
+                    }
+                    prompt = prompt_template.format(**format_params)
+                    response = await self.llm_provider.generate(prompt)
+                    # 首先尝试提取代码块中的JSON
+                    if '```json' in response:
+                        # 提取代码块中的JSON内容
+                        start = response.find('```json') + 7
+                        end = response.find('```', start)
+                        if end > start:
+                            json_str = response[start:end].strip()
+                            data = json.loads(json_str)
+                        else:
+                            # 尝试解析整个响应为JSON
+                            data = json.loads(response)
+                    else:
+                        # 尝试匹配包含title和content的JSON对象
+                        json_match = re.search(
+                            r'\{[^{}]*"title"[^{}]*"content"[^{}]*\}',
+                            response,
+                            re.DOTALL,
+                        )
+                        if json_match:
+                            data = json.loads(json_match.group())
+                        else:
+                            # 尝试解析整个响应为JSON
+                            data = json.loads(response)
+                    break
+                except Exception as e:
+                    print('retry: ', i)
+                    if i == 4:
+                        raise Exception("Episode memory extraction failed")
+                    continue
             # Ensure we have required fields with fallback defaults
             if "title" not in data:
                 data["title"] = default_title
@@ -474,7 +485,7 @@ class EpisodeMemoryExtractor(MemoryExtractor):
                     summary = data["summary"]
 
                     return EpisodeMemory(
-                        memory_type=MemoryType.EPISODE_SUMMARY,
+                        memory_type=MemoryType.EPISODE_MEMORY,
                         user_id=user_id,
                         ori_event_id_list=[
                             memcell.event_id for memcell in request.memcell_list
@@ -514,7 +525,7 @@ class EpisodeMemoryExtractor(MemoryExtractor):
             for user_id in request.user_id_list:
                 if user_id not in participants:
                     memory = EpisodeMemory(
-                        memory_type=MemoryType.EPISODE_SUMMARY,
+                        memory_type=MemoryType.EPISODE_MEMORY,
                         user_id=user_id,
                         ori_event_id_list=[
                             memcell.event_id for memcell in request.memcell_list
