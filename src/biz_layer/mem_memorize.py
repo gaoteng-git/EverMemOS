@@ -104,7 +104,7 @@ from infra_layer.adapters.out.search.repository.semantic_memory_milvus_repositor
 from infra_layer.adapters.out.search.repository.event_log_milvus_repository import (
     EventLogMilvusRepository,
 )
-from biz_layer.personal_memory_sync import MemorySyncService
+from biz_layer.mem_sync import MemorySyncService
 
 logger = get_logger(__name__)
 
@@ -548,7 +548,7 @@ async def save_memory_docs(
     saved_result: Dict[MemoryType, List[Any]] = {}
 
     # Episodic
-    episodic_docs = grouped_docs.get(MemoryType.EPISODE_MEMORY, [])
+    episodic_docs = grouped_docs.get(MemoryType.EPISODIC_MEMORY, [])
     if episodic_docs:
         episodic_repo = get_bean_by_type(EpisodicMemoryRawRepository)
         episodic_milvus_repo = get_bean_by_type(EpisodicMemoryMilvusRepository)
@@ -575,7 +575,7 @@ async def save_memory_docs(
 
         if saved_episodic:
             await episodic_milvus_repo.flush()
-        saved_result[MemoryType.EPISODE_MEMORY] = saved_episodic
+        saved_result[MemoryType.EPISODIC_MEMORY] = saved_episodic
 
     # Semantic
     semantic_docs = grouped_docs.get(MemoryType.SEMANTIC_MEMORY, [])
@@ -712,7 +712,7 @@ async def memorize(request: MemorizeRequest) -> List[Memory]:
 
     # 定义需要提取的记忆类型：先提取个人 episode，再基于 episode 提取语义记忆和事件日志
     memory_types = [
-        MemoryType.EPISODE_MEMORY,
+        MemoryType.EPISODIC_MEMORY,
         MemoryType.SEMANTIC_MEMORY,
         MemoryType.PERSONAL_EVENT_LOG,
     ]
@@ -846,7 +846,7 @@ async def memorize(request: MemorizeRequest) -> List[Memory]:
 
     group_episode_memories: List[Memory] = [
         Memory(
-            memory_type=MemoryType.EPISODE_MEMORY,
+            memory_type=MemoryType.EPISODIC_MEMORY,
             user_id="",
             timestamp=memcell.timestamp or current_time,
             ori_event_id_list=[memcell.event_id],
@@ -901,7 +901,7 @@ async def memorize(request: MemorizeRequest) -> List[Memory]:
 
         # 第一阶段：提取个人 episode
         for memory_type in memory_types:
-            if memory_type == MemoryType.EPISODE_MEMORY:
+            if memory_type == MemoryType.EPISODIC_MEMORY:
                 extracted_memories = await memory_manager.extract_memory(
                     memcell_list=memcells,
                     memory_type=memory_type,
@@ -931,12 +931,12 @@ async def memorize(request: MemorizeRequest) -> List[Memory]:
                 for episode_mem in episodic_source_memories
             ]
             episodic_payloads = [
-                MemoryDocPayload(MemoryType.EPISODE_MEMORY, doc)
+                MemoryDocPayload(MemoryType.EPISODIC_MEMORY, doc)
                 for doc in episodic_docs
             ]
             saved_docs_map = await save_memory_docs(episodic_payloads)
             saved_episode_docs = saved_docs_map.get(
-                MemoryType.EPISODE_MEMORY, []
+                MemoryType.EPISODIC_MEMORY, []
             )
             for idx, (episode_mem, saved_doc) in enumerate(
                 zip(episodic_source_memories, saved_episode_docs)
