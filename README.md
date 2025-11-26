@@ -275,6 +275,7 @@ cp env.template .env
 # Edit the .env file and fill in the necessary configurations:
 #   - LLM_API_KEY: Enter your LLM API Key (for memory extraction)
 #   - DEEPINFRA_API_KEY: Enter your DeepInfra API Key (for Embedding and Rerank)
+# For detailed configuration instructions, please refer to: [Configuration Guide](docs/usage/CONFIGURATION_GUIDE.md)
 ```
 
 **Docker Services**:
@@ -644,6 +645,7 @@ For complete format specifications, please refer to [Group Chat Format Specifica
 
 For detailed installation, configuration, and usage instructions, please refer to:
 - 📚 [Quick Start Guide](docs/dev_docs/getting_started.md) - Complete installation and configuration steps
+- ⚙️ [Configuration Guide](docs/usage/CONFIGURATION_GUIDE.md) - Detailed environment variables and service configuration
 - 📖 [API Usage Guide](docs/dev_docs/api_usage_guide.md) - API endpoints and data format details
 - 🔧 [Development Guide](docs/dev_docs/development_guide.md) - Architecture design and development best practices
 - 🚀 [Bootstrap Usage](docs/dev_docs/bootstrap_usage.md) - Script runner usage instructions

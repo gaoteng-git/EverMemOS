@@ -276,6 +276,7 @@ cp env.template .env
 # 编辑 .env 文件，填入必要的配置
 #   - LLM_API_KEY: 填入您的 LLM API Key（用于记忆提取）
 #   - DEEPINFRA_API_KEY: 填入您的 DeepInfra API Key（用于 Embedding 和 Rerank）
+# 详细配置说明请参考：[配置指南](docs/usage/CONFIGURATION_GUIDE_zh.md)
 ```
 
 **Docker 服务说明**：
@@ -639,6 +640,7 @@ uv run python src/bootstrap.py src/run_memorize.py \
 
 详细的安装、配置和使用说明，请参考：
 - 📚 [快速开始指南](docs/dev_docs/getting_started.md) - 完整的安装和配置步骤
+- ⚙️ [配置指南](docs/usage/CONFIGURATION_GUIDE_zh.md) - 环境变量与服务配置详解
 - 📖 [API 使用指南](docs/dev_docs/api_usage_guide.md) - API 接口和数据格式详解
 - 🔧 [开发指南](docs/dev_docs/development_guide.md) - 架构设计和开发最佳实践
 - 🚀 [Bootstrap 使用](docs/dev_docs/bootstrap_usage.md) - 脚本运行器使用说明
