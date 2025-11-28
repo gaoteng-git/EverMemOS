@@ -538,7 +538,7 @@ async def save_memory_docs(
             saved_episodic.append(saved_doc)
 
             es_doc = EpisodicMemoryConverter.from_mongo(saved_doc)
-            await es_doc.save()
+            await episodic_es_repo.create(es_doc)
 
             milvus_entity = EpisodicMemoryMilvusConverter.from_mongo(saved_doc)
             vector = (

@@ -323,6 +323,7 @@ class SemanticMemoryExtractor(MemoryExtractor):
                         duration_days=item_data['duration_days'],
                         source_episode_id=item_data['source_episode_id'],
                         embedding=embedding,
+                        embedding_model=vs.get_model_name(),
                     )
                     semantic_memories.append(memory_item)
 
