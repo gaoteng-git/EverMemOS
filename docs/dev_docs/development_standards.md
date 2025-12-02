@@ -1081,12 +1081,12 @@ class Container(containers.DeclarativeContainer):
 **ElasticSearch / Milvus also follow Repository pattern**
 
 ```python
-# infra_layer/adapters/out/search/repository/semantic_memory_es_repository.py
+# infra_layer/adapters/out/search/repository/foresight_es_repository.py
 from elasticsearch import AsyncElasticsearch
 from typing import List
 
-class SemanticMemoryESRepository:
-    """ElasticSearch semantic memory repository"""
+class ForesightESRepository:
+    """ElasticSearch foresight repository"""
     
     def __init__(self, es_client: AsyncElasticsearch, index_name: str):
         self._es = es_client
@@ -1126,13 +1126,13 @@ class SemanticMemoryESRepository:
 **Business Layer Calls Search Repository**
 
 ```python
-# memory_layer/retrievers/semantic_retriever.py
-from infra_layer.adapters.out.search.repository.semantic_memory_es_repository import SemanticMemoryESRepository
+# memory_layer/retrievers/foresight_retriever.py
+from infra_layer.adapters.out.search.repository.foresight_es_repository import ForesightESRepository
 
-class SemanticRetriever:
-    """Semantic retriever (business logic layer)"""
+class ForesightRetriever:
+    """Foresight retriever (business logic layer)"""
     
-    def __init__(self, search_repo: SemanticMemoryESRepository):
+    def __init__(self, search_repo: ForesightESRepository):
         # ✅ Depend on abstraction, get repository through dependency injection
         self._search_repo = search_repo
     
@@ -1156,7 +1156,7 @@ class MemoryHybridRepository(MemoryRepository):
     def __init__(
         self,
         mongo_repo: MemoryMongoRepository,
-        es_repo: SemanticMemoryESRepository
+        es_repo: ForesightESRepository
     ):
         self._mongo = mongo_repo
         self._es = es_repo

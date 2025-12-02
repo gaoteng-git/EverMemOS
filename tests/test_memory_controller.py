@@ -434,14 +434,14 @@ class MemoryControllerTester:
                 assert (
                     "parent_episode_id" in memory
                 ), f"第 {idx} 条记忆应包含 parent_episode_id"
-                # 个人语义记忆的user_id可能为None（群组场景），所以不强制检查
+                # 个人前瞻的 user_id 可能为 None（群组场景），所以不强制检查
 
             print(
-                f"✅ Fetch Personal Semantic Memory 成功，返回 {result['total_count']} 条个人语义记忆，已验证深度结构"
+                f"✅ Fetch Personal Foresight 成功，返回 {result['total_count']} 条个人前瞻，已验证深度结构"
             )
         else:
             print(
-                f"✅ Fetch Personal Semantic Memory 成功，返回 {result['total_count']} 条个人语义记忆"
+                f"✅ Fetch Personal Foresight 成功，返回 {result['total_count']} 条个人前瞻"
             )
 
         return status_code, response
