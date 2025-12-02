@@ -7,7 +7,7 @@ Foresight 原生 CRUD 仓库
 
 from datetime import datetime
 from typing import List, Optional, Dict, Any
-from motor.motor_asyncio import AsyncIOMotorClientSession
+from pymongo.asynchronous.client_session import AsyncClientSession
 from core.observation.logger import get_logger
 from core.di.decorators import repository
 from core.oxm.mongo.base_repository import BaseRepository
@@ -56,7 +56,7 @@ class ForesightRawRepository(BaseRepository[Foresight]):
         self,
         user_id: str,
         update_data: Dict[str, Any],
-        session: Optional[AsyncIOMotorClientSession] = None,
+        session: Optional[AsyncClientSession] = None,
     ) -> Optional[Foresight]:
         """
         根据用户ID更新前瞻
@@ -84,7 +84,7 @@ class ForesightRawRepository(BaseRepository[Foresight]):
             raise e
 
     async def delete_by_user_id(
-        self, user_id: str, session: Optional[AsyncIOMotorClientSession] = None
+        self, user_id: str, session: Optional[AsyncClientSession] = None
     ) -> bool:
         """
         根据用户ID删除前瞻
