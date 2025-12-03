@@ -17,9 +17,6 @@ from infra_layer.adapters.out.persistence.document.memory.foresight_record impor
     ForesightRecord,
     ForesightRecordProjection,
 )
-from infra_layer.adapters.out.persistence.repository.foresight_raw_repository import (
-    ForesightRawRepository,
-)
 from infra_layer.adapters.out.persistence.repository.episodic_memory_raw_repository import (
     EpisodicMemoryRawRepository,
 )

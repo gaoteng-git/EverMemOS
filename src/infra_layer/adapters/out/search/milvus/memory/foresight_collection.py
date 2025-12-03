@@ -14,7 +14,7 @@ from core.tenants.tenantize.oxm.milvus.tenant_aware_collection_with_suffix impor
 from memory_layer.constants import VECTORIZE_DIMENSIONS
 
 
-class ForesightCollection(TenantAwareCollectionWithSuffix):
+class ForesightCollection(TenantAwareMilvusCollectionWithSuffix):
     """
     前瞻 Milvus Collection
     
