@@ -25,7 +25,9 @@ class RequestLogEvent(BaseEvent):
         url: 请求的 URL 地址
         http_code: HTTP 响应状态码
         time_ms: 请求处理耗时（毫秒）
+        timestamp: 请求发生的时间戳（可选，Unix 时间戳毫秒）
         status: 自定义状态（如 "success"、"failed"、"timeout" 等）
+        api_key: API 密钥标识
         error_message: 错误信息（可选）
         extend: 扩展字段，用于存储额外信息（可选）
     """
@@ -36,7 +38,9 @@ class RequestLogEvent(BaseEvent):
     url: str = ""
     http_code: Optional[int] = None
     time_ms: Optional[int] = None
+    timestamp: Optional[int] = None
     status: Optional[str] = None
+    api_key: str = ""
     error_message: Optional[str] = None
     extend: Optional[Dict[str, Any]] = field(default_factory=dict)
 
@@ -67,7 +71,9 @@ class RequestLogEvent(BaseEvent):
             url=data.get("url", ""),
             http_code=data.get("http_code"),
             time_ms=data.get("time_ms"),
+            timestamp=data.get("timestamp"),
             status=data.get("status"),
+            api_key=data.get("api_key", ""),
             error_message=data.get("error_message"),
             extend=data.get("extend", {}),
         )
@@ -82,6 +88,8 @@ class RequestLogEvent(BaseEvent):
             f"url={self.url!r}, "
             f"http_code={self.http_code}, "
             f"time_ms={self.time_ms}, "
-            f"status={self.status!r}"
+            f"timestamp={self.timestamp}, "
+            f"status={self.status!r}, "
+            f"api_key={self.api_key!r}"
             f")"
         )
