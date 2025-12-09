@@ -4,10 +4,7 @@ from pathlib import Path
 from enum import Enum
 from typing import Optional
 
-
-class ScenarioType(Enum):
-    ASSISTANT = "assistant"
-    GROUP_CHAT = "group_chat"
+from memory_layer.profile_manager.config import ScenarioType
 
 
 @dataclass

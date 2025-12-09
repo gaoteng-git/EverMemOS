@@ -5,7 +5,7 @@ from enum import Enum
 from typing import Optional
 
 
-class ScenarioType(Enum):
+class ScenarioType(str, Enum):
     """Profile extraction scenario types."""
     
     GROUP_CHAT = "group_chat"  # Work/group chat scenario
