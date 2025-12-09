@@ -717,11 +717,11 @@ async def agentic_retrieval(
     
     metadata["is_sufficient"] = is_sufficient
     metadata["reasoning"] = reasoning
-    metadata["key_information_found"] = key_info  # 新增：记录已找到的关键信息
+    metadata["key_information_found"] = key_info  # New: record found key information
     
     print(f"  [LLM] Result: {'✅ Sufficient' if is_sufficient else '❌ Insufficient'}")
     print(f"  [LLM] Reasoning: {reasoning}")
-    if key_info:  # 新增：打印已找到的关键信息
+    if key_info:  # New: print found key information
         print(f"  [LLM] Key Info Found: {', '.join(key_info)}")
     
     if is_sufficient:
@@ -753,7 +753,7 @@ async def agentic_retrieval(
             missing_info=missing_info,
             llm_provider=llm_provider,  # Use LLMProvider
             llm_config=llm_config,
-            key_info=key_info,  # 新增：传入已找到的关键信息
+            key_info=key_info,  # New: pass found key information
             max_docs=10,
             num_queries=3  # Expect to generate 3 queries
         )
@@ -814,7 +814,7 @@ async def agentic_retrieval(
             missing_info=missing_info,
             llm_provider=llm_provider,
             llm_config=llm_config,
-            key_info=key_info,  # 新增：传入已找到的关键信息
+            key_info=key_info,  # New: pass found key information
             max_docs=10
         )
         

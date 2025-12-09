@@ -4,43 +4,43 @@ import time
 
 async def child_task():
     try:
-        print(f"[{time.time():.2f}] 子任务开始")
+        print(f"[{time.time():.2f}] Child task started")
         await asyncio.sleep(2)
-        print(f"[{time.time():.2f}] 子任务完成")
+        print(f"[{time.time():.2f}] Child task completed")
     except asyncio.CancelledError:
-        print(f"[{time.time():.2f}] 子任务收到取消")
+        print(f"[{time.time():.2f}] Child task received cancellation")
         raise
 
 
 async def parent_task():
-    print(f"[{time.time():.2f}] 父任务开始")
+    print(f"[{time.time():.2f}] Parent task started")
 
-    # 在 await 前执行一些工作
-    print(f"[{time.time():.2f}] 父任务执行一些工作")
-    await asyncio.sleep(5)  # 模拟工作
+    # Perform some work before await
+    print(f"[{time.time():.2f}] Parent task performing some work")
+    await asyncio.sleep(5)  # Simulate work
 
     try:
-        print(f"[{time.time():.2f}] 父任务即将 await 子任务")
-        # 关键点：在这里被取消
+        print(f"[{time.time():.2f}] Parent task about to await child task")
+        # Key point: cancellation happens here
         await child_task()
-        print(f"[{time.time():.2f}] 父任务完成等待")
+        print(f"[{time.time():.2f}] Parent task finished waiting")
     except asyncio.CancelledError:
-        print(f"[{time.time():.2f}] 父任务收到取消")
+        print(f"[{time.time():.2f}] Parent task received cancellation")
         raise
 
 
 async def main():
     parent = asyncio.create_task(parent_task())
 
-    # 立即取消父任务（在它到达 await 前）
-    print(f"[{time.time():.2f}] 立即发送取消请求")
+    # Cancel parent task immediately (before it reaches await)
+    print(f"[{time.time():.2f}] Immediately send cancellation request")
     await asyncio.sleep(1)
     parent.cancel()
 
     try:
         await parent
     except asyncio.CancelledError:
-        print(f"[{time.time():.2f}] 主程序捕获取消")
+        print(f"[{time.time():.2f}] Main program caught cancellation")
 
 
 asyncio.run(main())

@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-测试 KeywordVocabularyMilvusRepository 的功能
+Test the functionality of KeywordVocabularyMilvusRepository
 
-测试内容包括:
-1. 基础CRUD操作（增删改查）
-2. 向量相似度搜索
-3. 按类型过滤搜索
-4. 批量操作
-5. 边界情况测试
+Test contents include:
+1. Basic CRUD operations (create, read, update, delete)
+2. Vector similarity search
+3. Type-based filtering search
+4. Batch operations
+5. Edge case testing
 """
 
 import asyncio
@@ -24,31 +24,31 @@ logger = get_logger(__name__)
 
 
 def generate_random_vector(dim: int = 1024) -> List[float]:
-    """生成随机向量用于测试"""
+    """Generate random vector for testing"""
     return np.random.randn(dim).astype(np.float32).tolist()
 
 
 def generate_similar_vector(
     base_vector: List[float], noise_level: float = 0.1
 ) -> List[float]:
-    """生成与基准向量相似的向量"""
+    """Generate a vector similar to the base vector"""
     noise = np.random.normal(0, noise_level, len(base_vector))
     return [float(x + n) for x, n in zip(base_vector, noise)]
 
 
 async def test_basic_crud_operations():
-    """测试基础CRUD操作"""
-    logger.info("========== 开始测试基础CRUD操作 ==========")
+    """Test basic CRUD operations"""
+    logger.info("========== Starting basic CRUD operations test ==========")
 
     repo = get_bean_by_type(KeywordVocabularyMilvusRepository)
-    test_keyword = "机器学习"
+    test_keyword = "machine learning"
     test_type = "technology"
     test_vector = generate_random_vector()
     test_model = "bge-m3"
 
     try:
-        # 测试1: 创建关键词（Create）
-        logger.info("测试1: 创建关键词")
+        # Test 1: Create keyword (Create)
+        logger.info("Test 1: Create keyword")
         doc = await repo.create_and_save_keyword(
             keyword=test_keyword,
             keyword_type=test_type,
@@ -60,14 +60,14 @@ async def test_basic_crud_operations():
         assert doc["keyword"] == test_keyword
         assert doc["type"] == test_type
         assert doc["vector_model"] == test_model
-        logger.info("✅ 创建关键词成功: %s", test_keyword)
+        logger.info("✅ Keyword created successfully: %s", test_keyword)
 
-        # 等待数据刷新
+        # Wait for data refresh
         await repo.flush()
         await asyncio.sleep(1)
 
-        # 测试2: 根据文本精确查询（Read）
-        logger.info("测试2: 根据文本精确查询")
+        # Test 2: Exact query by text (Read)
+        logger.info("Test 2: Exact query by text")
         retrieved_doc = await repo.get_keyword_by_text(
             keyword=test_keyword, keyword_type=test_type
         )
@@ -76,25 +76,25 @@ async def test_basic_crud_operations():
         assert retrieved_doc["keyword"] == test_keyword
         assert retrieved_doc["type"] == test_type
         assert retrieved_doc["vector_model"] == test_model
-        logger.info("✅ 精确查询成功: %s", test_keyword)
+        logger.info("✅ Exact query successful: %s", test_keyword)
 
-        # 测试3: 根据ID删除（Delete）
-        logger.info("测试3: 根据ID删除")
+        # Test 3: Delete by ID (Delete)
+        logger.info("Test 3: Delete by ID")
         keyword_id = retrieved_doc["id"]
         delete_result = await repo.delete_by_keyword_id(keyword_id)
         assert delete_result is True
-        logger.info("✅ 删除关键词成功: id=%s", keyword_id)
+        logger.info("✅ Keyword deleted successfully: id=%s", keyword_id)
 
-        # 验证删除
+        # Verify deletion
         await repo.flush()
         await asyncio.sleep(1)
         deleted_check = await repo.get_keyword_by_text(test_keyword, test_type)
-        assert deleted_check is None, "关键词应该已被删除"
-        logger.info("✅ 验证删除成功")
+        assert deleted_check is None, "Keyword should have been deleted"
+        logger.info("✅ Deletion verified")
 
     except Exception as e:
-        logger.error("❌ 测试基础CRUD操作失败: %s", e)
-        # 清理可能残留的数据
+        logger.error("❌ Basic CRUD operations test failed: %s", e)
+        # Clean up any residual data
         try:
             await repo.delete_by_keyword_text(test_keyword, test_type)
             await repo.flush()
@@ -102,38 +102,38 @@ async def test_basic_crud_operations():
             pass
         raise
 
-    logger.info("✅ 基础CRUD操作测试完成\n")
+    logger.info("✅ Basic CRUD operations test completed\n")
 
 
 async def test_vector_similarity_search():
-    """测试向量相似度搜索"""
-    logger.info("========== 开始测试向量相似度搜索 ==========")
+    """Test vector similarity search"""
+    logger.info("========== Starting vector similarity search test ==========")
 
     repo = get_bean_by_type(KeywordVocabularyMilvusRepository)
     test_type = "ai_concept"
     base_vector = generate_random_vector()
     test_model = "bge-m3"
 
-    # 准备测试数据
+    # Prepare test data
     test_keywords = [
-        {"keyword": "深度学习", "similarity": "high"},
-        {"keyword": "神经网络", "similarity": "high"},
-        {"keyword": "卷积神经网络", "similarity": "medium"},
-        {"keyword": "强化学习", "similarity": "medium"},
-        {"keyword": "自然语言处理", "similarity": "low"},
+        {"keyword": "deep learning", "similarity": "high"},
+        {"keyword": "neural network", "similarity": "high"},
+        {"keyword": "convolutional neural network", "similarity": "medium"},
+        {"keyword": "reinforcement learning", "similarity": "medium"},
+        {"keyword": "natural language processing", "similarity": "low"},
     ]
 
     try:
-        # 创建测试关键词
-        logger.info("创建测试关键词...")
+        # Create test keywords
+        logger.info("Creating test keywords...")
         for kw_data in test_keywords:
-            # 根据相似度级别生成向量
+            # Generate vector based on similarity level
             if kw_data["similarity"] == "high":
                 vector = generate_similar_vector(base_vector, noise_level=0.05)
             elif kw_data["similarity"] == "medium":
                 vector = generate_similar_vector(base_vector, noise_level=0.15)
             else:
-                vector = generate_random_vector()  # 完全不相似
+                vector = generate_random_vector()  # Completely dissimilar
 
             await repo.create_and_save_keyword(
                 keyword=kw_data["keyword"],
@@ -145,65 +145,65 @@ async def test_vector_similarity_search():
         await repo.flush()
         await repo.load()
         await asyncio.sleep(2)
-        logger.info("✅ 创建了 %d 个测试关键词", len(test_keywords))
+        logger.info("✅ Created %d test keywords", len(test_keywords))
 
-        # 测试1: 基础向量搜索
-        logger.info("\n测试1: 基础向量搜索（Top 3）")
+        # Test 1: Basic vector search
+        logger.info("\nTest 1: Basic vector search (Top 3)")
         results = await repo.search_similar_keywords(
             query_vector=base_vector, keyword_type=test_type, limit=3
         )
 
-        assert len(results) >= 2, f"应该找到至少2个相似关键词，实际找到{len(results)}个"
-        logger.info("找到 %d 个相似关键词:", len(results))
+        assert len(results) >= 2, f"At least 2 similar keywords should be found, actually found {len(results)}"
+        logger.info("Found %d similar keywords:", len(results))
         for i, result in enumerate(results, 1):
             logger.info("  %d. %s (score: %.4f)", i, result["keyword"], result["score"])
 
-        # 验证最相似的应该是 high similarity 的关键词
+        # Verify top results should include high similarity keywords
         top_keywords = [r["keyword"] for r in results[:2]]
         high_similarity_keywords = [
             kw["keyword"] for kw in test_keywords if kw["similarity"] == "high"
         ]
         assert any(
             kw in top_keywords for kw in high_similarity_keywords
-        ), "Top结果应该包含高相似度的关键词"
-        logger.info("✅ 基础向量搜索测试通过")
+        ), "Top results should include high similarity keywords"
+        logger.info("✅ Basic vector search test passed")
 
-        # 测试2: 返回所有结果
-        logger.info("\n测试2: 返回所有结果")
+        # Test 2: Return all results
+        logger.info("\nTest 2: Return all results")
         all_results = await repo.search_similar_keywords(
             query_vector=base_vector, keyword_type=test_type, limit=100
         )
 
         assert len(all_results) == len(
             test_keywords
-        ), f"应该找到全部 {len(test_keywords)} 个关键词，实际找到 {len(all_results)} 个"
-        logger.info("✅ 找到全部 %d 个关键词", len(all_results))
+        ), f"All {len(test_keywords)} keywords should be found, actually found {len(all_results)}"
+        logger.info("✅ Found all %d keywords", len(all_results))
 
     except Exception as e:
-        logger.error("❌ 测试向量相似度搜索失败: %s", e)
+        logger.error("❌ Vector similarity search test failed: %s", e)
         raise
     finally:
-        # 清理测试数据
-        logger.info("\n清理测试数据...")
+        # Clean up test data
+        logger.info("\nCleaning up test data...")
         try:
             delete_count = await repo.delete_by_type(test_type)
             await repo.flush()
-            logger.info("✅ 清理了 %d 条测试数据", delete_count)
+            logger.info("✅ Cleaned up %d test data entries", delete_count)
         except Exception as cleanup_error:
-            logger.error("清理测试数据时出现错误: %s", cleanup_error)
+            logger.error("Error during cleanup: %s", cleanup_error)
 
-    logger.info("✅ 向量相似度搜索测试完成\n")
+    logger.info("✅ Vector similarity search test completed\n")
 
 
 async def test_type_filtering():
-    """测试按类型过滤"""
-    logger.info("========== 开始测试按类型过滤 ==========")
+    """Test type-based filtering"""
+    logger.info("========== Starting type-based filtering test ==========")
 
     repo = get_bean_by_type(KeywordVocabularyMilvusRepository)
     base_vector = generate_random_vector()
     test_model = "bge-m3"
 
-    # 准备不同类型的测试数据
+    # Prepare test data with different types
     test_data = [
         {"keyword": "Python", "type": "programming_language"},
         {"keyword": "JavaScript", "type": "programming_language"},
@@ -214,8 +214,8 @@ async def test_type_filtering():
     ]
 
     try:
-        # 创建测试数据
-        logger.info("创建不同类型的测试关键词...")
+        # Create test data
+        logger.info("Creating test keywords with different types...")
         for data in test_data:
             vector = generate_similar_vector(base_vector, noise_level=0.1)
             await repo.create_and_save_keyword(
@@ -228,99 +228,99 @@ async def test_type_filtering():
         await repo.flush()
         await repo.load()
         await asyncio.sleep(2)
-        logger.info("✅ 创建了 %d 个不同类型的关键词", len(test_data))
+        logger.info("✅ Created %d keywords with different types", len(test_data))
 
-        # 测试1: 搜索特定类型
-        logger.info("\n测试1: 搜索 programming_language 类型")
+        # Test 1: Search specific type
+        logger.info("\nTest 1: Search programming_language type")
         pl_results = await repo.search_similar_keywords(
             query_vector=base_vector, keyword_type="programming_language", limit=10
         )
 
-        assert len(pl_results) == 2, f"应该找到2个编程语言，实际找到{len(pl_results)}个"
+        assert len(pl_results) == 2, f"2 programming languages should be found, actually found {len(pl_results)}"
         for result in pl_results:
             assert result["type"] == "programming_language"
             logger.info("  - %s (type: %s)", result["keyword"], result["type"])
-        logger.info("✅ 编程语言类型过滤成功")
+        logger.info("✅ Programming language type filtering successful")
 
-        # 测试2: 搜索另一个类型
-        logger.info("\n测试2: 搜索 framework 类型")
+        # Test 2: Search another type
+        logger.info("\nTest 2: Search framework type")
         fw_results = await repo.search_similar_keywords(
             query_vector=base_vector, keyword_type="framework", limit=10
         )
 
-        assert len(fw_results) == 2, f"应该找到2个框架，实际找到{len(fw_results)}个"
+        assert len(fw_results) == 2, f"2 frameworks should be found, actually found {len(fw_results)}"
         for result in fw_results:
             assert result["type"] == "framework"
             logger.info("  - %s (type: %s)", result["keyword"], result["type"])
-        logger.info("✅ 框架类型过滤成功")
+        logger.info("✅ Framework type filtering successful")
 
-        # 测试3: 不指定类型（搜索全部）
-        logger.info("\n测试3: 不指定类型（搜索全部）")
+        # Test 3: Search without specifying type (search all)
+        logger.info("\nTest 3: Search without type (search all)")
         all_results = await repo.search_similar_keywords(
             query_vector=base_vector, keyword_type=None, limit=10
         )
 
         assert (
             len(all_results) >= 6
-        ), f"应该找到至少6个关键词，实际找到{len(all_results)}个"
-        logger.info("找到 %d 个关键词（所有类型）", len(all_results))
+        ), f"At least 6 keywords should be found, actually found {len(all_results)}"
+        logger.info("Found %d keywords (all types)", len(all_results))
 
-        # 统计各类型数量
+        # Count by type
         type_counts = {}
         for result in all_results:
             result_type = result["type"]
             type_counts[result_type] = type_counts.get(result_type, 0) + 1
 
-        logger.info("类型分布:")
+        logger.info("Type distribution:")
         for kw_type, count in type_counts.items():
             logger.info("  - %s: %d", kw_type, count)
-        logger.info("✅ 全类型搜索成功")
+        logger.info("✅ All-type search successful")
 
-        # 测试4: 列出指定类型的所有关键词
-        logger.info("\n测试4: 列出 database 类型的所有关键词")
+        # Test 4: List all keywords of a specific type
+        logger.info("\nTest 4: List all keywords of database type")
         db_keywords = await repo.list_keywords_by_type("database")
 
         assert (
             len(db_keywords) == 2
-        ), f"应该有2个数据库关键词，实际有{len(db_keywords)}个"
+        ), f"2 database keywords should exist, actually found {len(db_keywords)}"
         for kw in db_keywords:
             logger.info("  - %s", kw["keyword"])
-        logger.info("✅ 列出类型关键词成功")
+        logger.info("✅ Listing type keywords successful")
 
     except Exception as e:
-        logger.error("❌ 测试按类型过滤失败: %s", e)
+        logger.error("❌ Type-based filtering test failed: %s", e)
         raise
     finally:
-        # 清理测试数据
-        logger.info("\n清理测试数据...")
+        # Clean up test data
+        logger.info("\nCleaning up test data...")
         try:
             for kw_type in ["programming_language", "framework", "database"]:
                 count = await repo.delete_by_type(kw_type)
-                logger.info("  清理 %s: %d 条", kw_type, count)
+                logger.info("  Cleaned up %s: %d entries", kw_type, count)
             await repo.flush()
-            logger.info("✅ 测试数据清理完成")
+            logger.info("✅ Test data cleanup completed")
         except Exception as cleanup_error:
-            logger.error("清理测试数据时出现错误: %s", cleanup_error)
+            logger.error("Error during cleanup: %s", cleanup_error)
 
-    logger.info("✅ 按类型过滤测试完成\n")
+    logger.info("✅ Type-based filtering test completed\n")
 
 
 async def test_batch_operations():
-    """测试批量操作"""
-    logger.info("========== 开始测试批量操作 ==========")
+    """Test batch operations"""
+    logger.info("========== Starting batch operations test ==========")
 
     repo = get_bean_by_type(KeywordVocabularyMilvusRepository)
     test_type = "batch_test"
     test_model = "bge-m3"
 
-    # 准备批量测试数据
+    # Prepare batch test data
     batch_size = 50
     keywords_data = []
 
     for i in range(batch_size):
         keywords_data.append(
             {
-                "keyword": f"关键词_{i}",
+                "keyword": f"keyword_{i}",
                 "type": test_type,
                 "vector": generate_random_vector(),
                 "vector_model": test_model,
@@ -328,69 +328,69 @@ async def test_batch_operations():
         )
 
     try:
-        # 测试批量创建
-        logger.info("测试批量创建 %d 个关键词...", batch_size)
+        # Test batch creation
+        logger.info("Testing batch creation of %d keywords...", batch_size)
         count = await repo.batch_create_keywords(keywords_data)
 
         assert (
             count == batch_size
-        ), f"应该创建 {batch_size} 个关键词，实际创建 {count} 个"
-        logger.info("✅ 批量创建成功: %d 个关键词", count)
+        ), f"{batch_size} keywords should be created, actually created {count}"
+        logger.info("✅ Batch creation successful: %d keywords", count)
 
-        # 刷新并验证
+        # Refresh and verify
         await repo.flush()
         await asyncio.sleep(1)
 
-        # 验证数据已保存
-        logger.info("验证批量数据...")
+        # Verify data is saved
+        logger.info("Verifying batch data...")
         all_keywords = await repo.list_keywords_by_type(test_type)
         assert (
             len(all_keywords) >= batch_size
-        ), f"应该至少有 {batch_size} 个关键词，实际有 {len(all_keywords)} 个"
-        logger.info("✅ 数据验证成功: 找到 %d 个关键词", len(all_keywords))
+        ), f"At least {batch_size} keywords should exist, actually found {len(all_keywords)}"
+        logger.info("✅ Data verification successful: found %d keywords", len(all_keywords))
 
-        # 测试批量删除
-        logger.info("测试批量删除...")
+        # Test batch deletion
+        logger.info("Testing batch deletion...")
         delete_count = await repo.delete_by_type(test_type)
         assert (
             delete_count >= batch_size
-        ), f"应该删除至少 {batch_size} 个关键词，实际删除 {delete_count} 个"
-        logger.info("✅ 批量删除成功: %d 个关键词", delete_count)
+        ), f"At least {batch_size} keywords should be deleted, actually deleted {delete_count}"
+        logger.info("✅ Batch deletion successful: %d keywords", delete_count)
 
-        # 验证删除
+        # Verify deletion
         await repo.flush()
         await asyncio.sleep(1)
         remaining = await repo.list_keywords_by_type(test_type)
         assert (
             len(remaining) == 0
-        ), f"删除后应该没有剩余数据，实际剩余 {len(remaining)} 个"
-        logger.info("✅ 删除验证成功")
+        ), f"No data should remain after deletion, actually found {len(remaining)}"
+        logger.info("✅ Deletion verification successful")
 
     except Exception as e:
-        logger.error("❌ 测试批量操作失败: %s", e)
+        logger.error("❌ Batch operations test failed: %s", e)
         raise
     finally:
-        # 确保清理
+        # Ensure cleanup
         try:
             await repo.delete_by_type(test_type)
             await repo.flush()
         except Exception:
             pass
 
-    logger.info("✅ 批量操作测试完成\n")
+    logger.info("✅ Batch operations test completed\n")
 
 
 async def test_edge_cases():
-    """测试边界情况"""
-    logger.info("========== 开始测试边界情况 ==========")
+    """Test edge cases"""
+    logger.info("========== Starting edge cases test ==========")
 
     repo = get_bean_by_type(KeywordVocabularyMilvusRepository)
     test_type = "edge_test"
     test_model = "bge-m3"
 
     try:
-        # 测试1: 空关键词
-        logger.info("测试1: 空关键词处理")
+        # Test 1: Empty keyword
+        logger.info("Test 1: Empty keyword handling")
         try:
             await repo.create_and_save_keyword(
                 keyword="",
@@ -398,53 +398,53 @@ async def test_edge_cases():
                 vector=generate_random_vector(),
                 vector_model=test_model,
             )
-            logger.info("⚠️  空关键词被允许创建")
+            logger.info("⚠️  Empty keyword is allowed to be created")
         except Exception as e:
-            logger.info("✅ 正确拒绝空关键词: %s", e)
+            logger.info("✅ Empty keyword correctly rejected: %s", e)
 
-        # 测试2: 查询不存在的关键词
-        logger.info("\n测试2: 查询不存在的关键词")
+        # Test 2: Query non-existent keyword
+        logger.info("\nTest 2: Query non-existent keyword")
         nonexistent = await repo.get_keyword_by_text(
-            keyword="这个关键词绝对不存在_12345", keyword_type=test_type
+            keyword="this_keyword_definitely_does_not_exist_12345", keyword_type=test_type
         )
-        assert nonexistent is None, "不存在的关键词应该返回 None"
-        logger.info("✅ 正确处理不存在的关键词")
+        assert nonexistent is None, "Non-existent keyword should return None"
+        logger.info("✅ Non-existent keyword handled correctly")
 
-        # 测试3: 删除不存在的关键词
-        logger.info("\n测试3: 删除不存在的关键词")
+        # Test 3: Delete non-existent keyword
+        logger.info("\nTest 3: Delete non-existent keyword")
         delete_result = await repo.delete_by_keyword_id("nonexistent_id_99999")
-        assert delete_result is True  # Milvus delete 不存在的ID也返回True
-        logger.info("✅ 删除不存在的关键词不报错")
+        assert delete_result is True  # Milvus delete returns True even for non-existent ID
+        logger.info("✅ Deleting non-existent keyword does not raise error")
 
-        # 测试4: 错误的向量维度
-        logger.info("\n测试4: 错误的向量维度")
+        # Test 4: Incorrect vector dimension
+        logger.info("\nTest 4: Incorrect vector dimension")
         try:
             await repo.create_and_save_keyword(
-                keyword="错误维度测试",
+                keyword="dimension_error_test",
                 keyword_type=test_type,
-                vector=[1.0] * 512,  # 错误的维度
+                vector=[1.0] * 512,  # Incorrect dimension
                 vector_model=test_model,
             )
-            assert False, "应该因为向量维度错误而失败"
+            assert False, "Should fail due to vector dimension error"
         except Exception as e:
-            assert "512" in str(e) and "1024" in str(e), "错误信息应该包含维度信息"
-            logger.info("✅ 正确捕获向量维度错误: %s", str(e)[:100])
+            assert "512" in str(e) and "1024" in str(e), "Error message should contain dimension information"
+            logger.info("✅ Vector dimension error correctly caught: %s", str(e)[:100])
 
-        # 测试5: 空类型搜索
-        logger.info("\n测试5: 空类型（不存在的类型）搜索")
+        # Test 5: Search with empty type (non-existent type)
+        logger.info("\nTest 5: Search with empty type (non-existent type)")
         empty_results = await repo.search_similar_keywords(
             query_vector=generate_random_vector(),
-            keyword_type="这个类型不存在_99999",
+            keyword_type="this_type_does_not_exist_99999",
             limit=10,
         )
-        assert len(empty_results) == 0, "不存在的类型应该返回空结果"
-        logger.info("✅ 空类型搜索返回空结果")
+        assert len(empty_results) == 0, "Non-existent type should return empty results"
+        logger.info("✅ Empty type search returns empty results")
 
-        # 测试6: 重复关键词（相同keyword和type）
-        logger.info("\n测试6: 重复关键词")
-        duplicate_keyword = "重复测试关键词"
+        # Test 6: Duplicate keywords (same keyword and type)
+        logger.info("\nTest 6: Duplicate keywords")
+        duplicate_keyword = "duplicate_test_keyword"
 
-        # 创建第一个
+        # Create first
         await repo.create_and_save_keyword(
             keyword=duplicate_keyword,
             keyword_type=test_type,
@@ -452,7 +452,7 @@ async def test_edge_cases():
             vector_model=test_model,
         )
 
-        # 尝试创建重复的
+        # Try to create duplicate
         try:
             await repo.create_and_save_keyword(
                 keyword=duplicate_keyword,
@@ -460,47 +460,47 @@ async def test_edge_cases():
                 vector=generate_random_vector(),
                 vector_model=test_model,
             )
-            logger.info("⚠️  重复关键词被允许创建（相同ID会覆盖）")
+            logger.info("⚠️  Duplicate keyword is allowed to be created (same ID will be overwritten)")
         except Exception as e:
-            logger.info("✅ 正确拒绝重复关键词: %s", e)
+            logger.info("✅ Duplicate keyword correctly rejected: %s", e)
 
         await repo.flush()
 
     except Exception as e:
-        logger.error("❌ 测试边界情况失败: %s", e)
+        logger.error("❌ Edge cases test failed: %s", e)
         raise
     finally:
-        # 清理测试数据
+        # Clean up test data
         try:
             await repo.delete_by_type(test_type)
             await repo.flush()
-            logger.info("✅ 边界测试数据清理完成")
+            logger.info("✅ Edge test data cleanup completed")
         except Exception:
             pass
 
-    logger.info("✅ 边界情况测试完成\n")
+    logger.info("✅ Edge cases test completed\n")
 
 
 async def test_real_world_scenario():
-    """测试真实世界场景：技能词汇表"""
-    logger.info("========== 开始测试真实场景：技能词汇表 ==========")
+    """Test real-world scenario: skill vocabulary"""
+    logger.info("========== Starting real-world scenario test: skill vocabulary ==========")
 
     repo = get_bean_by_type(KeywordVocabularyMilvusRepository)
     test_model = "bge-m3"
 
-    # 模拟真实的技能词汇表
+    # Simulate real skill vocabulary
     skills_data = {
         "programming": [
-            "Python编程",
-            "Java开发",
-            "C++编程",
-            "JavaScript开发",
-            "Go语言",
-            "Rust编程",
-            "TypeScript开发",
+            "Python programming",
+            "Java development",
+            "C++ programming",
+            "JavaScript development",
+            "Go language",
+            "Rust programming",
+            "TypeScript development",
         ],
         "framework": [
-            "React框架",
+            "React framework",
             "Vue.js",
             "Django",
             "Spring Boot",
@@ -509,15 +509,15 @@ async def test_real_world_scenario():
             "Express.js",
         ],
         "database": [
-            "MySQL数据库",
+            "MySQL database",
             "PostgreSQL",
             "MongoDB",
-            "Redis缓存",
+            "Redis cache",
             "Elasticsearch",
             "Cassandra",
         ],
         "devops": [
-            "Docker容器",
+            "Docker container",
             "Kubernetes",
             "Jenkins",
             "GitLab CI",
@@ -525,31 +525,31 @@ async def test_real_world_scenario():
             "Ansible",
         ],
         "ai_ml": [
-            "机器学习",
-            "深度学习",
-            "自然语言处理",
-            "计算机视觉",
+            "machine learning",
+            "deep learning",
+            "natural language processing",
+            "computer vision",
             "PyTorch",
             "TensorFlow",
             "scikit-learn",
         ],
     }
 
-    # 为每个技能类别创建一个基准向量（同类技能更相似）
+    # Create a base vector for each skill category (skills in same category are more similar)
     category_base_vectors = {
         category: generate_random_vector() for category in skills_data.keys()
     }
 
     try:
-        # 创建技能词汇表
-        logger.info("创建技能词汇表...")
+        # Create skill vocabulary
+        logger.info("Creating skill vocabulary...")
         total_skills = 0
 
         for category, skills in skills_data.items():
             base_vec = category_base_vectors[category]
 
             for skill in skills:
-                # 同类技能使用相似向量
+                # Skills in same category use similar vectors
                 vector = generate_similar_vector(base_vec, noise_level=0.08)
 
                 await repo.create_and_save_keyword(
@@ -564,19 +564,19 @@ async def test_real_world_scenario():
         await repo.load()
         await asyncio.sleep(2)
         logger.info(
-            "✅ 创建了 %d 个技能关键词，分为 %d 个类别", total_skills, len(skills_data)
+            "✅ Created %d skill keywords, divided into %d categories", total_skills, len(skills_data)
         )
 
-        # 场景1: 根据已知技能查找相似技能
-        logger.info("\n场景1: 查找与 'Python编程' 相似的技能")
-        python_doc = await repo.get_keyword_by_text("Python编程", "programming")
-        assert python_doc is not None, "应该找到 Python编程"
+        # Scenario 1: Find similar skills based on known skill
+        logger.info("\nScenario 1: Find skills similar to 'Python programming'")
+        python_doc = await repo.get_keyword_by_text("Python programming", "programming")
+        assert python_doc is not None, "Python programming should be found"
 
         similar_to_python = await repo.search_similar_keywords(
-            query_vector=python_doc["vector"], keyword_type=None, limit=5  # 不限制类型
+            query_vector=python_doc["vector"], keyword_type=None, limit=5  # No type restriction
         )
 
-        logger.info("与 'Python编程' 最相似的5个技能:")
+        logger.info("Top 5 skills similar to 'Python programming':")
         for i, result in enumerate(similar_to_python, 1):
             logger.info(
                 "  %d. %s [%s] (score: %.4f)",
@@ -586,14 +586,14 @@ async def test_real_world_scenario():
                 result["score"],
             )
 
-        # 验证：最相似的应该主要是 programming 类别
+        # Verify: Top results should mainly be programming category
         top_3_types = [r["type"] for r in similar_to_python[:3]]
         programming_count = sum(1 for t in top_3_types if t == "programming")
-        assert programming_count >= 1, "Top 3 应该包含至少1个编程类技能"
-        logger.info("✅ 相似技能查找符合预期")
+        assert programming_count >= 1, "Top 3 should include at least 1 programming skill"
+        logger.info("✅ Similar skills search meets expectations")
 
-        # 场景2: 按类别查找相似技能
-        logger.info("\n场景2: 在 'ai_ml' 类别中查找与某个向量相似的技能")
+        # Scenario 2: Find similar skills within a category
+        logger.info("\nScenario 2: Find skills similar to a vector within 'ai_ml' category")
         ai_base_vec = category_base_vectors["ai_ml"]
         query_vec = generate_similar_vector(ai_base_vec, noise_level=0.05)
 
@@ -601,36 +601,36 @@ async def test_real_world_scenario():
             query_vector=query_vec, keyword_type="ai_ml", limit=3
         )
 
-        logger.info("AI/ML 类别中最相似的3个技能:")
+        logger.info("Top 3 skills most similar in AI/ML category:")
         for i, result in enumerate(ai_results, 1):
             logger.info("  %d. %s (score: %.4f)", i, result["keyword"], result["score"])
 
-        assert len(ai_results) >= 3, "应该找到至少3个AI/ML技能"
-        logger.info("✅ 类别过滤搜索成功")
+        assert len(ai_results) >= 3, "At least 3 AI/ML skills should be found"
+        logger.info("✅ Category-filtered search successful")
 
-        # 场景3: 列出某个类别的所有技能
-        logger.info("\n场景3: 列出 'database' 类别的所有技能")
+        # Scenario 3: List all skills in a category
+        logger.info("\nScenario 3: List all skills in 'database' category")
         db_skills = await repo.list_keywords_by_type("database")
 
-        logger.info("数据库类技能（共 %d 个）:", len(db_skills))
+        logger.info("Database category skills (total %d):", len(db_skills))
         for skill in db_skills:
             logger.info("  - %s", skill["keyword"])
 
         expected_count = len(skills_data["database"])
         assert (
             len(db_skills) == expected_count
-        ), f"应该有 {expected_count} 个数据库技能，实际有 {len(db_skills)} 个"
-        logger.info("✅ 类别列表查询成功")
+        ), f"{expected_count} database skills should exist, actually found {len(db_skills)}"
+        logger.info("✅ Category list query successful")
 
-        # 场景4: 跨类别搜索
-        logger.info("\n场景4: 跨类别搜索（查找所有与开发相关的技能）")
+        # Scenario 4: Cross-category search
+        logger.info("\nScenario 4: Cross-category search (find all skills related to development)")
         dev_query_vec = category_base_vectors["programming"]
 
         all_related = await repo.search_similar_keywords(
             query_vector=dev_query_vec, keyword_type=None, limit=10
         )
 
-        logger.info("与开发最相关的10个技能（跨类别）:")
+        logger.info("Top 10 skills most related to development (cross-category):")
         for i, result in enumerate(all_related, 1):
             logger.info(
                 "  %d. %s [%s] (score: %.4f)",
@@ -640,49 +640,49 @@ async def test_real_world_scenario():
                 result["score"],
             )
 
-        assert len(all_related) == 10, "应该返回10个结果"
-        logger.info("✅ 跨类别搜索成功")
+        assert len(all_related) == 10, "10 results should be returned"
+        logger.info("✅ Cross-category search successful")
 
-        # 场景5: 统计各类别数量
-        logger.info("\n场景5: 统计各类别技能数量")
+        # Scenario 5: Count skills by category
+        logger.info("\nScenario 5: Count skills by category")
         category_counts = {}
 
         for category in skills_data.keys():
             keywords = await repo.list_keywords_by_type(category)
             category_counts[category] = len(keywords)
 
-        logger.info("各类别技能统计:")
+        logger.info("Skill count by category:")
         for category, count in category_counts.items():
             expected = len(skills_data[category])
-            logger.info("  - %s: %d (预期: %d)", category, count, expected)
-            assert count == expected, f"{category} 类别数量不匹配"
+            logger.info("  - %s: %d (expected: %d)", category, count, expected)
+            assert count == expected, f"{category} category count mismatch"
 
-        logger.info("✅ 统计验证成功")
+        logger.info("✅ Statistics verification successful")
 
     except Exception as e:
-        logger.error("❌ 测试真实场景失败: %s", e)
+        logger.error("❌ Real-world scenario test failed: %s", e)
         raise
     finally:
-        # 清理所有测试数据
-        logger.info("\n清理所有技能数据...")
+        # Clean up all test data
+        logger.info("\nCleaning up all skill data...")
         try:
             total_deleted = 0
             for category in skills_data.keys():
                 count = await repo.delete_by_type(category)
                 total_deleted += count
-                logger.info("  清理 %s: %d 条", category, count)
+                logger.info("  Cleaned up %s: %d entries", category, count)
             await repo.flush()
-            logger.info("✅ 总共清理了 %d 条数据", total_deleted)
+            logger.info("✅ Total cleaned up %d entries", total_deleted)
         except Exception as cleanup_error:
-            logger.error("清理测试数据时出现错误: %s", cleanup_error)
+            logger.error("Error during cleanup: %s", cleanup_error)
 
-    logger.info("✅ 真实场景测试完成\n")
+    logger.info("✅ Real-world scenario test completed\n")
 
 
 async def run_all_tests():
-    """运行所有测试"""
+    """Run all tests"""
     logger.info("=" * 60)
-    logger.info("🚀 开始运行 KeywordVocabularyMilvusRepository 所有测试")
+    logger.info("🚀 Starting all tests for KeywordVocabularyMilvusRepository")
     logger.info("=" * 60 + "\n")
 
     try:
@@ -694,12 +694,12 @@ async def run_all_tests():
         await test_real_world_scenario()
 
         logger.info("=" * 60)
-        logger.info("✅ 所有测试完成！")
+        logger.info("✅ All tests completed!")
         logger.info("=" * 60)
 
     except Exception as e:
         logger.error("=" * 60)
-        logger.error("❌ 测试过程中出现错误: %s", e)
+        logger.error("❌ Error during testing: %s", e)
         logger.error("=" * 60)
         raise
 

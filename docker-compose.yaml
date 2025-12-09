@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  # MongoDB 数据库
+  # MongoDB database
   mongodb:
     image: mongo:7.0
     container_name: memsys-mongodb
@@ -24,7 +24,7 @@ services:
       retries: 3
       start_period: 40s
 
-  # Elasticsearch 搜索引擎
+  # Elasticsearch search engine
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
     container_name: memsys-elasticsearch
@@ -52,7 +52,7 @@ services:
       retries: 3
       start_period: 40s
 
-  # Milvus 向量数据库
+  # Milvus vector database
   milvus-etcd:
     image: quay.io/coreos/etcd:v3.5.5
     container_name: memsys-milvus-etcd
@@ -119,7 +119,7 @@ services:
     networks:
       - memsys-network
 
-  # Redis 缓存
+  # Redis cache
   redis:
     image: redis:7.2-alpine
     container_name: memsys-redis
@@ -139,8 +139,8 @@ services:
 
   
 
-  # Memsys 主应用已改为本地运行：
-  # 使用 uv 在本机启动应用，例如：
+  # Memsys main application has been changed to local running:
+  # Use uv to start the application locally, for example:
   #   uv run python run.py
 
 volumes:

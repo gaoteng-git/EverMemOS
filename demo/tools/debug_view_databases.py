@@ -157,7 +157,7 @@ def _get_milvus_row_count(collection_name: str, collection: Collection) -> int:
         if isinstance(stats_info, dict):
             return int(stats_info.get("row_count", 0))
 
-    # 部分老版本没有 get_collection_stats，退而求其次汇总 segment 行数
+    # For some old versions, get_collection_stats is not available, so we fall back to summing the segment row count
     segment_infos = utility.get_query_segment_info(collection_name)
     if segment_infos:
         total_rows = 0
@@ -168,7 +168,7 @@ def _get_milvus_row_count(collection_name: str, collection: Collection) -> int:
             total_rows += int(num_rows or 0)
         return total_rows
 
-    # 最终兜底：返回 num_entities（可能包含已删除数据）
+    # Final fallback: return num_entities (possibly containing deleted data)
     return collection.num_entities
 
 

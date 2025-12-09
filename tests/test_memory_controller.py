@@ -1,29 +1,29 @@
 """
-Memory Controller API 测试脚本
-验证 /api/v1/memories 下的所有接口的输入输出结构
+Memory Controller API Test Script
+Verify input and output structures of all endpoints under /api/v1/memories
 
-使用方法:
-    # 运行所有测试
+Usage:
+    # Run all tests
     python tests/test_memory_controller.py
     
-    # 指定API地址
+    # Specify API address
     python tests/test_memory_controller.py --base-url http://localhost:1995
     
-    # 指定测试用户
+    # Specify test user
     python tests/test_memory_controller.py --base-url http://dev-server:1995 --user-id test_user_123
     
-    # 单独测试某个方法
+    # Test a specific method
     python tests/test_memory_controller.py --test-method memorize
     python tests/test_memory_controller.py --test-method fetch_episodic
     python tests/test_memory_controller.py --test-method fetch_event_log
     python tests/test_memory_controller.py --test-method search_keyword
     
-    # 测试除了某些方法之外的所有方法（参数用逗号分隔）
+    # Test all methods except certain ones (parameters separated by commas)
     python tests/test_memory_controller.py --except-test-method memorize
     python tests/test_memory_controller.py --except-test-method memorize,fetch_episodic
     python tests/test_memory_controller.py --except-test-method save_meta,patch_meta
     
-    # 关闭同步模式（使用后台模式）
+    # Disable sync mode (use background mode)
     python tests/test_memory_controller.py --sync-mode false
 """
 
@@ -35,14 +35,14 @@ from zoneinfo import ZoneInfo
 
 import requests
 
-# 使用上海时区
+# Use Shanghai timezone
 SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 
 
 class MemoryControllerTester:
-    """Memory Controller API 测试类"""
+    """Memory Controller API Test Class"""
 
-    # 默认租户信息
+    # Default tenant information
     DEFAULT_ORGANIZATION_ID = "test_memory_api_organization"
     DEFAULT_SPACE_ID = "test_memory_api_space"
     DEFAULT_API_KEY = "test_memory_api_key"
@@ -59,17 +59,17 @@ class MemoryControllerTester:
         sync_mode: bool = True,
     ):
         """
-        初始化测试器
+        Initialize tester
 
         Args:
-            base_url: API基础URL
-            user_id: 测试用户ID
-            group_id: 测试群组ID
-            organization_id: 组织ID（默认: test_memory_api_organization）
-            space_id: 空间ID（默认: test_memory_api_space）
-            api_key: API密钥（默认: test_memory_api_key）
-            timeout: 请求超时时间(秒)，默认180秒(3分钟)
-            sync_mode: 是否启用同步模式（默认: True，关闭后台模式以保证时序测试效果）
+            base_url: API base URL
+            user_id: Test user ID
+            group_id: Test group ID
+            organization_id: Organization ID (default: test_memory_api_organization)
+            space_id: Space ID (default: test_memory_api_space)
+            api_key: API key (default: test_memory_api_key)
+            timeout: Request timeout in seconds, default 180 seconds (3 minutes)
+            sync_mode: Whether to enable sync mode (default: True, disable background mode to ensure sequential test effectiveness)
         """
         self.base_url = base_url
         self.api_prefix = "/api/v1/memories"
@@ -83,10 +83,10 @@ class MemoryControllerTester:
 
     def get_tenant_headers(self) -> dict:
         """
-        获取租户相关的请求头
+        Get tenant-related request headers
 
         Returns:
-            dict: 包含 X-Organization-Id、X-Space-Id 和可选的 X-API-Key 的字典
+            dict: Dictionary containing X-Organization-Id, X-Space-Id, and optional X-API-Key
         """
         headers = {
             "X-Organization-Id": self.organization_id,
@@ -98,59 +98,59 @@ class MemoryControllerTester:
 
     def init_database(self) -> bool:
         """
-        初始化租户数据库
+        Initialize tenant database
 
-        调用 /internal/tenant/init-db 接口初始化数据库。
+        Call /internal/tenant/init-db endpoint to initialize database.
 
         Returns:
-            bool: 初始化是否成功
+            bool: Whether initialization was successful
         """
         url = f"{self.base_url}/internal/tenant/init-db"
         headers = self.get_tenant_headers()
 
         print("\n" + "=" * 80)
-        print("  初始化租户数据库")
+        print("  Initialize Tenant Database")
         print("=" * 80)
         print(f"📍 URL: POST {url}")
         print(
-            f"📤 租户信息: organization_id={self.organization_id}, space_id={self.space_id}"
+            f"📤 Tenant Info: organization_id={self.organization_id}, space_id={self.space_id}"
         )
-        print(f"📤 请求头: {json.dumps(headers, indent=2, ensure_ascii=False)}")
+        print(f"📤 Request Headers: {json.dumps(headers, indent=2, ensure_ascii=False)}")
 
         try:
             response = requests.post(url, headers=headers, timeout=self.timeout)
-            print(f"\n📥 响应状态码: {response.status_code}")
+            print(f"\n📥 Response Status Code: {response.status_code}")
             response_json = response.json()
-            print("📥 响应数据:")
+            print("📥 Response Data:")
             print(json.dumps(response_json, indent=2, ensure_ascii=False))
 
             if response.status_code == 200 and response_json.get("success"):
                 print(
-                    f"\n✅ 数据库初始化成功: tenant_id={response_json.get('tenant_id')}"
+                    f"\n✅ Database initialization successful: tenant_id={response_json.get('tenant_id')}"
                 )
                 return True
             else:
                 print(
-                    f"\n⚠️  数据库初始化返回: {response_json.get('message', 'Unknown')}"
+                    f"\n⚠️  Database initialization returned: {response_json.get('message', 'Unknown')}"
                 )
-                # 即使失败也继续，可能是数据库已存在
+                # Continue even if failed, possibly database already exists
                 return True
         except Exception as e:  # noqa: BLE001
-            print(f"\n❌ 数据库初始化失败: {e}")
+            print(f"\n❌ Database initialization failed: {e}")
             return False
 
     def print_section(self, title: str):
-        """打印分隔线"""
+        """Print section separator"""
         print("\n" + "=" * 80)
         print(f"  {title}")
         print("=" * 80)
 
     def _get_sync_mode_params(self) -> dict:
         """
-        获取同步模式的查询参数
+        Get query parameters for sync mode
 
         Returns:
-            dict: 包含 sync_mode 参数的字典（如果启用了同步模式）
+            dict: Dictionary containing sync_mode parameter (if sync mode is enabled)
         """
         if self.sync_mode:
             return {"sync_mode": "true"}
@@ -158,19 +158,19 @@ class MemoryControllerTester:
 
     def call_post_api(self, endpoint: str, data: dict):
         """
-        调用 POST API 并打印结果
+        Call POST API and print results
 
         Args:
-            endpoint: API端点
-            data: 请求数据
+            endpoint: API endpoint
+            data: Request data
 
         Returns:
             (status_code, response_json)
         """
-        # 如果是 memorize 接口且没有提供 sender，则随机生成一个
+        # If it's the memorize endpoint and sender is not provided, generate one randomly
         if endpoint == "" and "sender" not in data:
             data["sender"] = f"user_{uuid.uuid4().hex[:12]}"
-            print(f"⚠️  未提供 sender，自动生成: {data['sender']}")
+            print(f"⚠️  Sender not provided, auto-generated: {data['sender']}")
 
         url = f"{self.base_url}{self.api_prefix}{endpoint}"
         headers = self.get_tenant_headers()
@@ -178,30 +178,30 @@ class MemoryControllerTester:
 
         print(f"\n📍 URL: POST {url}")
         if params:
-            print(f"📤 查询参数: {params}")
-        print("📤 请求数据:")
+            print(f"📤 Query Parameters: {params}")
+        print("📤 Request Data:")
         print(json.dumps(data, indent=2, ensure_ascii=False))
 
         try:
             response = requests.post(
                 url, json=data, headers=headers, params=params, timeout=self.timeout
             )
-            print(f"\n📥 响应状态码: {response.status_code}")
-            print("📥 响应数据:")
+            print(f"\n📥 Response Status Code: {response.status_code}")
+            print("📥 Response Data:")
             response_json = response.json()
             print(json.dumps(response_json, indent=2, ensure_ascii=False))
             return response.status_code, response_json
-        except Exception as e:  # noqa: BLE001 需要捕获所有异常以保证脚本继续运行
-            print(f"\n❌ 请求失败: {e}")
+        except Exception as e:  # noqa: BLE001 Need to catch all exceptions to ensure script continues
+            print(f"\n❌ Request failed: {e}")
             return None, None
 
     def call_get_api(self, endpoint: str, params: dict = None):
         """
-        调用 GET API 并打印结果
+        Call GET API and print results
 
         Args:
-            endpoint: API端点
-            params: 查询参数
+            endpoint: API endpoint
+            params: Query parameters
 
         Returns:
             (status_code, response_json)
@@ -209,38 +209,38 @@ class MemoryControllerTester:
         url = f"{self.base_url}{self.api_prefix}{endpoint}"
         headers = self.get_tenant_headers()
 
-        # 合并同步模式参数
+        # Merge sync mode parameters
         merged_params = self._get_sync_mode_params()
         if params:
             merged_params.update(params)
 
         print(f"\n📍 URL: GET {url}")
         if merged_params:
-            print("📤 查询参数:")
+            print("📤 Query Parameters:")
             print(json.dumps(merged_params, indent=2, ensure_ascii=False))
 
         try:
             response = requests.get(
                 url, params=merged_params, headers=headers, timeout=self.timeout
             )
-            print(f"\n📥 响应状态码: {response.status_code}")
-            print("📥 响应数据:")
+            print(f"\n📥 Response Status Code: {response.status_code}")
+            print("📥 Response Data:")
             response_json = response.json()
             print(json.dumps(response_json, indent=2, ensure_ascii=False))
             return response.status_code, response_json
-        except Exception as e:  # noqa: BLE001 需要捕获所有异常以保证脚本继续运行
-            print(f"\n❌ 请求失败: {e}")
+        except Exception as e:  # noqa: BLE001 Need to catch all exceptions to ensure script continues
+            print(f"\n❌ Request failed: {e}")
             return None, None
 
     def call_get_with_body_api(self, endpoint: str, data: dict):
         """
-        调用 GET API（带 body）并打印结果
+        Call GET API (with body) and print results
 
-        虽然不常见，但某些搜索接口（如 Elasticsearch）使用 GET + body 的方式传递复杂参数
+        Although uncommon, some search interfaces (e.g., Elasticsearch) use GET + body to pass complex parameters
 
         Args:
-            endpoint: API端点
-            data: 请求数据（放在 body 中）
+            endpoint: API endpoint
+            data: Request data (placed in body)
 
         Returns:
             (status_code, response_json)
@@ -251,12 +251,12 @@ class MemoryControllerTester:
 
         print(f"\n📍 URL: GET {url} (with body)")
         if params:
-            print(f"📤 查询参数: {params}")
-        print("📤 请求数据:")
+            print(f"📤 Query Parameters: {params}")
+        print("📤 Request Data:")
         print(json.dumps(data, indent=2, ensure_ascii=False))
 
         try:
-            # GET 请求带 body（requests 库支持，但不常用）
+            # GET request with body (requests library supports this, though not common)
             response = requests.request(
                 "GET",
                 url,
@@ -265,22 +265,22 @@ class MemoryControllerTester:
                 params=params,
                 timeout=self.timeout,
             )
-            print(f"\n📥 响应状态码: {response.status_code}")
-            print("📥 响应数据:")
+            print(f"\n📥 Response Status Code: {response.status_code}")
+            print("📥 Response Data:")
             response_json = response.json()
             print(json.dumps(response_json, indent=2, ensure_ascii=False))
             return response.status_code, response_json
-        except Exception as e:  # noqa: BLE001 需要捕获所有异常以保证脚本继续运行
-            print(f"\n❌ 请求失败: {e}")
+        except Exception as e:  # noqa: BLE001 Need to catch all exceptions to ensure script continues
+            print(f"\n❌ Request failed: {e}")
             return None, None
 
     def call_patch_api(self, endpoint: str, data: dict):
         """
-        调用 PATCH API 并打印结果
+        Call PATCH API and print results
 
         Args:
-            endpoint: API端点
-            data: 请求数据
+            endpoint: API endpoint
+            data: Request data
 
         Returns:
             (status_code, response_json)
@@ -291,178 +291,178 @@ class MemoryControllerTester:
 
         print(f"\n📍 URL: PATCH {url}")
         if params:
-            print(f"📤 查询参数: {params}")
-        print("📤 请求数据:")
+            print(f"📤 Query Parameters: {params}")
+        print("📤 Request Data:")
         print(json.dumps(data, indent=2, ensure_ascii=False))
 
         try:
             response = requests.patch(
                 url, json=data, headers=headers, params=params, timeout=self.timeout
             )
-            print(f"\n📥 响应状态码: {response.status_code}")
-            print("📥 响应数据:")
+            print(f"\n📥 Response Status Code: {response.status_code}")
+            print("📥 Response Data:")
             response_json = response.json()
             print(json.dumps(response_json, indent=2, ensure_ascii=False))
             return response.status_code, response_json
-        except Exception as e:  # noqa: BLE001 需要捕获所有异常以保证脚本继续运行
-            print(f"\n❌ 请求失败: {e}")
+        except Exception as e:  # noqa: BLE001 Need to catch all exceptions to ensure script continues
+            print(f"\n❌ Request failed: {e}")
             return None, None
 
     def test_memorize_single_message(self):
-        """测试1: POST /api/v1/memories - 存储对话记忆（发送多条消息以触发边界检测）"""
-        self.print_section("测试1: POST /api/v1/memories - 存储对话记忆")
+        """Test 1: POST /api/v1/memories - Store conversation memory (send multiple messages to trigger boundary detection)"""
+        self.print_section("Test 1: POST /api/v1/memories - Store Conversation Memory")
 
-        # 准备一段简单的对话，模拟用户和助手的交互
-        # 发送多条消息可以触发边界检测并提取记忆
+        # Prepare a simple conversation to simulate user and assistant interaction
+        # Sending multiple messages can trigger boundary detection and extract memories
         base_time = datetime.now(SHANGHAI_TZ)
 
-        # 构建对话序列，通过以下方式触发边界检测：
-        # 1. 第一个场景：关于咖啡偏好的对话（4条消息）
-        # 2. 第二个场景：开启新话题（通过时间间隔+主题切换触发边界）
+        # Build conversation sequence, triggering boundary detection through:
+        # 1. First scenario: Discussion about coffee preferences (4 messages)
+        # 2. Second scenario: Start new topic (trigger boundary via time gap + topic switch)
         messages = [
-            # 场景1：讨论咖啡偏好（完整的对话情节）
+            # Scenario 1: Discuss coffee preferences (complete conversation episode)
             {
                 "group_id": self.group_id,
-                "group_name": "测试群组",
+                "group_name": "Test Group",
                 "message_id": "msg_001",
                 "create_time": base_time.isoformat(),
                 "sender": self.user_id,
-                "sender_name": "测试用户",
-                "content": "我最近想养成喝咖啡的习惯，你有什么建议吗？",
+                "sender_name": "Test User",
+                "content": "I recently want to develop a habit of drinking coffee, do you have any suggestions?",
                 "refer_list": [],
             },
             {
                 "group_id": self.group_id,
-                "group_name": "测试群组",
+                "group_name": "Test Group",
                 "message_id": "msg_002",
                 "create_time": (base_time + timedelta(seconds=30)).isoformat(),
                 "sender": "assistant_001",
-                "sender_name": "AI助手",
-                "content": "当然可以！咖啡有很多种类，从浓郁的意式浓缩到温和的美式，您可以根据口味选择。建议从美式咖啡开始尝试。",
+                "sender_name": "AI Assistant",
+                "content": "Of course! Coffee comes in many varieties, from strong espresso to mild Americano. You can choose based on your taste. I suggest starting with Americano.",
                 "refer_list": [],
             },
             {
                 "group_id": self.group_id,
-                "group_name": "测试群组",
+                "group_name": "Test Group",
                 "message_id": "msg_003",
                 "create_time": (base_time + timedelta(minutes=1)).isoformat(),
                 "sender": self.user_id,
-                "sender_name": "测试用户",
-                "content": "我喜欢喝美式咖啡，不加糖不加奶，越浓越好。",
+                "sender_name": "Test User",
+                "content": "I like drinking Americano, no sugar, no milk, the stronger the better.",
                 "refer_list": [],
             },
             {
                 "group_id": self.group_id,
-                "group_name": "测试群组",
+                "group_name": "Test Group",
                 "message_id": "msg_004",
                 "create_time": (
                     base_time + timedelta(minutes=1, seconds=30)
                 ).isoformat(),
                 "sender": "assistant_001",
-                "sender_name": "AI助手",
-                "content": "了解您的偏好了！纯黑美式咖啡确实能完整体验咖啡豆的风味。建议选择深度烘焙的咖啡豆会更浓郁。",
+                "sender_name": "AI Assistant",
+                "content": "I understand your preference! Black Americano can fully experience the flavor of coffee beans. I suggest choosing dark roasted beans for a stronger taste.",
                 "refer_list": [],
             },
-            # 场景2：开启新话题（通过较长时间间隔+主题切换触发边界）
-            # 根据边界检测规则：时间间隔超过4小时且内容无关联会触发边界
+            # Scenario 2: Start new topic (trigger boundary via longer time gap + topic switch)
+            # According to boundary detection rules: time gap over 4 hours and content unrelated will trigger boundary
             {
                 "group_id": self.group_id,
-                "group_name": "测试群组",
+                "group_name": "Test Group",
                 "message_id": "msg_005",
                 "create_time": (base_time + timedelta(hours=24)).isoformat(),
                 "sender": self.user_id,
-                "sender_name": "测试用户",
-                "content": "对了，周末的项目进展如何？",
+                "sender_name": "Test User",
+                "content": "By the way, how is the weekend project progressing?",
                 "refer_list": [],
             },
             {
                 "group_id": self.group_id,
-                "group_name": "测试群组",
+                "group_name": "Test Group",
                 "message_id": "msg_006",
                 "create_time": (
                     base_time + timedelta(hours=24, seconds=30)
                 ).isoformat(),
                 "sender": "assistant_001",
-                "sender_name": "AI助手",
-                "content": "项目进展顺利，主要功能已经完成了80%，预计下周可以提交测试。",
+                "sender_name": "AI Assistant",
+                "content": "The project is progressing smoothly, main features are 80% complete, expected to submit for testing next week.",
                 "refer_list": [],
             },
         ]
 
-        # 逐条发送消息
-        print("\n📨 开始发送对话序列...")
-        print("💡 策略说明：前4条消息构成完整对话场景1（咖啡偏好讨论）")
-        print("💡 第5条消息通过5小时时间间隔+新主题触发边界检测")
-        print("💡 这样可以确保场景1的记忆被成功提取")
+        # Send messages one by one
+        print("\n📨 Starting to send conversation sequence...")
+        print("💡 Strategy Explanation: First 4 messages form complete scenario 1 (coffee preference discussion)")
+        print("💡 5th message triggers boundary detection via 5-hour time gap + new topic")
+        print("💡 This ensures memory from scenario 1 is successfully extracted")
 
         last_response = None
         for i, msg in enumerate(messages, 1):
             if i == 5:
                 print(
-                    f"\n🔄 --- 场景切换：发送第 {i}/{len(messages)} 条消息（触发边界） ---"
+                    f"\n🔄 --- Scenario Switch: Sending message {i}/{len(messages)} (triggering boundary) ---"
                 )
             else:
-                print(f"\n--- 发送第 {i}/{len(messages)} 条消息 ---")
+                print(f"\n--- Sending message {i}/{len(messages)} ---")
 
             status_code, response = self.call_post_api("", msg)
 
-            # 验证每条消息都成功处理
+            # Verify each message is successfully processed
             assert (
                 status_code == 200
-            ), f"第 {i} 条消息状态码应该是 200，实际: {status_code}"
-            assert response.get("status") == "ok", f"第 {i} 条消息状态应该是 ok"
+            ), f"Message {i} status code should be 200, actual: {status_code}"
+            assert response.get("status") == "ok", f"Message {i} status should be ok"
 
             last_response = response
 
-        # 使用最后一条消息的响应进行验证
+        # Use the response from the last message for validation
         status_code = 200
         response = last_response
 
-        # 断言：验证结果结构
-        print("\n📊 验证对话记忆提取结果...")
-        assert "result" in response, "成功响应应包含 result 字段"
+        # Assert: Validate result structure
+        print("\n📊 Validating conversation memory extraction results...")
+        assert "result" in response, "Successful response should contain result field"
         result = response["result"]
-        assert "saved_memories" in result, "result 应包含 saved_memories 字段"
-        assert "count" in result, "result 应包含 count 字段"
-        assert "status_info" in result, "result 应包含 status_info 字段"
+        assert "saved_memories" in result, "result should contain saved_memories field"
+        assert "count" in result, "result should contain count field"
+        assert "status_info" in result, "result should contain status_info field"
 
-        # 验证 saved_memories 是列表
-        assert isinstance(result["saved_memories"], list), "saved_memories 应该是列表"
-        assert result["count"] >= 0, "count 应该 >= 0"
+        # Validate saved_memories is a list
+        assert isinstance(result["saved_memories"], list), "saved_memories should be a list"
+        assert result["count"] >= 0, "count should be >= 0"
         assert result["status_info"] in [
             "accumulated",
             "extracted",
-        ], "status_info 应该是 accumulated 或 extracted"
+        ], "status_info should be accumulated or extracted"
 
-        # 如果有提取的记忆，验证每条记忆的结构
+        # If there are extracted memories, validate each memory's structure
         if result["count"] > 0:
-            print(f"\n✅ 成功提取 {result['count']} 条记忆！")
-            print(f"✅ 边界检测成功：通过时间间隔(5小时)+主题切换触发")
+            print(f"\n✅ Successfully extracted {result['count']} memories!")
+            print(f"✅ Boundary detection successful: triggered by time gap (5 hours) + topic switch")
             for idx, memory in enumerate(result["saved_memories"], 1):
-                assert isinstance(memory, dict), f"第 {idx} 条记忆应该是字典"
-                # 注意：不同的记忆类型可能有不同的字段结构
-                # 这里只验证基本的字段存在
+                assert isinstance(memory, dict), f"Memory {idx} should be a dictionary"
+                # Note: Different memory types may have different field structures
+                # Here only basic field existence is validated
                 memory_type = memory.get('memory_type', 'unknown')
                 summary = memory.get('summary', memory.get('content', 'no summary'))[
                     :50
                 ]
-                print(f"  记忆 {idx}: {memory_type} - {summary}...")
+                print(f"  Memory {idx}: {memory_type} - {summary}...")
         else:
             print(
-                f"\n⚠️  消息已累积，等待边界检测（status_info: {result['status_info']}）"
+                f"\n⚠️  Messages accumulated, waiting for boundary detection (status_info: {result['status_info']})"
             )
-            print(f"   已发送 {len(messages)} 条消息，但可能未达到边界检测条件")
-            print(f"   💡 提示：边界检测需要满足以下条件之一：")
-            print(f"      1. 跨天（新消息与上一条消息日期不同）")
-            print(f"      2. 长时间中断（超过4小时）+ 主题切换")
-            print(f"      3. 明确的场景/主题切换信号")
+            print(f"   Sent {len(messages)} messages, but boundary detection conditions may not be met")
+            print(f"   💡 Tip: Boundary detection requires one of the following conditions:")
+            print(f"      1. Cross-day (new message date differs from previous message)")
+            print(f"      2. Long interruption (over 4 hours) + topic switch")
+            print(f"      3. Clear scene/topic switch signal")
 
-        print(f"\n✅ Memorize 测试完成")
+        print(f"\n✅ Memorize Test Completed")
         return status_code, response
 
     def test_fetch_episodic(self):
-        """测试2: GET /api/v1/memories - 获取用户情景记忆（episodic_memory类型，通过 body 传参）"""
-        self.print_section("测试2: GET /api/v1/memories - 获取用户情景记忆")
+        """Test 2: GET /api/v1/memories - Fetch user episodic memory (episodic_memory type, pass parameters via body)"""
+        self.print_section("Test 2: GET /api/v1/memories - Fetch User Episodic Memory")
 
         data = {
             "user_id": self.user_id,
@@ -473,53 +473,53 @@ class MemoryControllerTester:
 
         status_code, response = self.call_get_with_body_api("", data)
 
-        # 断言：精确验证响应结构
-        assert status_code == 200, f"状态码应该是 200，实际: {status_code}"
+        # Assert: Precisely validate response structure
+        assert status_code == 200, f"Status code should be 200, actual: {status_code}"
         assert (
             response.get("status") == "ok"
-        ), f"状态应该是 ok，实际: {response.get('status')}"
-        assert "result" in response, "响应应包含 result 字段"
+        ), f"Status should be ok, actual: {response.get('status')}"
+        assert "result" in response, "Response should contain result field"
 
         result = response["result"]
-        assert "memories" in result, "result 应包含 memories 字段"
-        assert "total_count" in result, "result 应包含 total_count 字段"
-        assert "has_more" in result, "result 应包含 has_more 字段"
-        assert "metadata" in result, "result 应包含 metadata 字段"
+        assert "memories" in result, "result should contain memories field"
+        assert "total_count" in result, "result should contain total_count field"
+        assert "has_more" in result, "result should contain has_more field"
+        assert "metadata" in result, "result should contain metadata field"
 
-        # 验证数据类型
-        assert isinstance(result["memories"], list), "memories 应该是列表"
-        assert result["total_count"] >= 0, "total_count 应该 >= 0"
-        assert isinstance(result["has_more"], bool), "has_more 应该是布尔值"
+        # Validate data types
+        assert isinstance(result["memories"], list), "memories should be a list"
+        assert result["total_count"] >= 0, "total_count should be >= 0"
+        assert isinstance(result["has_more"], bool), "has_more should be boolean"
 
-        # 验证 metadata 结构
+        # Validate metadata structure
         metadata = result["metadata"]
-        assert isinstance(metadata, dict), "metadata 应该是字典"
-        assert "source" in metadata, "metadata 应包含 source 字段"
-        assert "user_id" in metadata, "metadata 应包含 user_id 字段"
-        assert "memory_type" in metadata, "metadata 应包含 memory_type 字段"
-        assert metadata.get("user_id") == self.user_id, "metadata 的 user_id 应该匹配"
+        assert isinstance(metadata, dict), "metadata should be a dictionary"
+        assert "source" in metadata, "metadata should contain source field"
+        assert "user_id" in metadata, "metadata should contain user_id field"
+        assert "memory_type" in metadata, "metadata should contain memory_type field"
+        assert metadata.get("user_id") == self.user_id, "metadata user_id should match"
 
-        # 如果有记忆，深度验证结构
+        # If there are memories, deeply validate structure
         if result["total_count"] > 0 and len(result["memories"]) > 0:
             for idx, memory in enumerate(result["memories"]):
-                assert isinstance(memory, dict), f"第 {idx} 条记忆应该是字典"
-                assert "user_id" in memory, f"第 {idx} 条记忆应包含 user_id"
-                assert "timestamp" in memory, f"第 {idx} 条记忆应包含 timestamp"
+                assert isinstance(memory, dict), f"Memory {idx} should be a dictionary"
+                assert "user_id" in memory, f"Memory {idx} should contain user_id"
+                assert "timestamp" in memory, f"Memory {idx} should contain timestamp"
                 assert (
                     memory.get("user_id") == self.user_id
-                ), f"第 {idx} 条记忆的 user_id 应该匹配"
+                ), f"Memory {idx} user_id should match"
 
             print(
-                f"✅ Fetch Episodic 成功，返回 {result['total_count']} 条情景记忆，已验证深度结构"
+                f"✅ Fetch Episodic successful, returned {result['total_count']} episodic memories, deep structure validated"
             )
         else:
-            print(f"✅ Fetch Episodic 成功，返回 {result['total_count']} 条情景记忆")
+            print(f"✅ Fetch Episodic successful, returned {result['total_count']} episodic memories")
 
         return status_code, response
 
     def test_fetch_foresight(self):
-        """测试3: GET /api/v1/memories - 获取个人前瞻（foresight类型，通过 body 传参）"""
-        self.print_section("测试3: GET /api/v1/memories - 获取个人前瞻")
+        """Test 3: GET /api/v1/memories - Fetch personal foresight (foresight type, pass parameters via body)"""
+        self.print_section("Test 3: GET /api/v1/memories - Fetch Personal Foresight")
 
         data = {
             "user_id": self.user_id,
@@ -530,55 +530,55 @@ class MemoryControllerTester:
 
         status_code, response = self.call_get_with_body_api("", data)
 
-        # 断言：精确验证响应结构
-        assert status_code == 200, f"状态码应该是 200，实际: {status_code}"
+        # Assert: Precisely validate response structure
+        assert status_code == 200, f"Status code should be 200, actual: {status_code}"
         assert (
             response.get("status") == "ok"
-        ), f"状态应该是 ok，实际: {response.get('status')}"
-        assert "result" in response, "响应应包含 result 字段"
+        ), f"Status should be ok, actual: {response.get('status')}"
+        assert "result" in response, "Response should contain result field"
 
         result = response["result"]
-        assert "memories" in result, "result 应包含 memories 字段"
-        assert "total_count" in result, "result 应包含 total_count 字段"
-        assert "has_more" in result, "result 应包含 has_more 字段"
-        assert "metadata" in result, "result 应包含 metadata 字段"
+        assert "memories" in result, "result should contain memories field"
+        assert "total_count" in result, "result should contain total_count field"
+        assert "has_more" in result, "result should contain has_more field"
+        assert "metadata" in result, "result should contain metadata field"
 
-        # 验证数据类型
-        assert isinstance(result["memories"], list), "memories 应该是列表"
-        assert result["total_count"] >= 0, "total_count 应该 >= 0"
-        assert isinstance(result["has_more"], bool), "has_more 应该是布尔值"
+        # Validate data types
+        assert isinstance(result["memories"], list), "memories should be a list"
+        assert result["total_count"] >= 0, "total_count should be >= 0"
+        assert isinstance(result["has_more"], bool), "has_more should be boolean"
 
-        # 验证 metadata 结构
+        # Validate metadata structure
         metadata = result["metadata"]
-        assert isinstance(metadata, dict), "metadata 应该是字典"
-        assert "source" in metadata, "metadata 应包含 source 字段"
-        assert "user_id" in metadata, "metadata 应包含 user_id 字段"
-        assert "memory_type" in metadata, "metadata 应包含 memory_type 字段"
-        assert metadata.get("user_id") == self.user_id, "metadata 的 user_id 应该匹配"
+        assert isinstance(metadata, dict), "metadata should be a dictionary"
+        assert "source" in metadata, "metadata should contain source field"
+        assert "user_id" in metadata, "metadata should contain user_id field"
+        assert "memory_type" in metadata, "metadata should contain memory_type field"
+        assert metadata.get("user_id") == self.user_id, "metadata user_id should match"
 
-        # 如果有记忆，深度验证结构
+        # If there are memories, deeply validate structure
         if result["total_count"] > 0 and len(result["memories"]) > 0:
             for idx, memory in enumerate(result["memories"]):
-                assert isinstance(memory, dict), f"第 {idx} 条记忆应该是字典"
-                assert "content" in memory, f"第 {idx} 条记忆应包含 content"
+                assert isinstance(memory, dict), f"Memory {idx} should be a dictionary"
+                assert "content" in memory, f"Memory {idx} should contain content"
                 assert (
                     "parent_episode_id" in memory
-                ), f"第 {idx} 条记忆应包含 parent_episode_id"
-                # 个人前瞻的 user_id 可能为 None（群组场景），所以不强制检查
+                ), f"Memory {idx} should contain parent_episode_id"
+                # Personal foresight user_id may be None (group scenario), so not enforced
 
             print(
-                f"✅ Fetch Personal Foresight 成功，返回 {result['total_count']} 条个人前瞻，已验证深度结构"
+                f"✅ Fetch Personal Foresight successful, returned {result['total_count']} personal foresights, deep structure validated"
             )
         else:
             print(
-                f"✅ Fetch Personal Foresight 成功，返回 {result['total_count']} 条个人前瞻"
+                f"✅ Fetch Personal Foresight successful, returned {result['total_count']} personal foresights"
             )
 
         return status_code, response
 
     def test_fetch_event_log(self):
-        """测试4: GET /api/v1/memories - 获取用户事件日志（event_log类型，通过 body 传参）"""
-        self.print_section("测试4: GET /api/v1/memories - 获取用户事件日志")
+        """Test 4: GET /api/v1/memories - Fetch user event log (event_log type, pass parameters via body)"""
+        self.print_section("Test 4: GET /api/v1/memories - Fetch User Event Log")
 
         data = {
             "user_id": self.user_id,
@@ -589,174 +589,174 @@ class MemoryControllerTester:
 
         status_code, response = self.call_get_with_body_api("", data)
 
-        # 断言：精确验证响应结构
-        assert status_code == 200, f"状态码应该是 200，实际: {status_code}"
+        # Assert: Precisely validate response structure
+        assert status_code == 200, f"Status code should be 200, actual: {status_code}"
         assert (
             response.get("status") == "ok"
-        ), f"状态应该是 ok，实际: {response.get('status')}"
-        assert "result" in response, "响应应包含 result 字段"
+        ), f"Status should be ok, actual: {response.get('status')}"
+        assert "result" in response, "Response should contain result field"
 
         result = response["result"]
-        assert "memories" in result, "result 应包含 memories 字段"
-        assert "total_count" in result, "result 应包含 total_count 字段"
-        assert "has_more" in result, "result 应包含 has_more 字段"
-        assert "metadata" in result, "result 应包含 metadata 字段"
+        assert "memories" in result, "result should contain memories field"
+        assert "total_count" in result, "result should contain total_count field"
+        assert "has_more" in result, "result should contain has_more field"
+        assert "metadata" in result, "result should contain metadata field"
 
-        # 验证数据类型
-        assert isinstance(result["memories"], list), "memories 应该是列表"
-        assert result["total_count"] >= 0, "total_count 应该 >= 0"
-        assert isinstance(result["has_more"], bool), "has_more 应该是布尔值"
+        # Validate data types
+        assert isinstance(result["memories"], list), "memories should be a list"
+        assert result["total_count"] >= 0, "total_count should be >= 0"
+        assert isinstance(result["has_more"], bool), "has_more should be boolean"
 
-        # 验证 metadata 结构
+        # Validate metadata structure
         metadata = result["metadata"]
-        assert isinstance(metadata, dict), "metadata 应该是字典"
-        assert "source" in metadata, "metadata 应包含 source 字段"
-        assert "user_id" in metadata, "metadata 应包含 user_id 字段"
-        assert "memory_type" in metadata, "metadata 应包含 memory_type 字段"
-        assert metadata.get("user_id") == self.user_id, "metadata 的 user_id 应该匹配"
+        assert isinstance(metadata, dict), "metadata should be a dictionary"
+        assert "source" in metadata, "metadata should contain source field"
+        assert "user_id" in metadata, "metadata should contain user_id field"
+        assert "memory_type" in metadata, "metadata should contain memory_type field"
+        assert metadata.get("user_id") == self.user_id, "metadata user_id should match"
 
-        # 如果有事件日志，深度验证结构
+        # If there are event logs, deeply validate structure
         if result["total_count"] > 0 and len(result["memories"]) > 0:
             for idx, memory in enumerate(result["memories"]):
-                assert isinstance(memory, dict), f"第 {idx} 条记忆应该是字典"
-                assert "atomic_fact" in memory, f"第 {idx} 条记忆应包含 atomic_fact"
-                assert "timestamp" in memory, f"第 {idx} 条记忆应包含 timestamp"
-                assert "user_id" in memory, f"第 {idx} 条记忆应包含 user_id"
+                assert isinstance(memory, dict), f"Memory {idx} should be a dictionary"
+                assert "atomic_fact" in memory, f"Memory {idx} should contain atomic_fact"
+                assert "timestamp" in memory, f"Memory {idx} should contain timestamp"
+                assert "user_id" in memory, f"Memory {idx} should contain user_id"
                 assert (
                     memory.get("user_id") == self.user_id
-                ), f"第 {idx} 条记忆的 user_id 应该匹配"
+                ), f"Memory {idx} user_id should match"
 
             print(
-                f"✅ Fetch Event Log 成功，返回 {result['total_count']} 条事件日志，已验证深度结构"
+                f"✅ Fetch Event Log successful, returned {result['total_count']} event logs, deep structure validated"
             )
         else:
-            print(f"✅ Fetch Event Log 成功，返回 {result['total_count']} 条事件日志")
+            print(f"✅ Fetch Event Log successful, returned {result['total_count']} event logs")
 
         return status_code, response
 
     def test_search_memories_keyword(self):
-        """测试5: GET /api/v1/memories/search - 关键词检索（通过 body 传参）"""
-        self.print_section("测试5: GET /api/v1/memories/search - 关键词检索")
+        """Test 5: GET /api/v1/memories/search - Keyword search (pass parameters via body)"""
+        self.print_section("Test 5: GET /api/v1/memories/search - Keyword Search")
 
-        # 注意：虽然路由定义是 GET，但实际实现从 body 读取参数
-        # 类似 Elasticsearch 的搜索 API，GET 请求可以带 body
+        # Note: Although route is defined as GET, actual implementation reads parameters from body
+        # Similar to Elasticsearch search API, GET requests can carry body
         data = {
             "user_id": self.user_id,
-            "query": "咖啡",
+            "query": "coffee",
             "top_k": 10,
             "retrieve_method": "keyword",
         }
 
         status_code, response = self.call_get_with_body_api("/search", data)
 
-        # 断言：精确验证响应结构
-        assert status_code == 200, f"状态码应该是 200，实际: {status_code}"
+        # Assert: Precisely validate response structure
+        assert status_code == 200, f"Status code should be 200, actual: {status_code}"
         assert (
             response.get("status") == "ok"
-        ), f"状态应该是 ok，实际: {response.get('status')}"
-        assert "result" in response, "响应应包含 result 字段"
+        ), f"Status should be ok, actual: {response.get('status')}"
+        assert "result" in response, "Response should contain result field"
 
         result = response["result"]
-        assert "memories" in result, "result 应包含 memories 字段"
-        assert "scores" in result, "result 应包含 scores 字段"
-        assert "total_count" in result, "result 应包含 total_count 字段"
-        assert "has_more" in result, "result 应包含 has_more 字段"
-        assert "metadata" in result, "result 应包含 metadata 字段"
+        assert "memories" in result, "result should contain memories field"
+        assert "scores" in result, "result should contain scores field"
+        assert "total_count" in result, "result should contain total_count field"
+        assert "has_more" in result, "result should contain has_more field"
+        assert "metadata" in result, "result should contain metadata field"
 
-        # 验证数据类型
-        assert isinstance(result["memories"], list), "memories 应该是列表"
-        assert isinstance(result["scores"], list), "scores 应该是列表"
-        assert result["total_count"] >= 0, "total_count 应该 >= 0"
+        # Validate data types
+        assert isinstance(result["memories"], list), "memories should be a list"
+        assert isinstance(result["scores"], list), "scores should be a list"
+        assert result["total_count"] >= 0, "total_count should be >= 0"
 
-        # 验证 metadata
+        # Validate metadata
         metadata = result["metadata"]
-        assert metadata.get("user_id") == self.user_id, "metadata 的 user_id 应该匹配"
+        assert metadata.get("user_id") == self.user_id, "metadata user_id should match"
 
-        # 如果有结果，深度验证嵌套结构
+        # If there are results, deeply validate nested structure
         if result["total_count"] > 0 and len(result["memories"]) > 0:
-            # 验证 memories 和 scores 数量一致
+            # Validate memories and scores have same length
             assert len(result["memories"]) == len(
                 result["scores"]
-            ), "memories 和 scores 数量应该一致"
+            ), "memories and scores should have same length"
 
-            # 遍历每个群组的记忆
+            # Iterate through each group's memories
             for group_idx, memory_group in enumerate(result["memories"]):
                 assert isinstance(
                     memory_group, dict
-                ), f"第 {group_idx} 个 memory_group 应该是字典"
+                ), f"Memory group {group_idx} should be a dictionary"
 
-                # 遍历群组内的记忆列表
+                # Iterate through memories within group
                 for group_id, memory_list in memory_group.items():
-                    assert isinstance(group_id, str), f"group_id 应该是字符串"
+                    assert isinstance(group_id, str), "group_id should be string"
                     assert isinstance(
                         memory_list, list
-                    ), f"群组 {group_id} 的 memory_list 应该是列表"
+                    ), f"Memory list for group {group_id} should be a list"
 
-                    # 验证每条记忆的基本字段
+                    # Validate basic fields for each memory
                     for mem_idx, mem in enumerate(memory_list):
-                        assert isinstance(mem, dict), f"第 {mem_idx} 条记忆应该是字典"
+                        assert isinstance(mem, dict), f"Memory {mem_idx} should be a dictionary"
                         assert (
                             "memory_type" in mem
-                        ), f"第 {mem_idx} 条记忆应包含 memory_type"
-                        assert "user_id" in mem, f"第 {mem_idx} 条记忆应包含 user_id"
+                        ), f"Memory {mem_idx} should contain memory_type"
+                        assert "user_id" in mem, f"Memory {mem_idx} should contain user_id"
                         assert (
                             "timestamp" in mem
-                        ), f"第 {mem_idx} 条记忆应包含 timestamp"
+                        ), f"Memory {mem_idx} should contain timestamp"
 
-            print(f"✅ Search Keyword 成功，返回 {result['total_count']} 个群组的记忆")
+            print(f"✅ Search Keyword successful, returned {result['total_count']} groups of memories")
         else:
-            print(f"✅ Search Keyword 成功，返回 {result['total_count']} 个群组的记忆")
+            print(f"✅ Search Keyword successful, returned {result['total_count']} groups of memories")
 
         return status_code, response
 
     def test_search_memories_vector(self):
-        """测试6: GET /api/v1/memories/search - 向量检索（通过 body 传参）"""
-        self.print_section("测试6: GET /api/v1/memories/search - 向量检索")
+        """Test 6: GET /api/v1/memories/search - Vector search (pass parameters via body)"""
+        self.print_section("Test 6: GET /api/v1/memories/search - Vector Search")
 
         data = {
             "user_id": self.user_id,
-            "query": "用户的饮食偏好",
+            "query": "user's dietary preferences",
             "top_k": 10,
             "retrieve_method": "vector",
         }
 
         status_code, response = self.call_get_with_body_api("/search", data)
 
-        # 断言：精确验证响应结构
-        assert status_code == 200, f"状态码应该是 200，实际: {status_code}"
+        # Assert: Precisely validate response structure
+        assert status_code == 200, f"Status code should be 200, actual: {status_code}"
         assert (
             response.get("status") == "ok"
-        ), f"状态应该是 ok，实际: {response.get('status')}"
-        assert "result" in response, "响应应包含 result 字段"
+        ), f"Status should be ok, actual: {response.get('status')}"
+        assert "result" in response, "Response should contain result field"
 
         result = response["result"]
-        assert "memories" in result, "result 应包含 memories 字段"
-        assert "scores" in result, "result 应包含 scores 字段"
-        assert "total_count" in result, "result 应包含 total_count 字段"
-        assert "has_more" in result, "result 应包含 has_more 字段"
-        assert "metadata" in result, "result 应包含 metadata 字段"
+        assert "memories" in result, "result should contain memories field"
+        assert "scores" in result, "result should contain scores field"
+        assert "total_count" in result, "result should contain total_count field"
+        assert "has_more" in result, "result should contain has_more field"
+        assert "metadata" in result, "result should contain metadata field"
 
-        # 向量检索应该有 importance_scores
+        # Vector search should have importance_scores
         if result["total_count"] > 0:
             assert (
                 "importance_scores" in result
-            ), "向量检索 result 应包含 importance_scores 字段"
+            ), "Vector search result should contain importance_scores field"
             assert isinstance(
                 result["importance_scores"], list
-            ), "importance_scores 应该是列表"
+            ), "importance_scores should be a list"
 
-        print(f"✅ Search Vector 成功，返回 {result['total_count']} 个群组的记忆")
+        print(f"✅ Search Vector successful, returned {result['total_count']} groups of memories")
 
         return status_code, response
 
     def test_search_memories_hybrid(self):
-        """测试7: GET /api/v1/memories/search - 混合检索（通过 body 传参）"""
-        self.print_section("测试7: GET /api/v1/memories/search - 混合检索")
+        """Test 7: GET /api/v1/memories/search - Hybrid search (pass parameters via body)"""
+        self.print_section("Test 7: GET /api/v1/memories/search - Hybrid Search")
 
         now = datetime.now(SHANGHAI_TZ)
         data = {
             "user_id": self.user_id,
-            "query": "咖啡偏好",
+            "query": "coffee preference",
             "top_k": 10,
             "retrieve_method": "hybrid",
             "start_time": (now - timedelta(days=60)).isoformat(),
@@ -765,43 +765,43 @@ class MemoryControllerTester:
 
         status_code, response = self.call_get_with_body_api("/search", data)
 
-        # 断言：精确验证响应结构
-        assert status_code == 200, f"状态码应该是 200，实际: {status_code}"
+        # Assert: Precisely validate response structure
+        assert status_code == 200, f"Status code should be 200, actual: {status_code}"
         assert (
             response.get("status") == "ok"
-        ), f"状态应该是 ok，实际: {response.get('status')}"
-        assert "result" in response, "响应应包含 result 字段"
+        ), f"Status should be ok, actual: {response.get('status')}"
+        assert "result" in response, "Response should contain result field"
 
         result = response["result"]
-        assert "memories" in result, "result 应包含 memories 字段"
-        assert "scores" in result, "result 应包含 scores 字段"
-        assert "total_count" in result, "result 应包含 total_count 字段"
-        assert "has_more" in result, "result 应包含 has_more 字段"
-        assert "metadata" in result, "result 应包含 metadata 字段"
+        assert "memories" in result, "result should contain memories field"
+        assert "scores" in result, "result should contain scores field"
+        assert "total_count" in result, "result should contain total_count field"
+        assert "has_more" in result, "result should contain has_more field"
+        assert "metadata" in result, "result should contain metadata field"
 
-        # 混合检索应该有 importance_scores
+        # Hybrid search should have importance_scores
         if result["total_count"] > 0:
             assert (
                 "importance_scores" in result
-            ), "混合检索 result 应包含 importance_scores 字段"
+            ), "Hybrid search result should contain importance_scores field"
             assert isinstance(
                 result["importance_scores"], list
-            ), "importance_scores 应该是列表"
+            ), "importance_scores should be a list"
 
-            # 验证 metadata 中的 source
+            # Validate source in metadata
             metadata = result["metadata"]
             assert (
                 metadata.get("source") == "hybrid_retrieval"
-            ), "混合检索的 source 应该是 hybrid_retrieval"
+            ), "Hybrid search source should be hybrid_retrieval"
 
-        print(f"✅ Search Hybrid 成功，返回 {result['total_count']} 个群组的记忆")
+        print(f"✅ Search Hybrid successful, returned {result['total_count']} groups of memories")
 
         return status_code, response
 
     def test_save_conversation_meta(self):
-        """测试8: POST /api/v1/memories/conversation-meta - 保存对话元数据"""
+        """Test 8: POST /api/v1/memories/conversation-meta - Save conversation metadata"""
         self.print_section(
-            "测试8: POST /api/v1/memories/conversation-meta - 保存对话元数据"
+            "Test 8: POST /api/v1/memories/conversation-meta - Save Conversation Metadata"
         )
 
         now = datetime.now(SHANGHAI_TZ)
@@ -809,139 +809,139 @@ class MemoryControllerTester:
             "version": "1.0",
             "scene": "assistant",
             "scene_desc": {
-                "description": "项目协作群聊",
+                "description": "Project collaboration group chat",
                 "bot_ids": ["bot_001"],
                 "extra": {"category": "test"},
             },
-            "name": "测试项目讨论组",
-            "description": "用于测试的项目讨论群组",
+            "name": "Test Project Discussion Group",
+            "description": "Project discussion group for testing",
             "group_id": self.group_id,
             "created_at": now.isoformat(),
             "default_timezone": "Asia/Shanghai",
             "user_details": {
                 self.user_id: {
-                    "full_name": "测试用户",
+                    "full_name": "Test User",
                     "role": "developer",
-                    "extra": {"department": "技术部"},
+                    "extra": {"department": "Engineering"},
                 }
             },
-            "tags": ["测试", "项目"],
+            "tags": ["test", "project"],
         }
 
         status_code, response = self.call_post_api("/conversation-meta", data)
 
-        # 断言：精确验证响应结构
-        assert status_code == 200, f"状态码应该是 200，实际: {status_code}"
+        # Assert: Precisely validate response structure
+        assert status_code == 200, f"Status code should be 200, actual: {status_code}"
         assert (
             response.get("status") == "ok"
-        ), f"状态应该是 ok，实际: {response.get('status')}"
-        assert "result" in response, "响应应包含 result 字段"
+        ), f"Status should be ok, actual: {response.get('status')}"
+        assert "result" in response, "Response should contain result field"
 
         result = response["result"]
-        assert "id" in result, "result 应包含 id 字段"
-        assert "group_id" in result, "result 应包含 group_id 字段"
-        assert "scene" in result, "result 应包含 scene 字段"
-        assert "name" in result, "result 应包含 name 字段"
-        assert "version" in result, "result 应包含 version 字段"
+        assert "id" in result, "result should contain id field"
+        assert "group_id" in result, "result should contain group_id field"
+        assert "scene" in result, "result should contain scene field"
+        assert "name" in result, "result should contain name field"
+        assert "version" in result, "result should contain version field"
 
-        # 验证值的正确性
-        assert result["group_id"] == self.group_id, "返回的 group_id 应该匹配"
-        assert result["scene"] == "assistant", "返回的 scene 应该匹配"
-        assert result["name"] == "测试项目讨论组", "返回的 name 应该匹配"
+        # Validate value correctness
+        assert result["group_id"] == self.group_id, "Returned group_id should match"
+        assert result["scene"] == "assistant", "Returned scene should match"
+        assert result["name"] == "Test Project Discussion Group", "Returned name should match"
 
-        print(f"✅ Save Conversation Meta 成功，id={result['id']}")
+        print(f"✅ Save Conversation Meta successful, id={result['id']}")
 
         return status_code, response
 
     def test_patch_conversation_meta(self):
-        """测试9: PATCH /api/v1/memories/conversation-meta - 局部更新对话元数据"""
+        """Test 9: PATCH /api/v1/memories/conversation-meta - Partially update conversation metadata"""
         self.print_section(
-            "测试9: PATCH /api/v1/memories/conversation-meta - 局部更新对话元数据"
+            "Test 9: PATCH /api/v1/memories/conversation-meta - Partially Update Conversation Metadata"
         )
 
         data = {
             "group_id": self.group_id,
-            "name": "更新后的测试项目讨论组",
-            "tags": ["测试", "项目", "更新"],
+            "name": "Updated Test Project Discussion Group",
+            "tags": ["test", "project", "update"],
         }
 
         status_code, response = self.call_patch_api("/conversation-meta", data)
 
-        # 断言：精确验证响应结构
+        # Assert: Precisely validate response structure
         if status_code == 200:
             assert (
                 response.get("status") == "ok"
-            ), f"状态应该是 ok，实际: {response.get('status')}"
-            assert "result" in response, "响应应包含 result 字段"
+            ), f"Status should be ok, actual: {response.get('status')}"
+            assert "result" in response, "Response should contain result field"
 
             result = response["result"]
-            assert "id" in result, "result 应包含 id 字段"
-            assert "group_id" in result, "result 应包含 group_id 字段"
-            assert "updated_fields" in result, "result 应包含 updated_fields 字段"
+            assert "id" in result, "result should contain id field"
+            assert "group_id" in result, "result should contain group_id field"
+            assert "updated_fields" in result, "result should contain updated_fields field"
 
-            # 验证更新的字段
-            assert result["group_id"] == self.group_id, "返回的 group_id 应该匹配"
+            # Validate updated fields
+            assert result["group_id"] == self.group_id, "Returned group_id should match"
             assert isinstance(
                 result["updated_fields"], list
-            ), "updated_fields 应该是列表"
+            ), "updated_fields should be a list"
 
             if len(result["updated_fields"]) > 0:
                 print(
-                    f"✅ Patch Conversation Meta 成功，更新了 {len(result['updated_fields'])} 个字段: {result['updated_fields']}"
+                    f"✅ Patch Conversation Meta successful, updated {len(result['updated_fields'])} fields: {result['updated_fields']}"
                 )
             else:
-                print("✅ Patch Conversation Meta 成功，没有字段需要更新")
+                print("✅ Patch Conversation Meta successful, no fields needed update")
         elif status_code == 404:
             print(
-                f"⚠️  Patch Conversation Meta: 对话元数据不存在（需要先调用 POST 创建）"
+                f"⚠️  Patch Conversation Meta: Conversation metadata does not exist (need to call POST first to create)"
             )
         else:
             print(
-                f"⚠️  Patch Conversation Meta 失败: {response.get('message', 'Unknown error')}"
+                f"⚠️  Patch Conversation Meta failed: {response.get('message', 'Unknown error')}"
             )
 
         return status_code, response
 
     def run_all_tests(self, test_method: str = "all", except_test_methods: str = None):
         """
-        运行测试
+        Run tests
 
         Args:
-            test_method: 指定要运行的测试方法，可选值：
-                - all: 运行所有测试
-                - memorize: 测试存储对话记忆
-                - fetch_episodic: 测试获取情景记忆
-                - fetch_event_log: 测试获取事件日志
-                - fetch_profile: 测试获取用户画像
-                - search_keyword: 测试关键词检索
-                - search_vector: 测试向量检索
-                - search_hybrid: 测试混合检索
-                - save_meta: 测试保存对话元数据
-                - patch_meta: 测试更新对话元数据
-            except_test_methods: 指定要排除的测试方法（用逗号分隔），例如: "memorize,fetch_episodic"
-                当指定此参数时，将运行除了这些方法之外的所有测试
+            test_method: Specify test method to run, options:
+                - all: Run all tests
+                - memorize: Test storing conversation memory
+                - fetch_episodic: Test fetching episodic memory
+                - fetch_event_log: Test fetching event log
+                - fetch_profile: Test fetching user profile
+                - search_keyword: Test keyword search
+                - search_vector: Test vector search
+                - search_hybrid: Test hybrid search
+                - save_meta: Test saving conversation metadata
+                - patch_meta: Test updating conversation metadata
+            except_test_methods: Specify test methods to exclude (comma-separated), e.g.: "memorize,fetch_episodic"
+                When specified, run all tests except these methods
         """
         print("\n" + "=" * 80)
-        print("  开始执行 Memory Controller API 测试")
+        print("  Starting Memory Controller API Tests")
         print("=" * 80)
-        print(f"  API地址: {self.base_url}")
-        print(f"  测试用户: {self.user_id}")
-        print(f"  测试群组: {self.group_id}")
-        print(f"  组织ID: {self.organization_id}")
-        print(f"  空间ID: {self.space_id}")
+        print(f"  API Address: {self.base_url}")
+        print(f"  Test User: {self.user_id}")
+        print(f"  Test Group: {self.group_id}")
+        print(f"  Organization ID: {self.organization_id}")
+        print(f"  Space ID: {self.space_id}")
         print(f"  API Key: {self.api_key}")
-        print(f"  同步模式: {self.sync_mode}")
-        print(f"  测试方法: {test_method}")
+        print(f"  Sync Mode: {self.sync_mode}")
+        print(f"  Test Method: {test_method}")
         if except_test_methods:
-            print(f"  排除方法: {except_test_methods}")
+            print(f"  Excluded Methods: {except_test_methods}")
         print("=" * 80)
 
-        # 首先初始化数据库
+        # First initialize database
         if not self.init_database():
-            print("\n❌ 数据库初始化失败，终止测试")
+            print("\n❌ Database initialization failed, terminating tests")
             return
 
-        # 定义测试方法映射
+        # Define test method mapping
         test_methods = {
             "memorize": self.test_memorize_single_message,
             "fetch_episodic": self.test_fetch_episodic,
@@ -954,99 +954,99 @@ class MemoryControllerTester:
             "patch_meta": self.test_patch_conversation_meta,
         }
 
-        # 解析排除的测试方法列表
+        # Parse excluded test methods list
         excluded_methods = set()
         if except_test_methods:
             excluded_list = [m.strip() for m in except_test_methods.split(",")]
             for method_name in excluded_list:
                 if method_name not in test_methods:
-                    print(f"\n⚠️  警告: 未知的测试方法 '{method_name}'，将被忽略")
+                    print(f"\n⚠️  Warning: Unknown test method '{method_name}', will be ignored")
                 else:
                     excluded_methods.add(method_name)
 
-        # 执行测试
+        # Execute tests
         try:
             if except_test_methods:
-                # except-test-method 模式：运行除了指定方法之外的所有测试
+                # except-test-method mode: Run all tests except specified ones
                 methods_to_run = [
                     (name, method)
                     for name, method in test_methods.items()
                     if name not in excluded_methods
                 ]
                 if not methods_to_run:
-                    print("\n⚠️  没有需要运行的测试方法（所有方法都被排除）")
+                    print("\n⚠️  No test methods to run (all methods excluded)")
                     return
 
                 print(
-                    f"\n📋 将运行 {len(methods_to_run)} 个测试方法（排除了 {len(excluded_methods)} 个）"
+                    f"\n📋 Will run {len(methods_to_run)} test methods (excluded {len(excluded_methods)} methods)"
                 )
                 for name, method in methods_to_run:
                     method()
             elif test_method == "all":
-                # 运行所有测试
+                # Run all tests
                 for method in test_methods.values():
                     method()
             elif test_method in test_methods:
-                # 运行指定的单个测试
+                # Run specified single test
                 test_methods[test_method]()
             else:
-                print(f"\n❌ 未知的测试方法: {test_method}")
+                print(f"\n❌ Unknown test method: {test_method}")
                 return
         except AssertionError as e:
-            print(f"\n❌ 测试失败: {e}")
+            print(f"\n❌ Test failed: {e}")
             raise
         except Exception as e:  # noqa: BLE001
-            print(f"\n❌ 测试异常: {e}")
+            print(f"\n❌ Test exception: {e}")
             raise
 
-        # 测试完成
-        self.print_section("测试完成")
+        # Tests completed
+        self.print_section("Tests Completed")
         if except_test_methods:
-            print(f"\n✅ 已完成除了 [{except_test_methods}] 之外的所有测试！")
+            print(f"\n✅ Completed all tests except [{except_test_methods}]!")
         elif test_method == "all":
-            print("\n✅ 所有接口结构验证通过！")
+            print("\n✅ All interface structure validations passed!")
         else:
-            print(f"\n✅ 测试方法 [{test_method}] 验证通过！")
-        print("💡 提示: 如果某个接口失败，请检查输入输出结构是否发生变化\n")
+            print(f"\n✅ Test method [{test_method}] validation passed!")
+        print("💡 Tip: If an interface fails, check if input/output structure has changed\n")
 
 
 def parse_args():
-    """解析命令行参数"""
+    """Parse command line arguments"""
     parser = argparse.ArgumentParser(
-        description="Memory Controller API 测试脚本",
+        description="Memory Controller API Test Script",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-使用示例:
-  # 使用默认配置测试本地服务
+Usage Examples:
+  # Test local service with default configuration
   python tests/test_memory_controller.py
 
-  # 指定API地址
+  # Specify API address
   python tests/test_memory_controller.py --base-url http://localhost:1995
 
-  # 指定API地址和测试用户
+  # Specify API address and test user
   python tests/test_memory_controller.py --base-url http://dev-server:1995 --user-id test_user_123
 
-  # 指定租户信息
+  # Specify tenant information
   python tests/test_memory_controller.py --organization-id my_org --space-id my_space
 
-  # 单独测试某个方法
+  # Test a specific method
   python tests/test_memory_controller.py --test-method memorize
   python tests/test_memory_controller.py --test-method fetch_episodic
   python tests/test_memory_controller.py --test-method fetch_event_log
   python tests/test_memory_controller.py --test-method search_keyword
 
-  # 测试除了某些方法之外的所有方法（参数用逗号分隔）
+  # Test all methods except certain ones (parameters separated by commas)
   python tests/test_memory_controller.py --except-test-method memorize
   python tests/test_memory_controller.py --except-test-method memorize,fetch_episodic
   python tests/test_memory_controller.py --except-test-method save_meta,patch_meta
 
-  # 关闭同步模式（使用后台模式）
+  # Disable sync mode (use background mode)
   python tests/test_memory_controller.py --sync-mode false
 
-  # 指定 API Key 进行认证
+  # Specify API Key for authentication
   python tests/test_memory_controller.py --api-key your_api_key_here
 
-  # 指定所有参数
+  # Specify all parameters
   python tests/test_memory_controller.py --base-url http://dev-server:1995 --user-id test_user --group-id test_group --organization-id my_org --space-id my_space --api-key your_api_key --timeout 60 --sync-mode true
         """,
     )
@@ -1054,33 +1054,33 @@ def parse_args():
     parser.add_argument(
         "--base-url",
         default="http://localhost:1995",
-        help="API基础URL (默认: http://localhost:1995)",
+        help="API base URL (default: http://localhost:1995)",
     )
 
-    parser.add_argument("--user-id", default=None, help="测试用户ID (默认: 随机生成)")
+    parser.add_argument("--user-id", default=None, help="Test user ID (default: randomly generated)")
 
-    parser.add_argument("--group-id", default=None, help="测试群组ID (默认: 随机生成)")
+    parser.add_argument("--group-id", default=None, help="Test group ID (default: randomly generated)")
 
     parser.add_argument(
         "--organization-id",
         default=None,
-        help=f"组织ID (默认: {MemoryControllerTester.DEFAULT_ORGANIZATION_ID})",
+        help=f"Organization ID (default: {MemoryControllerTester.DEFAULT_ORGANIZATION_ID})",
     )
 
     parser.add_argument(
         "--space-id",
         default=None,
-        help=f"空间ID (默认: {MemoryControllerTester.DEFAULT_SPACE_ID})",
+        help=f"Space ID (default: {MemoryControllerTester.DEFAULT_SPACE_ID})",
     )
 
     parser.add_argument(
         "--api-key",
         default=None,
-        help=f"API密钥，用于认证 (默认: {MemoryControllerTester.DEFAULT_API_KEY})",
+        help=f"API key for authentication (default: {MemoryControllerTester.DEFAULT_API_KEY})",
     )
 
     parser.add_argument(
-        "--timeout", type=int, default=180, help="请求超时时间(秒) (默认: 180)"
+        "--timeout", type=int, default=180, help="Request timeout in seconds (default: 180)"
     )
 
     parser.add_argument(
@@ -1098,67 +1098,67 @@ def parse_args():
             "save_meta",
             "patch_meta",
         ],
-        help="指定要运行的测试方法 (默认: all 运行所有测试)",
+        help="Specify test method to run (default: all runs all tests)",
     )
 
     parser.add_argument(
         "--except-test-method",
         default=None,
-        help="指定要排除的测试方法（用逗号分隔），运行除了这些方法之外的所有测试。例如: --except-test-method memorize,fetch_episodic",
+        help="Specify test methods to exclude (comma-separated), runs all tests except these. Example: --except-test-method memorize,fetch_episodic",
     )
 
     parser.add_argument(
         "--sync-mode",
         type=lambda x: x.lower() in ("true", "1", "yes"),
         default=True,
-        help="是否启用同步模式 (默认: true)。设置为 true 关闭后台模式，保证时序测试效果；设置为 false 使用后台模式",
+        help="Whether to enable sync mode (default: true). Set to true to disable background mode, ensuring sequential test effectiveness; set to false to use background mode",
     )
 
     return parser.parse_args()
 
 
 def main():
-    """主函数"""
-    # 解析命令行参数
+    """Main function"""
+    # Parse command line arguments
     args = parse_args()
 
-    # 检查参数冲突：不能同时指定 --test-method 和 --except-test-method
+    # Check parameter conflict: cannot specify both --test-method and --except-test-method
     if args.test_method != "all" and args.except_test_method:
-        print("❌ 错误: 不能同时使用 --test-method 和 --except-test-method")
-        print("   请选择其中一个使用：")
-        print("   - 使用 --test-method 指定要运行的单个测试")
-        print("   - 使用 --except-test-method 指定要排除的测试（运行其他所有测试）")
+        print("❌ Error: Cannot use both --test-method and --except-test-method")
+        print("   Please choose one:")
+        print("   - Use --test-method to specify a single test to run")
+        print("   - Use --except-test-method to specify tests to exclude (run all others)")
         return
 
-    # 如果未提供 user_id，随机生成一个
+    # If user_id not provided, generate randomly
     user_id = args.user_id if args.user_id else f"user_{uuid.uuid4().hex[:12]}"
 
-    # 如果未提供 group_id，随机生成一个
+    # If group_id not provided, generate randomly
     group_id = args.group_id if args.group_id else f"group_{uuid.uuid4().hex[:12]}"
 
-    # 组织ID和空间ID使用默认值（如果未提供）
+    # Use default values for organization_id and space_id (if not provided)
     organization_id = args.organization_id
     space_id = args.space_id
 
-    # 输出使用的ID信息
+    # Output used ID information
     if not args.user_id:
-        print(f"⚠️  未提供 --user-id，自动生成: {user_id}")
+        print(f"⚠️  --user-id not provided, auto-generated: {user_id}")
     if not args.group_id:
-        print(f"⚠️  未提供 --group-id，自动生成: {group_id}")
+        print(f"⚠️  --group-id not provided, auto-generated: {group_id}")
     if not args.organization_id:
         print(
-            f"⚠️  未提供 --organization-id，使用默认值: {MemoryControllerTester.DEFAULT_ORGANIZATION_ID}"
+            f"⚠️  --organization-id not provided, using default: {MemoryControllerTester.DEFAULT_ORGANIZATION_ID}"
         )
     if not args.space_id:
         print(
-            f"⚠️  未提供 --space-id，使用默认值: {MemoryControllerTester.DEFAULT_SPACE_ID}"
+            f"⚠️  --space-id not provided, using default: {MemoryControllerTester.DEFAULT_SPACE_ID}"
         )
     if not args.api_key:
         print(
-            f"⚠️  未提供 --api-key，使用默认值: {MemoryControllerTester.DEFAULT_API_KEY}"
+            f"⚠️  --api-key not provided, using default: {MemoryControllerTester.DEFAULT_API_KEY}"
         )
 
-    # 创建测试器实例
+    # Create tester instance
     tester = MemoryControllerTester(
         base_url=args.base_url,
         user_id=user_id,
@@ -1170,7 +1170,7 @@ def main():
         sync_mode=args.sync_mode,
     )
 
-    # 运行测试（根据参数决定运行全部还是单个，或者排除某些测试）
+    # Run tests (decide to run all, single, or exclude certain tests based on parameters)
     tester.run_all_tests(
         test_method=args.test_method, except_test_methods=args.except_test_method
     )

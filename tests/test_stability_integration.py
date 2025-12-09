@@ -1,7 +1,7 @@
 """
-系统集成稳定性测试
+System integration stability test
 
-测试端到端系统稳定性、故障恢复、性能基准等关键场景
+Test key scenarios such as end-to-end system stability, fault recovery, and performance benchmarks
 """
 
 import pytest
@@ -13,31 +13,31 @@ import json
 from typing import List, Dict, Any
 from unittest.mock import AsyncMock, patch, MagicMock
 
-# 设置测试环境
+# Set test environment
 os.environ.setdefault("MOCK_MODE", "true")
 os.environ.setdefault("LOG_LEVEL", "WARNING")
 
 
 class TestSystemIntegrationStability:
-    """系统集成稳定性测试类"""
+    """System integration stability test class"""
 
     @pytest.fixture
     async def mock_app(self):
-        """模拟应用实例"""
+        """Mock application instance"""
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
 
         app = FastAPI()
 
-        # 添加健康检查端点
+        # Add health check endpoint
         @app.get("/health")
         async def health_check():
             return {"status": "healthy", "timestamp": time.time()}
 
-        # 添加测试端点
+        # Add test endpoint
         @app.get("/test")
         async def test_endpoint():
-            await asyncio.sleep(0.01)  # 模拟处理时间
+            await asyncio.sleep(0.01)  # Simulate processing time
             return {"message": "test_success"}
 
         client = TestClient(app)
@@ -45,8 +45,8 @@ class TestSystemIntegrationStability:
 
     @pytest.mark.asyncio
     async def test_health_check_stability(self, mock_app):
-        """测试健康检查稳定性"""
-        # 连续多次健康检查
+        """Test health check stability"""
+        # Perform multiple consecutive health checks
         for i in range(10):
             response = mock_app.get("/health")
             assert response.status_code == 200
@@ -54,11 +54,11 @@ class TestSystemIntegrationStability:
             assert data["status"] == "healthy"
             assert "timestamp" in data
 
-        print("健康检查稳定性测试通过")
+        print("Health check stability test passed")
 
     @pytest.mark.asyncio
     async def test_high_concurrency_api_requests(self, mock_app):
-        """测试高并发API请求"""
+        """Test high-concurrency API requests"""
         start_time = time.time()
         success_count = 0
         error_count = 0
@@ -78,7 +78,7 @@ class TestSystemIntegrationStability:
                 error_count += 1
                 return f"request_{request_id}_exception: {str(e)}"
 
-        # 创建大量并发请求
+        # Create a large number of concurrent requests
         request_count = 100
         tasks = [asyncio.create_task(api_request(i)) for i in range(request_count)]
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -86,33 +86,33 @@ class TestSystemIntegrationStability:
         end_time = time.time()
         total_time = end_time - start_time
 
-        print(f"高并发API测试结果:")
-        print(f"  总请求: {request_count}")
-        print(f"  成功: {success_count}")
-        print(f"  错误: {error_count}")
-        print(f"  总时间: {total_time:.2f}秒")
-        print(f"  吞吐量: {request_count/total_time:.2f} 请求/秒")
+        print(f"High-concurrency API test results:")
+        print(f"  Total requests: {request_count}")
+        print(f"  Success: {success_count}")
+        print(f"  Errors: {error_count}")
+        print(f"  Total time: {total_time:.2f} seconds")
+        print(f"  Throughput: {request_count/total_time:.2f} requests/second")
 
-        # 性能断言
+        # Performance assertions
         assert (
             success_count >= request_count * 0.95
-        ), f"成功率过低: {success_count}/{request_count}"
-        assert total_time < 10, f"响应时间过长: {total_time:.2f}秒"
+        ), f"Success rate too low: {success_count}/{request_count}"
+        assert total_time < 10, f"Response time too long: {total_time:.2f} seconds"
         assert (
             request_count / total_time > 10
-        ), f"吞吐量过低: {request_count/total_time:.2f} 请求/秒"
+        ), f"Throughput too low: {request_count/total_time:.2f} requests/second"
 
     @pytest.mark.asyncio
     async def test_system_memory_usage(self):
-        """测试系统内存使用"""
+        """Test system memory usage"""
         process = psutil.Process(os.getpid())
         initial_memory = process.memory_info().rss
 
-        # 模拟系统操作
+        # Simulate system operations
         data_structures = []
 
         for i in range(100):
-            # 创建一些数据结构
+            # Create some data structures
             data = {
                 "id": i,
                 "content": "x" * 1000,
@@ -123,10 +123,10 @@ class TestSystemIntegrationStability:
         peak_memory = process.memory_info().rss
         memory_increase = peak_memory - initial_memory
 
-        # 清理数据
+        # Clean up data
         del data_structures
 
-        # 强制垃圾回收
+        # Force garbage collection
         import gc
 
         gc.collect()
@@ -134,61 +134,61 @@ class TestSystemIntegrationStability:
         final_memory = process.memory_info().rss
         final_increase = final_memory - initial_memory
 
-        print(f"内存使用测试结果:")
-        print(f"  初始内存: {initial_memory / 1024 / 1024:.2f} MB")
-        print(f"  峰值内存: {peak_memory / 1024 / 1024:.2f} MB")
-        print(f"  最终内存: {final_memory / 1024 / 1024:.2f} MB")
-        print(f"  峰值增长: {memory_increase / 1024 / 1024:.2f} MB")
-        print(f"  最终增长: {final_increase / 1024 / 1024:.2f} MB")
+        print(f"Memory usage test results:")
+        print(f"  Initial memory: {initial_memory / 1024 / 1024:.2f} MB")
+        print(f"  Peak memory: {peak_memory / 1024 / 1024:.2f} MB")
+        print(f"  Final memory: {final_memory / 1024 / 1024:.2f} MB")
+        print(f"  Peak increase: {memory_increase / 1024 / 1024:.2f} MB")
+        print(f"  Final increase: {final_increase / 1024 / 1024:.2f} MB")
 
-        # 验证内存使用合理
+        # Verify reasonable memory usage
         assert (
             memory_increase < 50 * 1024 * 1024
-        ), f"峰值内存使用过多: {memory_increase / 1024 / 1024:.2f} MB"
+        ), f"Excessive peak memory usage: {memory_increase / 1024 / 1024:.2f} MB"
         assert (
             final_increase < 10 * 1024 * 1024
-        ), f"最终内存泄漏: {final_increase / 1024 / 1024:.2f} MB"
+        ), f"Final memory leak: {final_increase / 1024 / 1024:.2f} MB"
 
     @pytest.mark.asyncio
     async def test_system_cpu_usage(self):
-        """测试系统CPU使用"""
+        """Test system CPU usage"""
         process = psutil.Process(os.getpid())
 
-        # 记录初始CPU使用率
+        # Record initial CPU usage
         initial_cpu = process.cpu_percent()
 
-        # 执行CPU密集型操作
+        # Perform CPU-intensive operations
         async def cpu_intensive_task(task_id: int):
-            # 模拟CPU密集型计算
+            # Simulate CPU-intensive computation
             result = 0
             for i in range(10000):
                 result += i * i
             return result
 
-        # 创建并发任务
+        # Create concurrent tasks
         tasks = [asyncio.create_task(cpu_intensive_task(i)) for i in range(10)]
         results = await asyncio.gather(*tasks)
 
-        # 检查CPU使用率
+        # Check CPU usage
         current_cpu = process.cpu_percent()
 
-        print(f"CPU使用测试结果:")
-        print(f"  初始CPU: {initial_cpu:.2f}%")
-        print(f"  当前CPU: {current_cpu:.2f}%")
-        print(f"  完成任务: {len(results)}")
+        print(f"CPU usage test results:")
+        print(f"  Initial CPU: {initial_cpu:.2f}%")
+        print(f"  Current CPU: {current_cpu:.2f}%")
+        print(f"  Completed tasks: {len(results)}")
 
-        # 验证CPU使用合理
-        assert current_cpu < 80, f"CPU使用率过高: {current_cpu:.2f}%"
-        assert len(results) == 10, f"任务完成数量不匹配: {len(results)} != 10"
+        # Verify reasonable CPU usage
+        assert current_cpu < 80, f"CPU usage too high: {current_cpu:.2f}%"
+        assert len(results) == 10, f"Task completion count mismatch: {len(results)} != 10"
 
     @pytest.mark.asyncio
     async def test_error_recovery_mechanism(self, mock_app):
-        """测试错误恢复机制"""
+        """Test error recovery mechanism"""
         recovery_successful = False
 
-        # 模拟错误场景
+        # Simulate error scenario
         with patch.object(mock_app, 'get') as mock_get:
-            # 前几次调用失败，后续调用成功
+            # First few calls fail, subsequent calls succeed
             call_count = 0
 
             def mock_response(*args, **kwargs):
@@ -196,13 +196,13 @@ class TestSystemIntegrationStability:
                 call_count += 1
 
                 if call_count <= 2:
-                    # 模拟错误响应
+                    # Simulate error response
                     response = MagicMock()
                     response.status_code = 500
                     response.json.return_value = {"error": "Internal server error"}
                     return response
                 else:
-                    # 恢复正常
+                    # Recover to normal
                     recovery_successful = True
                     response = MagicMock()
                     response.status_code = 200
@@ -211,7 +211,7 @@ class TestSystemIntegrationStability:
 
             mock_get.side_effect = mock_response
 
-            # 测试重试机制
+            # Test retry mechanism
             max_retries = 5
             for attempt in range(max_retries):
                 try:
@@ -220,14 +220,14 @@ class TestSystemIntegrationStability:
                         break
                 except Exception as e:
                     if attempt < max_retries - 1:
-                        await asyncio.sleep(0.1)  # 重试延迟
+                        await asyncio.sleep(0.1)  # Retry delay
 
-        assert recovery_successful, "错误恢复机制测试失败"
-        print("错误恢复机制测试通过")
+        assert recovery_successful, "Error recovery mechanism test failed"
+        print("Error recovery mechanism test passed")
 
     @pytest.mark.asyncio
     async def test_system_graceful_shutdown(self):
-        """测试系统优雅关闭"""
+        """Test system graceful shutdown"""
         shutdown_initiated = False
         cleanup_completed = False
 
@@ -237,38 +237,38 @@ class TestSystemIntegrationStability:
             try:
                 while not shutdown_initiated:
                     await asyncio.sleep(0.1)
-                    # 模拟工作
+                    # Simulate work
                     pass
             except asyncio.CancelledError:
-                # 执行清理工作
+                # Perform cleanup
                 cleanup_completed = True
-                print(f"任务 {task_id} 执行清理工作")
+                print(f"Task {task_id} performing cleanup")
                 raise
 
-        # 创建长时间运行的任务
+        # Create long-running tasks
         tasks = [asyncio.create_task(long_running_task(i)) for i in range(5)]
 
-        # 模拟系统关闭
+        # Simulate system shutdown
         await asyncio.sleep(0.5)
         shutdown_initiated = True
 
-        # 取消所有任务
+        # Cancel all tasks
         for task in tasks:
             task.cancel()
 
-        # 等待任务完成清理
+        # Wait for tasks to complete cleanup
         try:
             await asyncio.gather(*tasks, return_exceptions=True)
         except Exception:
             pass
 
-        assert cleanup_completed, "优雅关闭测试失败"
-        print("优雅关闭测试通过")
+        assert cleanup_completed, "Graceful shutdown test failed"
+        print("Graceful shutdown test passed")
 
     @pytest.mark.asyncio
     async def test_system_performance_benchmark(self, mock_app):
-        """测试系统性能基准"""
-        # 测试不同负载下的性能
+        """Test system performance benchmark"""
+        # Test performance under different loads
         load_scenarios = [
             {"requests": 10, "max_time": 2.0, "min_throughput": 5},
             {"requests": 50, "max_time": 5.0, "min_throughput": 10},
@@ -289,7 +289,7 @@ class TestSystemIntegrationStability:
                 except Exception:
                     return 500
 
-            # 执行基准测试
+            # Execute benchmark test
             tasks = [
                 asyncio.create_task(benchmark_request(i))
                 for i in range(scenario["requests"])
@@ -300,93 +300,93 @@ class TestSystemIntegrationStability:
             total_time = end_time - start_time
             throughput = scenario["requests"] / total_time
 
-            print(f"性能基准测试 - 请求数: {scenario['requests']}")
-            print(f"  总时间: {total_time:.2f}秒")
-            print(f"  成功: {success_count}/{scenario['requests']}")
-            print(f"  吞吐量: {throughput:.2f} 请求/秒")
+            print(f"Performance benchmark test - Requests: {scenario['requests']}")
+            print(f"  Total time: {total_time:.2f} seconds")
+            print(f"  Success: {success_count}/{scenario['requests']}")
+            print(f"  Throughput: {throughput:.2f} requests/second")
 
-            # 验证性能基准
+            # Verify performance benchmarks
             assert (
                 total_time <= scenario["max_time"]
-            ), f"响应时间超过基准: {total_time:.2f}s > {scenario['max_time']}s"
+            ), f"Response time exceeds benchmark: {total_time:.2f}s > {scenario['max_time']}s"
             assert (
                 throughput >= scenario["min_throughput"]
-            ), f"吞吐量低于基准: {throughput:.2f} < {scenario['min_throughput']}"
+            ), f"Throughput below benchmark: {throughput:.2f} < {scenario['min_throughput']}"
             assert (
                 success_count >= scenario["requests"] * 0.95
-            ), f"成功率过低: {success_count}/{scenario['requests']}"
+            ), f"Success rate too low: {success_count}/{scenario['requests']}"
 
 
 class TestSystemFaultTolerance:
-    """系统容错性测试类"""
+    """System fault tolerance test class"""
 
     @pytest.mark.asyncio
     async def test_network_timeout_handling(self):
-        """测试网络超时处理"""
+        """Test network timeout handling"""
         timeout_handled = False
 
         async def network_operation():
             nonlocal timeout_handled
             try:
-                # 模拟网络超时
+                # Simulate network timeout
                 await asyncio.wait_for(asyncio.sleep(10), timeout=1.0)
             except asyncio.TimeoutError:
                 timeout_handled = True
-                print("网络超时处理正确")
+                print("Network timeout handled correctly")
 
         await network_operation()
-        assert timeout_handled, "网络超时处理失败"
+        assert timeout_handled, "Network timeout handling failed"
 
     @pytest.mark.asyncio
     async def test_resource_exhaustion_handling(self):
-        """测试资源耗尽处理"""
+        """Test resource exhaustion handling"""
         resource_exhausted = False
 
         async def resource_intensive_operation():
             nonlocal resource_exhausted
             try:
-                # 模拟资源耗尽
+                # Simulate resource exhaustion
                 large_data = []
-                for i in range(1000000):  # 尝试分配大量内存
+                for i in range(1000000):  # Attempt to allocate large memory
                     large_data.append("x" * 1000)
-                    if i % 100000 == 0:  # 定期检查
+                    if i % 100000 == 0:  # Periodic check
                         await asyncio.sleep(0.001)
             except MemoryError:
                 resource_exhausted = True
-                print("资源耗尽处理正确")
+                print("Resource exhaustion handling correct")
 
         await resource_intensive_operation()
-        assert resource_exhausted, "资源耗尽处理失败"
+        assert resource_exhausted, "Resource exhaustion handling failed"
 
     @pytest.mark.asyncio
     async def test_cascade_failure_prevention(self):
-        """测试级联故障预防"""
+        """Test cascade failure prevention"""
         failure_isolated = False
 
         async def failing_service():
-            raise Exception("服务故障")
+            raise Exception("Service failure")
 
         async def dependent_service():
             nonlocal failure_isolated
             try:
                 await failing_service()
             except Exception:
-                # 隔离故障，继续运行
+                # Isolate failure, continue running
                 failure_isolated = True
-                return "服务降级运行"
+                return "Service degraded operation"
 
         result = await dependent_service()
-        assert failure_isolated, "级联故障预防失败"
-        assert result == "服务降级运行", "服务降级处理失败"
-        print("级联故障预防测试通过")
+        assert failure_isolated, "Cascade failure prevention failed"
+        assert result == "Service degraded operation", "Service degradation handling failed"
+        print("Cascade failure prevention test passed")
 
 
 class TestSystemMonitoring:
-    """系统监控测试类"""
+    """System monitoring test class"""
 
     @pytest.mark.asyncio
     async def test_system_metrics_collection(self):
-        """测试系统指标收集"""
+        """Test system metrics collection"""
         metrics = {
             "cpu_usage": 0,
             "memory_usage": 0,
@@ -395,18 +395,18 @@ class TestSystemMonitoring:
             "throughput": 0,
         }
 
-        # 收集系统指标
+        # Collect system metrics
         process = psutil.Process(os.getpid())
         metrics["cpu_usage"] = process.cpu_percent()
         metrics["memory_usage"] = process.memory_info().rss / 1024 / 1024  # MB
 
-        # 模拟响应时间测试
+        # Simulate response time test
         start_time = time.time()
         await asyncio.sleep(0.1)
         end_time = time.time()
         metrics["response_time"] = end_time - start_time
 
-        # 模拟吞吐量测试
+        # Simulate throughput test
         request_count = 100
         start_time = time.time()
         tasks = [
@@ -416,25 +416,25 @@ class TestSystemMonitoring:
         end_time = time.time()
         metrics["throughput"] = request_count / (end_time - start_time)
 
-        print(f"系统指标收集结果:")
+        print(f"System metrics collection results:")
         for key, value in metrics.items():
             print(f"  {key}: {value:.2f}")
 
-        # 验证指标合理性
-        assert metrics["cpu_usage"] >= 0, "CPU使用率异常"
-        assert metrics["memory_usage"] > 0, "内存使用率异常"
-        assert metrics["response_time"] > 0, "响应时间异常"
-        assert metrics["throughput"] > 0, "吞吐量异常"
+        # Verify metric reasonableness
+        assert metrics["cpu_usage"] >= 0, "CPU usage abnormal"
+        assert metrics["memory_usage"] > 0, "Memory usage abnormal"
+        assert metrics["response_time"] > 0, "Response time abnormal"
+        assert metrics["throughput"] > 0, "Throughput abnormal"
 
     @pytest.mark.asyncio
     async def test_alert_threshold_detection(self):
-        """测试告警阈值检测"""
+        """Test alert threshold detection"""
         alert_triggered = False
 
         def check_alert_thresholds(metrics):
             nonlocal alert_triggered
 
-            # 定义告警阈值
+            # Define alert thresholds
             thresholds = {
                 "cpu_usage": 80.0,
                 "memory_usage": 1000.0,  # MB
@@ -445,9 +445,9 @@ class TestSystemMonitoring:
             for metric, threshold in thresholds.items():
                 if metrics.get(metric, 0) > threshold:
                     alert_triggered = True
-                    print(f"告警触发: {metric} = {metrics[metric]} > {threshold}")
+                    print(f"Alert triggered: {metric} = {metrics[metric]} > {threshold}")
 
-        # 模拟高负载指标
+        # Simulate high-load metrics
         high_load_metrics = {
             "cpu_usage": 85.0,
             "memory_usage": 1200.0,
@@ -456,10 +456,10 @@ class TestSystemMonitoring:
         }
 
         check_alert_thresholds(high_load_metrics)
-        assert alert_triggered, "告警阈值检测失败"
-        print("告警阈值检测测试通过")
+        assert alert_triggered, "Alert threshold detection failed"
+        print("Alert threshold detection test passed")
 
 
 if __name__ == "__main__":
-    # 运行测试
+    # Run tests
     pytest.main([__file__, "-v", "--tb=short"])

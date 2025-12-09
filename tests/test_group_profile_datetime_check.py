@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-测试 GroupProfile 中 _recursive_datetime_check 的功能
+Test the functionality of _recursive_datetime_check in GroupProfile
 
-测试内容包括:
-1. 单个 datetime 字段的时区转换
-2. 嵌套 BaseModel 中的 datetime 字段（TopicInfo.last_active_at）
-3. 列表中的 datetime 对象转换（topics 列表）
-4. 字典中的 datetime 对象转换（extend 字段）
-5. 混合场景：列表 + 嵌套 BaseModel + datetime
-6. 递归深度限制测试
-7. 边界情况测试（空列表、空字典、None 值等）
-8. 性能优化场景（列表采样检查）
+Test contents include:
+1. Timezone conversion for a single datetime field
+2. Datetime field in nested BaseModel (TopicInfo.last_active_at)
+3. Datetime object conversion in lists (topics list)
+4. Datetime object conversion in dictionaries (extend field)
+5. Mixed scenario: list + nested BaseModel + datetime
+6. Recursive depth limit test
+7. Edge case testing (empty list, empty dictionary, None values, etc.)
+8. Performance optimization scenario (list sampling check)
 """
 
 import asyncio
@@ -35,223 +35,223 @@ from core.observation.logger import get_logger
 logger = get_logger(__name__)
 
 
-# ==================== 辅助函数 ====================
+# ==================== Helper functions ====================
 def create_naive_datetime() -> datetime:
-    """创建一个没有时区信息的 datetime 对象"""
+    """Create a datetime object without timezone information"""
     return datetime(2025, 1, 1, 12, 0, 0)
 
 
 def create_aware_datetime_utc() -> datetime:
-    """创建一个 UTC 时区的 datetime 对象"""
+    """Create a datetime object in UTC timezone"""
     return datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
 
 
 def create_aware_datetime_shanghai() -> datetime:
-    """创建一个上海时区的 datetime 对象"""
+    """Create a datetime object in Shanghai timezone"""
     shanghai_tz = get_timezone()
     return datetime(2025, 1, 1, 12, 0, 0, tzinfo=shanghai_tz)
 
 
 def is_aware_datetime(dt: datetime) -> bool:
-    """检查 datetime 是否包含时区信息"""
+    """Check if datetime contains timezone information"""
     return dt.tzinfo is not None and dt.tzinfo.utcoffset(dt) is not None
 
 
-# ==================== 测试用例 ====================
+# ==================== Test cases ====================
 
 
 async def test_single_datetime_field_conversion():
-    """测试1: 单个 datetime 字段的时区转换"""
-    logger.info("开始测试单个 datetime 字段的时区转换...")
+    """Test 1: Timezone conversion for a single datetime field"""
+    logger.info("Starting test for single datetime field timezone conversion...")
 
     repo = get_bean_by_type(GroupProfileRawRepository)
     group_id = "test_group_datetime_001"
 
     try:
-        # 先清理
+        # Clean up first
         await repo.delete_by_group_id(group_id)
-        logger.info("✅ 清理已存在的测试数据")
+        logger.info("✅ Cleaned up existing test data")
 
-        # 创建一个没有时区的 datetime
+        # Create a naive datetime
         naive_dt = create_naive_datetime()
         logger.info(
-            "   创建的 naive datetime: %s (tzinfo=%s)", naive_dt, naive_dt.tzinfo
+            "   Created naive datetime: %s (tzinfo=%s)", naive_dt, naive_dt.tzinfo
         )
 
-        # 创建 GroupProfile，传入 naive datetime
-        # 注意：timestamp 是 int 类型，所以我们不测试它
-        # 我们通过 extend 字段来测试 datetime 转换
+        # Create GroupProfile, passing naive datetime
+        # Note: timestamp is int type, so we don't test it
+        # We test datetime conversion via the extend field
         group_profile = GroupProfile(
             group_id=group_id,
             timestamp=1704067200000,  # 2024-01-01 00:00:00 (milliseconds)
             version="v1",
-            extend={"test_datetime": naive_dt},  # 在字典中放入 naive datetime
+            extend={"test_datetime": naive_dt},  # Put naive datetime in dictionary
         )
 
-        # 验证：_recursive_datetime_check 应该在 model_validator 中自动执行
-        # 检查 extend 中的 datetime 是否被转换
+        # Verify: _recursive_datetime_check should be automatically executed in model_validator
+        # Check if datetime in extend has been converted
         result_dt = group_profile.extend["test_datetime"]
-        logger.info("   转换后的 datetime: %s (tzinfo=%s)", result_dt, result_dt.tzinfo)
+        logger.info("   Converted datetime: %s (tzinfo=%s)", result_dt, result_dt.tzinfo)
 
-        assert is_aware_datetime(result_dt), "datetime 应该包含时区信息"
-        logger.info("✅ 单个 datetime 字段转换成功")
+        assert is_aware_datetime(result_dt), "datetime should contain timezone information"
+        logger.info("✅ Single datetime field conversion succeeded")
 
-        # 保存到数据库并验证
+        # Save to database and verify
         await repo.upsert_by_group_id(
             group_id=group_id,
             update_data={"version": "v1", "extend": {"test_datetime": naive_dt}},
             timestamp=1704067200000,
         )
-        logger.info("✅ 保存到数据库成功")
+        logger.info("✅ Saved to database successfully")
 
-        # 从数据库读取并验证
+        # Retrieve from database and verify
         retrieved = await repo.get_by_group_id(group_id)
         assert retrieved is not None
         retrieved_dt = retrieved.extend["test_datetime"]
         logger.info(
-            "   从数据库读取的 datetime: %s (tzinfo=%s)",
+            "   Retrieved datetime from database: %s (tzinfo=%s)",
             retrieved_dt,
             retrieved_dt.tzinfo,
         )
         assert is_aware_datetime(
             retrieved_dt
-        ), "从数据库读取的 datetime 应该包含时区信息"
-        logger.info("✅ 从数据库读取验证成功")
+        ), "Retrieved datetime from database should contain timezone information"
+        logger.info("✅ Database retrieval verification succeeded")
 
-        # 清理
+        # Clean up
         await repo.delete_by_group_id(group_id)
 
     except Exception as e:
-        logger.error("❌ 测试单个 datetime 字段转换失败: %s", e)
+        logger.error("❌ Test for single datetime field conversion failed: %s", e)
         import traceback
 
-        logger.error("详细错误: %s", traceback.format_exc())
+        logger.error("Detailed error: %s", traceback.format_exc())
         raise
 
-    logger.info("✅ 单个 datetime 字段转换测试完成")
+    logger.info("✅ Single datetime field conversion test completed")
 
 
 async def test_nested_basemodel_datetime_conversion():
-    """测试2: 嵌套 BaseModel 中的 datetime 字段（TopicInfo.last_active_at）"""
-    logger.info("开始测试嵌套 BaseModel 中的 datetime 字段转换...")
+    """Test 2: Datetime field conversion in nested BaseModel (TopicInfo.last_active_at)"""
+    logger.info("Starting test for datetime field conversion in nested BaseModel...")
 
     repo = get_bean_by_type(GroupProfileRawRepository)
     group_id = "test_group_datetime_002"
 
     try:
-        # 先清理
+        # Clean up first
         await repo.delete_by_group_id(group_id)
-        logger.info("✅ 清理已存在的测试数据")
+        logger.info("✅ Cleaned up existing test data")
 
-        # 创建一个 naive datetime
+        # Create a naive datetime
         naive_dt = create_naive_datetime()
         logger.info(
-            "   创建的 naive datetime: %s (tzinfo=%s)", naive_dt, naive_dt.tzinfo
+            "   Created naive datetime: %s (tzinfo=%s)", naive_dt, naive_dt.tzinfo
         )
 
-        # 创建 TopicInfo，包含 naive datetime
-        # 注意：TopicInfo 是普通的 BaseModel，它的 datetime 字段在实例化时不会自动转换
-        # 时区转换会在它被嵌入到 DocumentBase (GroupProfile) 时由 _recursive_datetime_check 执行
+        # Create TopicInfo with naive datetime
+        # Note: TopicInfo is a regular BaseModel, its datetime field won't be automatically converted during instantiation
+        # Timezone conversion will be triggered by _recursive_datetime_check when it's embedded into DocumentBase (GroupProfile)
         topic = TopicInfo(
-            name="测试话题",
-            summary="这是一个测试话题",
+            name="Test topic",
+            summary="This is a test topic",
             status="exploring",
             last_active_at=naive_dt,  # naive datetime
             id="topic_001",
         )
 
         logger.info(
-            "   TopicInfo.last_active_at (实例化后): %s (tzinfo=%s)",
+            "   TopicInfo.last_active_at (after instantiation): %s (tzinfo=%s)",
             topic.last_active_at,
             topic.last_active_at.tzinfo,
         )
-        # TopicInfo 实例化后，datetime 还没有被转换（因为它不是 DocumentBase）
+        # After TopicInfo instantiation, datetime hasn't been converted (because it's not DocumentBase)
         assert (
             topic.last_active_at.tzinfo is None
-        ), "TopicInfo 实例化后的 datetime 应该还是 naive"
-        logger.info("✅ TopicInfo 实例化后 datetime 仍然是 naive（符合预期）")
+        ), "TopicInfo's datetime after instantiation should still be naive"
+        logger.info("✅ TopicInfo's datetime remains naive after instantiation (as expected)")
 
-        # 创建 GroupProfile - 在这里 _recursive_datetime_check 会被触发
+        # Create GroupProfile - _recursive_datetime_check will be triggered here
         group_profile = GroupProfile(
             group_id=group_id, timestamp=1704067200000, version="v1", topics=[topic]
         )
 
-        # 验证：嵌套在 GroupProfile 中的 TopicInfo.last_active_at 也应该被转换
+        # Verify: TopicInfo.last_active_at nested in GroupProfile should also be converted
         result_dt = group_profile.topics[0].last_active_at
         logger.info(
             "   GroupProfile.topics[0].last_active_at: %s (tzinfo=%s)",
             result_dt,
             result_dt.tzinfo,
         )
-        assert is_aware_datetime(result_dt), "嵌套的 datetime 应该包含时区信息"
-        logger.info("✅ 嵌套在 GroupProfile 中的 datetime 转换成功")
+        assert is_aware_datetime(result_dt), "Nested datetime should contain timezone information"
+        logger.info("✅ Datetime conversion succeeded for TopicInfo nested in GroupProfile")
 
-        # 保存到数据库并验证
+        # Save to database and verify
         await repo.upsert_by_group_id(
             group_id=group_id,
             update_data={"version": "v1", "topics": [topic.model_dump()]},
             timestamp=1704067200000,
         )
-        logger.info("✅ 保存到数据库成功")
+        logger.info("✅ Saved to database successfully")
 
-        # 从数据库读取并验证
+        # Retrieve from database and verify
         retrieved = await repo.get_by_group_id(group_id)
         assert retrieved is not None
         retrieved_dt = retrieved.topics[0].last_active_at
         logger.info(
-            "   从数据库读取的 datetime: %s (tzinfo=%s)",
+            "   Retrieved datetime from database: %s (tzinfo=%s)",
             retrieved_dt,
             retrieved_dt.tzinfo,
         )
         assert is_aware_datetime(
             retrieved_dt
-        ), "从数据库读取的 datetime 应该包含时区信息"
-        logger.info("✅ 从数据库读取验证成功")
+        ), "Retrieved datetime from database should contain timezone information"
+        logger.info("✅ Database retrieval verification succeeded")
 
-        # 清理
+        # Clean up
         await repo.delete_by_group_id(group_id)
 
     except Exception as e:
-        logger.error("❌ 测试嵌套 BaseModel datetime 转换失败: %s", e)
+        logger.error("❌ Test for nested BaseModel datetime conversion failed: %s", e)
         import traceback
 
-        logger.error("详细错误: %s", traceback.format_exc())
+        logger.error("Detailed error: %s", traceback.format_exc())
         raise
 
-    logger.info("✅ 嵌套 BaseModel datetime 转换测试完成")
+    logger.info("✅ Nested BaseModel datetime conversion test completed")
 
 
 async def test_list_datetime_conversion():
     """
-    测试3: 列表中的 datetime 对象转换（topics 列表）
+    Test 3: Datetime object conversion in lists (topics list)
 
-    ⚠️ 注意：此测试发现了 _recursive_datetime_check 的一个 BUG：
-    列表采样优化中，当列表包含 BaseModel 对象时，由于 BaseModel 的转换是 in-place 的
-    （返回同一个对象），采样检查会误判为"不需要转换"，导致列表中第2个及后续元素不被处理。
+    ⚠️ Note: This test reveals a BUG in _recursive_datetime_check:
+    In list sampling optimization, when the list contains BaseModel objects, because BaseModel conversion is in-place
+    (returns the same object), the sampling check incorrectly judges that "no conversion is needed", causing the second and subsequent elements in the list to not be processed.
 
-    修复方案：在 BaseModel 情况中，需要标记对象是否被修改过，而不是依赖对象引用是否改变。
+    Fix solution: In BaseModel cases, need to mark whether the object has been modified, rather than relying on whether the object reference has changed.
     """
-    logger.info("开始测试列表中的 datetime 对象转换...")
-    logger.warning("⚠️ 此测试将展示 _recursive_datetime_check 的列表采样优化 bug")
+    logger.info("Starting test for datetime object conversion in lists...")
+    logger.warning("⚠️ This test will demonstrate the list sampling optimization bug in _recursive_datetime_check")
 
     repo = get_bean_by_type(GroupProfileRawRepository)
     group_id = "test_group_datetime_003"
 
     try:
-        # 先清理
+        # Clean up first
         await repo.delete_by_group_id(group_id)
-        logger.info("✅ 清理已存在的测试数据")
+        logger.info("✅ Cleaned up existing test data")
 
-        # 创建多个 naive datetime
+        # Create multiple naive datetimes
         naive_dt1 = create_naive_datetime()
         naive_dt2 = naive_dt1 + timedelta(days=1)
         naive_dt3 = naive_dt1 + timedelta(days=2)
 
-        # 创建多个 TopicInfo
+        # Create multiple TopicInfo
         topics = [
             TopicInfo(
-                name=f"话题{i}",
-                summary=f"话题{i}的摘要",
+                name=f"Topic{i}",
+                summary=f"Summary for topic{i}",
                 status="exploring",
                 last_active_at=dt,
                 id=f"topic_{i}",
@@ -259,12 +259,12 @@ async def test_list_datetime_conversion():
             for i, dt in enumerate([naive_dt1, naive_dt2, naive_dt3], start=1)
         ]
 
-        # 创建 GroupProfile
+        # Create GroupProfile
         group_profile = GroupProfile(
             group_id=group_id, timestamp=1704067200000, version="v1", topics=topics
         )
 
-        # 验证：检查哪些元素被转换了
+        # Verify: Check which elements have been converted
         converted_count = 0
         not_converted_indices = []
 
@@ -275,63 +275,63 @@ async def test_list_datetime_conversion():
                 i,
                 topic.last_active_at,
                 topic.last_active_at.tzinfo,
-                "✅ 已转换" if is_aware else "❌ 未转换",
+                "✅ Converted" if is_aware else "❌ Not converted",
             )
             if is_aware:
                 converted_count += 1
             else:
                 not_converted_indices.append(i)
 
-        # 🐛 BUG 验证：只有第一个元素被转换，后续元素都未转换
+        # 🐛 BUG Verification: Only the first element is converted, subsequent elements are not
         if converted_count == 1 and not_converted_indices == [1, 2]:
-            logger.warning("⚠️ 确认 BUG：列表采样优化导致只有第一个元素被转换")
-            logger.warning("   第一个元素（topics[0]）: 已转换 ✅")
-            logger.warning("   后续元素（topics[1], topics[2]）: 未转换 ❌")
-            logger.info("✅ 列表采样优化 BUG 已被测试确认")
+            logger.warning("⚠️ Confirmed BUG: List sampling optimization causes only the first element to be converted")
+            logger.warning("   First element (topics[0]): Converted ✅")
+            logger.warning("   Subsequent elements (topics[1], topics[2]): Not converted ❌")
+            logger.info("✅ List sampling optimization BUG has been confirmed by test")
         else:
-            # 如果 bug 被修复了，这里应该全部转换
+            # If the bug is fixed, all elements should be converted
             assert (
                 converted_count == 3
-            ), f"期望3个元素都被转换，实际转换了 {converted_count} 个"
-            logger.info("✅ 列表中所有 datetime 转换成功（BUG 已修复）")
+            ), f"Expected 3 elements to be converted, actually converted {converted_count}"
+            logger.info("✅ All datetime conversions in list succeeded (BUG fixed)")
 
-        # 注意：由于上述 BUG，我们不保存到数据库，因为会保存未转换的 datetime
-        # 这会导致数据库中存储 naive datetime，引发后续问题
-        logger.info("⚠️ 跳过保存到数据库（避免保存 naive datetime）")
+        # Note: Due to the above BUG, we skip saving to database to avoid saving naive datetime
+        # This would cause naive datetime to be stored in the database, leading to subsequent issues
+        logger.info("⚠️ Skipping save to database (to avoid saving naive datetime)")
 
-        # 清理
+        # Clean up
         await repo.delete_by_group_id(group_id)
 
     except Exception as e:
-        logger.error("❌ 测试列表 datetime 转换失败: %s", e)
+        logger.error("❌ Test for list datetime conversion failed: %s", e)
         import traceback
 
-        logger.error("详细错误: %s", traceback.format_exc())
+        logger.error("Detailed error: %s", traceback.format_exc())
         raise
 
-    logger.info("✅ 列表 datetime 转换测试完成（BUG 已确认）")
+    logger.info("✅ List datetime conversion test completed (BUG confirmed)")
 
 
 async def test_dict_datetime_conversion():
     """
-    测试4: 字典中的 datetime 对象转换（extend 字段）
+    Test 4: Datetime object conversion in dictionaries (extend field)
 
-    ⚠️ 注意：此测试会验证递归深度限制（MAX_RECURSION_DEPTH = 4）
-    - 第一层字典的 datetime 会被转换（depth = 2）
-    - 第二层嵌套字典的 datetime 不会被转换（depth = 4，达到限制）
+    ⚠️ Note: This test verifies the recursive depth limit (MAX_RECURSION_DEPTH = 4)
+    - Datetime in first-level dictionary will be converted (depth = 2)
+    - Datetime in second-level nested dictionary will not be converted (depth = 4, limit reached)
     """
-    logger.info("开始测试字典中的 datetime 对象转换...")
-    logger.warning("⚠️ 此测试将验证递归深度限制")
+    logger.info("Starting test for datetime object conversion in dictionaries...")
+    logger.warning("⚠️ This test will verify the recursive depth limit")
 
     repo = get_bean_by_type(GroupProfileRawRepository)
     group_id = "test_group_datetime_004"
 
     try:
-        # 先清理
+        # Clean up first
         await repo.delete_by_group_id(group_id)
-        logger.info("✅ 清理已存在的测试数据")
+        logger.info("✅ Cleaned up existing test data")
 
-        # 创建包含多个 datetime 的字典
+        # Create dictionary containing multiple datetimes
         naive_dt1 = create_naive_datetime()
         naive_dt2 = naive_dt1 + timedelta(days=1)
 
@@ -341,110 +341,110 @@ async def test_dict_datetime_conversion():
             "nested": {"last_check": naive_dt1},
         }
 
-        # 创建 GroupProfile
+        # Create GroupProfile
         group_profile = GroupProfile(
             group_id=group_id, timestamp=1704067200000, version="v1", extend=extend_data
         )
 
-        # 验证第一层字典的 datetime（应该被转换）
+        # Verify datetime in first-level dictionary (should be converted)
         logger.info(
-            "   extend['created_time']: %s (tzinfo=%s) - 第一层字典",
+            "   extend['created_time']: %s (tzinfo=%s) - First-level dictionary",
             group_profile.extend["created_time"],
             group_profile.extend["created_time"].tzinfo,
         )
         assert is_aware_datetime(
             group_profile.extend["created_time"]
-        ), "extend['created_time'] 应该包含时区信息"
+        ), "extend['created_time'] should contain timezone information"
 
         logger.info(
-            "   extend['updated_time']: %s (tzinfo=%s) - 第一层字典",
+            "   extend['updated_time']: %s (tzinfo=%s) - First-level dictionary",
             group_profile.extend["updated_time"],
             group_profile.extend["updated_time"].tzinfo,
         )
         assert is_aware_datetime(
             group_profile.extend["updated_time"]
-        ), "extend['updated_time'] 应该包含时区信息"
+        ), "extend['updated_time'] should contain timezone information"
 
-        logger.info("✅ 第一层字典的 datetime 转换成功")
+        logger.info("✅ Datetime conversion succeeded for first-level dictionary")
 
-        # 验证第二层嵌套字典的 datetime（受递归深度限制，不会被转换）
+        # Verify datetime in second-level nested dictionary (subject to recursive depth limit, will not be converted)
         nested_dt = group_profile.extend["nested"]["last_check"]
         is_nested_aware = is_aware_datetime(nested_dt)
 
         logger.info(
-            "   extend['nested']['last_check']: %s (tzinfo=%s) - 第二层嵌套字典",
+            "   extend['nested']['last_check']: %s (tzinfo=%s) - Second-level nested dictionary",
             nested_dt,
             nested_dt.tzinfo,
         )
 
         if not is_nested_aware:
-            logger.warning("⚠️ 确认：第二层嵌套字典的 datetime 未被转换（递归深度限制）")
+            logger.warning("⚠️ Confirmed: Datetime in second-level nested dictionary was not converted (recursive depth limit)")
             logger.warning(
-                "   深度计算：DocumentBase (0) -> extend 字段 (0) -> extend 字典 (2) -> nested 字典 (4)"
+                "   Depth calculation: DocumentBase (0) -> extend field (0) -> extend dictionary (2) -> nested dictionary (4)"
             )
-            logger.warning("   当 depth >= 4 时，_recursive_datetime_check 会停止递归")
-            logger.info("✅ 递归深度限制已被测试确认")
+            logger.warning("   _recursive_datetime_check stops recursion when depth >= 4")
+            logger.info("✅ Recursive depth limit has been confirmed by test")
         else:
             logger.info(
-                "✅ 第二层嵌套字典的 datetime 也被转换了（递归深度限制可能已调整）"
+                "✅ Datetime in second-level nested dictionary was also converted (recursive depth limit may have been adjusted)"
             )
 
-        # 保存到数据库并验证
+        # Save to database and verify
         await repo.upsert_by_group_id(
             group_id=group_id,
             update_data={"version": "v1", "extend": extend_data},
             timestamp=1704067200000,
         )
-        logger.info("✅ 保存到数据库成功")
+        logger.info("✅ Saved to database successfully")
 
-        # 从数据库读取并验证
+        # Retrieve from database and verify
         retrieved = await repo.get_by_group_id(group_id)
         assert retrieved is not None
 
         logger.info(
-            "   从数据库读取的 extend['created_time']: %s (tzinfo=%s)",
+            "   Retrieved extend['created_time'] from database: %s (tzinfo=%s)",
             retrieved.extend["created_time"],
             retrieved.extend["created_time"].tzinfo,
         )
         assert is_aware_datetime(
             retrieved.extend["created_time"]
-        ), "从数据库读取的 datetime 应该包含时区信息"
+        ), "Retrieved datetime from database should contain timezone information"
 
-        logger.info("✅ 从数据库读取验证成功")
+        logger.info("✅ Database retrieval verification succeeded")
 
-        # 清理
+        # Clean up
         await repo.delete_by_group_id(group_id)
 
     except Exception as e:
-        logger.error("❌ 测试字典 datetime 转换失败: %s", e)
+        logger.error("❌ Test for dictionary datetime conversion failed: %s", e)
         import traceback
 
-        logger.error("详细错误: %s", traceback.format_exc())
+        logger.error("Detailed error: %s", traceback.format_exc())
         raise
 
-    logger.info("✅ 字典 datetime 转换测试完成")
+    logger.info("✅ Dictionary datetime conversion test completed")
 
 
 async def test_mixed_scenario():
-    """测试5: 混合场景 - 列表 + 嵌套 BaseModel + 字典 + datetime"""
-    logger.info("开始测试混合场景...")
+    """Test 5: Mixed scenario - list + nested BaseModel + dictionary + datetime"""
+    logger.info("Starting test for mixed scenario...")
 
     repo = get_bean_by_type(GroupProfileRawRepository)
     group_id = "test_group_datetime_005"
 
     try:
-        # 先清理
+        # Clean up first
         await repo.delete_by_group_id(group_id)
-        logger.info("✅ 清理已存在的测试数据")
+        logger.info("✅ Cleaned up existing test data")
 
-        # 创建复杂的嵌套结构
+        # Create complex nested structure
         naive_dt = create_naive_datetime()
 
-        # 1. topics 列表中的 datetime
+        # 1. Datetime in topics list
         topics = [
             TopicInfo(
-                name=f"话题{i}",
-                summary=f"话题{i}的摘要",
+                name=f"Topic{i}",
+                summary=f"Summary for topic{i}",
                 status="exploring",
                 last_active_at=naive_dt + timedelta(days=i),
                 id=f"topic_{i}",
@@ -452,7 +452,7 @@ async def test_mixed_scenario():
             for i in range(3)
         ]
 
-        # 2. extend 字典中的 datetime
+        # 2. Datetime in extend dictionary
         extend_data = {
             "timestamps": [
                 naive_dt,
@@ -462,7 +462,7 @@ async def test_mixed_scenario():
             "metadata": {"created": naive_dt, "updated": naive_dt + timedelta(days=1)},
         }
 
-        # 创建 GroupProfile
+        # Create GroupProfile
         group_profile = GroupProfile(
             group_id=group_id,
             timestamp=1704067200000,
@@ -471,29 +471,29 @@ async def test_mixed_scenario():
             extend=extend_data,
         )
 
-        # 验证1: topics 列表中的 datetime
+        # Verify 1: Datetime in topics list
         for i, topic in enumerate(group_profile.topics):
             assert is_aware_datetime(
                 topic.last_active_at
-            ), f"topics[{i}].last_active_at 应该包含时区信息"
-        logger.info("✅ topics 列表中的 datetime 全部转换成功")
+            ), f"topics[{i}].last_active_at should contain timezone information"
+        logger.info("✅ All datetime conversions in topics list succeeded")
 
-        # 验证2: extend 字典中的 datetime 列表
+        # Verify 2: Datetime list in extend dictionary
         for i, dt in enumerate(group_profile.extend["timestamps"]):
             logger.info("   extend['timestamps'][%d]: %s (tzinfo=%s)", i, dt, dt.tzinfo)
-            assert is_aware_datetime(dt), f"extend['timestamps'][{i}] 应该包含时区信息"
-        logger.info("✅ extend['timestamps'] 列表中的 datetime 全部转换成功")
+            assert is_aware_datetime(dt), f"extend['timestamps'][{i}] should contain timezone information"
+        logger.info("✅ All datetime conversions in extend['timestamps'] list succeeded")
 
-        # 验证3: extend 字典中嵌套字典的 datetime
+        # Verify 3: Datetime in nested dictionary within extend dictionary
         assert is_aware_datetime(
             group_profile.extend["metadata"]["created"]
-        ), "extend['metadata']['created'] 应该包含时区信息"
+        ), "extend['metadata']['created'] should contain timezone information"
         assert is_aware_datetime(
             group_profile.extend["metadata"]["updated"]
-        ), "extend['metadata']['updated'] 应该包含时区信息"
-        logger.info("✅ extend['metadata'] 中的 datetime 全部转换成功")
+        ), "extend['metadata']['updated'] should contain timezone information"
+        logger.info("✅ All datetime conversions in extend['metadata'] succeeded")
 
-        # 保存到数据库
+        # Save to database
         await repo.upsert_by_group_id(
             group_id=group_id,
             update_data={
@@ -503,81 +503,81 @@ async def test_mixed_scenario():
             },
             timestamp=1704067200000,
         )
-        logger.info("✅ 保存到数据库成功")
+        logger.info("✅ Saved to database successfully")
 
-        # 从数据库读取并验证
+        # Retrieve from database and verify
         retrieved = await repo.get_by_group_id(group_id)
         assert retrieved is not None
 
-        # 验证读取的数据
+        # Verify retrieved data
         for i, topic in enumerate(retrieved.topics):
             assert is_aware_datetime(
                 topic.last_active_at
-            ), f"从数据库读取的 topics[{i}].last_active_at 应该包含时区信息"
+            ), f"Retrieved topics[{i}].last_active_at from database should contain timezone information"
 
         for i, dt in enumerate(retrieved.extend["timestamps"]):
             assert is_aware_datetime(
                 dt
-            ), f"从数据库读取的 extend['timestamps'][{i}] 应该包含时区信息"
+            ), f"Retrieved extend['timestamps'][{i}] from database should contain timezone information"
 
-        logger.info("✅ 从数据库读取验证成功")
+        logger.info("✅ Database retrieval verification succeeded")
 
-        # 清理
+        # Clean up
         await repo.delete_by_group_id(group_id)
 
     except Exception as e:
-        logger.error("❌ 测试混合场景失败: %s", e)
+        logger.error("❌ Mixed scenario test failed: %s", e)
         import traceback
 
-        logger.error("详细错误: %s", traceback.format_exc())
+        logger.error("Detailed error: %s", traceback.format_exc())
         raise
 
-    logger.info("✅ 混合场景测试完成")
+    logger.info("✅ Mixed scenario test completed")
 
 
 async def test_edge_cases():
-    """测试6: 边界情况 - 空列表、空字典、None 值等"""
-    logger.info("开始测试边界情况...")
+    """Test 6: Edge cases - empty list, empty dictionary, None values, etc."""
+    logger.info("Starting edge case testing...")
 
     repo = get_bean_by_type(GroupProfileRawRepository)
     group_id = "test_group_datetime_006"
 
     try:
-        # 先清理
+        # Clean up first
         await repo.delete_by_group_id(group_id)
-        logger.info("✅ 清理已存在的测试数据")
+        logger.info("✅ Cleaned up existing test data")
 
-        # 测试1: 空列表
+        # Test 1: Empty list
         group_profile_empty_list = GroupProfile(
             group_id=group_id,
             timestamp=1704067200000,
             version="v1",
-            topics=[],  # 空列表
+            topics=[],  # Empty list
         )
-        assert group_profile_empty_list.topics == [], "空列表应该保持为空"
-        logger.info("✅ 空列表测试通过")
+        assert group_profile_empty_list.topics == [], "Empty list should remain empty"
+        logger.info("✅ Empty list test passed")
 
-        # 测试2: 空字典
+        # Test 2: Empty dictionary
         group_profile_empty_dict = GroupProfile(
             group_id=group_id,
             timestamp=1704067200000,
             version="v2",
-            extend={},  # 空字典
+            extend={},  # Empty dictionary
         )
-        assert group_profile_empty_dict.extend == {}, "空字典应该保持为空"
-        logger.info("✅ 空字典测试通过")
+        assert group_profile_empty_dict.extend == {}, "Empty dictionary should remain empty"
+        logger.info("✅ Empty dictionary test passed")
 
-        # 测试3: None 值
+        # Test 3: None value
         group_profile_none = GroupProfile(
             group_id=group_id,
             timestamp=1704067200000,
             version="v3",
-            extend=None,  # None 值
+            extend=None,  # None value
         )
-        assert group_profile_none.extend is None, "None 值应该保持为 None"
-        logger.info("✅ None 值测试通过")
+        assert group_profile_none.extend is None, "None value should remain as None"
+        logger.info("✅ None value test passed")
 
-        # 测试4: 字典中包含 None
+        # Test 4: Dictionary containing None
         group_profile_dict_with_none = GroupProfile(
             group_id=group_id,
             timestamp=1704067200000,
@@ -586,10 +586,10 @@ async def test_edge_cases():
         )
         assert (
             group_profile_dict_with_none.extend["key1"] is None
-        ), "字典中的 None 值应该保持为 None"
-        logger.info("✅ 字典中包含 None 测试通过")
+        ), "None value in dictionary should remain as None"
+        logger.info("✅ Dictionary containing None test passed")
 
-        # 测试5: 已经包含时区的 datetime 不应该被重复转换
+        # Test 5: Datetime that already contains timezone should not be converted again
         aware_dt = create_aware_datetime_shanghai()
         group_profile_aware = GroupProfile(
             group_id=group_id,
@@ -598,40 +598,40 @@ async def test_edge_cases():
             extend={"aware_datetime": aware_dt},
         )
         result_dt = group_profile_aware.extend["aware_datetime"]
-        # 验证时区没有被改变（仍然是原来的时区）
-        assert is_aware_datetime(result_dt), "aware datetime 应该保持有时区信息"
-        logger.info("✅ aware datetime 测试通过")
+        # Verify timezone hasn't changed (still original timezone)
+        assert is_aware_datetime(result_dt), "aware datetime should maintain timezone information"
+        logger.info("✅ aware datetime test passed")
 
-        logger.info("✅ 所有边界情况测试通过")
+        logger.info("✅ All edge case tests passed")
 
     except Exception as e:
-        logger.error("❌ 测试边界情况失败: %s", e)
+        logger.error("❌ Edge case test failed: %s", e)
         import traceback
 
-        logger.error("详细错误: %s", traceback.format_exc())
+        logger.error("Detailed error: %s", traceback.format_exc())
         raise
 
-    logger.info("✅ 边界情况测试完成")
+    logger.info("✅ Edge case test completed")
 
 
 async def test_list_sampling_optimization():
-    """测试7: 列表采样优化 - 验证列表只检查第一个元素"""
-    logger.info("开始测试列表采样优化...")
+    """Test 7: List sampling optimization - Verify only the first element is checked"""
+    logger.info("Starting list sampling optimization test...")
 
     repo = get_bean_by_type(GroupProfileRawRepository)
     group_id = "test_group_datetime_007"
 
     try:
-        # 先清理
+        # Clean up first
         await repo.delete_by_group_id(group_id)
-        logger.info("✅ 清理已存在的测试数据")
+        logger.info("✅ Cleaned up existing test data")
 
-        # 创建一个大列表，其中只有第一个元素包含 naive datetime
-        # 根据代码逻辑，如果第一个元素不需要转换，整个列表都不会转换
+        # Create a large list where only the first element contains a naive datetime
+        # According to code logic, if the first element doesn't need conversion, the entire list won't be converted
         naive_dt = create_naive_datetime()
         aware_dt = create_aware_datetime_shanghai()
 
-        # 场景1: 列表中所有元素都是 naive datetime
+        # Scenario 1: All elements in list are naive datetime
         all_naive_list = [naive_dt + timedelta(days=i) for i in range(10)]
 
         group_profile_all_naive = GroupProfile(
@@ -641,14 +641,14 @@ async def test_list_sampling_optimization():
             extend={"datetime_list": all_naive_list},
         )
 
-        # 验证：所有元素都应该被转换
+        # Verify: All elements should be converted
         for i, dt in enumerate(group_profile_all_naive.extend["datetime_list"]):
             logger.info("   datetime_list[%d]: %s (tzinfo=%s)", i, dt, dt.tzinfo)
-            assert is_aware_datetime(dt), f"datetime_list[{i}] 应该包含时区信息"
+            assert is_aware_datetime(dt), f"datetime_list[{i}] should contain timezone information"
 
-        logger.info("✅ 全部 naive datetime 列表转换成功")
+        logger.info("✅ All naive datetime list conversion succeeded")
 
-        # 场景2: 列表中所有元素都是 aware datetime
+        # Scenario 2: All elements in list are aware datetime
         all_aware_list = [aware_dt + timedelta(days=i) for i in range(10)]
 
         group_profile_all_aware = GroupProfile(
@@ -658,92 +658,92 @@ async def test_list_sampling_optimization():
             extend={"datetime_list": all_aware_list},
         )
 
-        # 验证：所有元素都应该保持 aware
+        # Verify: All elements should remain aware
         for i, dt in enumerate(group_profile_all_aware.extend["datetime_list"]):
-            assert is_aware_datetime(dt), f"datetime_list[{i}] 应该包含时区信息"
+            assert is_aware_datetime(dt), f"datetime_list[{i}] should contain timezone information"
 
-        logger.info("✅ 全部 aware datetime 列表保持不变")
+        logger.info("✅ All aware datetime list remains unchanged")
 
-        logger.info("✅ 列表采样优化测试完成")
+        logger.info("✅ List sampling optimization test completed")
 
     except Exception as e:
-        logger.error("❌ 测试列表采样优化失败: %s", e)
+        logger.error("❌ List sampling optimization test failed: %s", e)
         import traceback
 
-        logger.error("详细错误: %s", traceback.format_exc())
+        logger.error("Detailed error: %s", traceback.format_exc())
         raise
 
-    logger.info("✅ 列表采样优化测试完成")
+    logger.info("✅ List sampling optimization test completed")
 
 
 async def test_recursion_depth_limit():
-    """测试8: 递归深度限制 - 验证最大递归深度限制"""
-    logger.info("开始测试递归深度限制...")
+    """Test 8: Recursive depth limit - Verify maximum recursion depth limit"""
+    logger.info("Starting recursive depth limit test...")
 
     repo = get_bean_by_type(GroupProfileRawRepository)
     group_id = "test_group_datetime_008"
 
     try:
-        # 先清理
+        # Clean up first
         await repo.delete_by_group_id(group_id)
-        logger.info("✅ 清理已存在的测试数据")
+        logger.info("✅ Cleaned up existing test data")
 
-        # 创建一个深度嵌套的字典结构
+        # Create a deeply nested dictionary structure
         naive_dt = create_naive_datetime()
 
-        # 创建深度为5的嵌套字典（超过 MAX_RECURSION_DEPTH = 4）
+        # Create nested dictionary with depth 5 (exceeding MAX_RECURSION_DEPTH = 4)
         nested_dict = {
             "level1": {
                 "level2": {"level3": {"level4": {"level5": {"datetime": naive_dt}}}}
             }
         }
 
-        # 创建 GroupProfile
+        # Create GroupProfile
         group_profile = GroupProfile(
             group_id=group_id, timestamp=1704067200000, version="v1", extend=nested_dict
         )
 
-        # 验证：由于递归深度限制，level5 的 datetime 可能不会被转换
-        # 但是 level1-4 的结构应该被遍历到
-        # 注意：由于每次进入列表/字典会 depth+2，实际深度计算需要注意
+        # Verify: Due to recursive depth limit, datetime at level5 may not be converted
+        # But structures at level1-4 should be traversed
+        # Note: Since each entry into list/dictionary increases depth by 2, actual depth calculation needs attention
 
-        # 尝试访问深层的 datetime
+        # Try to access deep datetime
         try:
             deep_dt = group_profile.extend["level1"]["level2"]["level3"]["level4"][
                 "level5"
             ]["datetime"]
-            logger.info("   深层 datetime: %s (tzinfo=%s)", deep_dt, deep_dt.tzinfo)
-            # 由于递归深度限制，这个 datetime 可能没有被转换
-            # 我们只是验证程序不会崩溃
-            logger.info("✅ 程序没有因为深度嵌套而崩溃")
+            logger.info("   Deep datetime: %s (tzinfo=%s)", deep_dt, deep_dt.tzinfo)
+            # Due to recursive depth limit, this datetime may not have been converted
+            # We just verify the program doesn't crash
+            logger.info("✅ Program did not crash due to deep nesting")
         except Exception as e:
-            logger.warning("   访问深层 datetime 失败: %s", e)
+            logger.warning("   Failed to access deep datetime: %s", e)
 
-        logger.info("✅ 递归深度限制测试通过")
+        logger.info("✅ Recursive depth limit test passed")
 
     except Exception as e:
-        logger.error("❌ 测试递归深度限制失败: %s", e)
+        logger.error("❌ Recursive depth limit test failed: %s", e)
         import traceback
 
-        logger.error("详细错误: %s", traceback.format_exc())
+        logger.error("Detailed error: %s", traceback.format_exc())
         raise
 
-    logger.info("✅ 递归深度限制测试完成")
+    logger.info("✅ Recursive depth limit test completed")
 
 
 async def test_timezone_consistency():
-    """测试9: 时区一致性 - 验证转换后的时区是否一致"""
-    logger.info("开始测试时区一致性...")
+    """Test 9: Timezone consistency - Verify converted timezone is consistent"""
+    logger.info("Starting timezone consistency test...")
 
     repo = get_bean_by_type(GroupProfileRawRepository)
     group_id = "test_group_datetime_009"
 
     try:
-        # 先清理
+        # Clean up first
         await repo.delete_by_group_id(group_id)
-        logger.info("✅ 清理已存在的测试数据")
+        logger.info("✅ Cleaned up existing test data")
 
-        # 创建不同时区的 datetime
+        # Create datetimes in different timezones
         naive_dt = create_naive_datetime()
         utc_dt = create_aware_datetime_utc()
         shanghai_dt = create_aware_datetime_shanghai()
@@ -752,7 +752,7 @@ async def test_timezone_consistency():
         logger.info("   utc_dt: %s (tzinfo=%s)", utc_dt, utc_dt.tzinfo)
         logger.info("   shanghai_dt: %s (tzinfo=%s)", shanghai_dt, shanghai_dt.tzinfo)
 
-        # 创建 GroupProfile
+        # Create GroupProfile
         group_profile = GroupProfile(
             group_id=group_id,
             timestamp=1704067200000,
@@ -760,58 +760,58 @@ async def test_timezone_consistency():
             extend={"naive": naive_dt, "utc": utc_dt, "shanghai": shanghai_dt},
         )
 
-        # 验证：naive datetime 应该被转换为 shanghai 时区
+        # Verify: naive datetime should be converted to Shanghai timezone
         result_naive = group_profile.extend["naive"]
         logger.info(
-            "   转换后的 naive: %s (tzinfo=%s)", result_naive, result_naive.tzinfo
+            "   Converted naive: %s (tzinfo=%s)", result_naive, result_naive.tzinfo
         )
-        assert is_aware_datetime(result_naive), "naive datetime 应该被转换为 aware"
+        assert is_aware_datetime(result_naive), "naive datetime should be converted to aware"
 
-        # 验证：UTC 和 shanghai datetime 应该保持原有时区
+        # Verify: UTC and Shanghai datetimes should maintain original timezone
         result_utc = group_profile.extend["utc"]
         result_shanghai = group_profile.extend["shanghai"]
-        logger.info("   转换后的 utc: %s (tzinfo=%s)", result_utc, result_utc.tzinfo)
+        logger.info("   Converted utc: %s (tzinfo=%s)", result_utc, result_utc.tzinfo)
         logger.info(
-            "   转换后的 shanghai: %s (tzinfo=%s)",
+            "   Converted shanghai: %s (tzinfo=%s)",
             result_shanghai,
             result_shanghai.tzinfo,
         )
 
-        assert is_aware_datetime(result_utc), "utc datetime 应该保持 aware"
-        assert is_aware_datetime(result_shanghai), "shanghai datetime 应该保持 aware"
+        assert is_aware_datetime(result_utc), "utc datetime should remain aware"
+        assert is_aware_datetime(result_shanghai), "shanghai datetime should remain aware"
 
-        logger.info("✅ 时区一致性测试通过")
+        logger.info("✅ Timezone consistency test passed")
 
     except Exception as e:
-        logger.error("❌ 测试时区一致性失败: %s", e)
+        logger.error("❌ Timezone consistency test failed: %s", e)
         import traceback
 
-        logger.error("详细错误: %s", traceback.format_exc())
+        logger.error("Detailed error: %s", traceback.format_exc())
         raise
 
-    logger.info("✅ 时区一致性测试完成")
+    logger.info("✅ Timezone consistency test completed")
 
 
 async def test_tuple_datetime_conversion():
-    """测试10: 元组中的 datetime 对象转换"""
-    logger.info("开始测试元组中的 datetime 对象转换...")
+    """Test 10: Datetime object conversion in tuples"""
+    logger.info("Starting datetime object conversion test in tuples...")
 
     repo = get_bean_by_type(GroupProfileRawRepository)
     group_id = "test_group_datetime_010"
 
     try:
-        # 先清理
+        # Clean up first
         await repo.delete_by_group_id(group_id)
-        logger.info("✅ 清理已存在的测试数据")
+        logger.info("✅ Cleaned up existing test data")
 
-        # 创建包含 datetime 的元组
+        # Create tuple containing datetime
         naive_dt1 = create_naive_datetime()
         naive_dt2 = naive_dt1 + timedelta(days=1)
         naive_dt3 = naive_dt1 + timedelta(days=2)
 
         datetime_tuple = (naive_dt1, naive_dt2, naive_dt3, "extra_data")
 
-        # 创建 GroupProfile
+        # Create GroupProfile
         group_profile = GroupProfile(
             group_id=group_id,
             timestamp=1704067200000,
@@ -819,69 +819,69 @@ async def test_tuple_datetime_conversion():
             extend={"datetime_tuple": datetime_tuple},
         )
 
-        # 验证：元组中的 datetime 应该被转换
+        # Verify: Datetime in tuple should be converted
         result_tuple = group_profile.extend["datetime_tuple"]
         logger.info("   result_tuple: %s", result_tuple)
-        logger.info("   result_tuple 类型: %s", type(result_tuple))
+        logger.info("   result_tuple type: %s", type(result_tuple))
 
-        # 根据代码，元组只检查前3个元素
-        # 如果需要转换，会返回新的元组
+        # According to code, only first 3 elements in tuple are checked
+        # If conversion is needed, a new tuple will be returned
         if isinstance(result_tuple, tuple):
-            for i in range(3):  # 检查前3个元素（都是 datetime）
+            for i in range(3):  # Check first 3 elements (all datetime)
                 dt = result_tuple[i]
                 logger.info("   tuple[%d]: %s (tzinfo=%s)", i, dt, dt.tzinfo)
-                assert is_aware_datetime(dt), f"tuple[{i}] 应该包含时区信息"
-            logger.info("✅ 元组中的 datetime 转换成功")
+                assert is_aware_datetime(dt), f"tuple[{i}] should contain timezone information"
+            logger.info("✅ Datetime conversion succeeded in tuple")
         else:
-            logger.warning("   元组被转换为其他类型: %s", type(result_tuple))
+            logger.warning("   Tuple was converted to other type: %s", type(result_tuple))
 
-        logger.info("✅ 元组 datetime 转换测试通过")
+        logger.info("✅ Tuple datetime conversion test passed")
 
     except Exception as e:
-        logger.error("❌ 测试元组 datetime 转换失败: %s", e)
+        logger.error("❌ Tuple datetime conversion test failed: %s", e)
         import traceback
 
-        logger.error("详细错误: %s", traceback.format_exc())
+        logger.error("Detailed error: %s", traceback.format_exc())
         raise
 
-    logger.info("✅ 元组 datetime 转换测试完成")
+    logger.info("✅ Tuple datetime conversion test completed")
 
 
 async def run_all_tests():
-    """运行所有测试"""
-    logger.info("🚀 开始运行 GroupProfile _recursive_datetime_check 所有测试...")
+    """Run all tests"""
+    logger.info("🚀 Starting to run all tests for GroupProfile _recursive_datetime_check...")
     logger.info("=" * 80)
-    logger.info("测试说明：")
-    logger.info("- 测试1-2: 基本功能测试（预期通过）")
-    logger.info("- 测试3: 列表采样优化 BUG 验证")
-    logger.info("- 测试4: 字典递归深度限制验证")
-    logger.info("- 测试5-6: 边界情况测试（预期通过）")
-    logger.info("- 测试7-10: 仅运行不受已知 BUG 影响的测试")
+    logger.info("Test notes:")
+    logger.info("- Test 1-2: Basic functionality tests (expected to pass)")
+    logger.info("- Test 3: List sampling optimization BUG verification")
+    logger.info("- Test 4: Dictionary recursive depth limit verification")
+    logger.info("- Test 5-6: Edge case tests (expected to pass)")
+    logger.info("- Test 7-10: Run only tests not affected by known BUGs")
     logger.info("=" * 80)
 
     try:
         await test_single_datetime_field_conversion()
         await test_nested_basemodel_datetime_conversion()
-        await test_list_datetime_conversion()  # 会确认列表采样优化 BUG
-        await test_dict_datetime_conversion()  # 会确认递归深度限制
-        # await test_mixed_scenario()  # 跳过：受列表采样优化 BUG 影响
+        await test_list_datetime_conversion()  # Will confirm list sampling optimization BUG
+        await test_dict_datetime_conversion()  # Will confirm recursive depth limit
+        # await test_mixed_scenario()  # Skipped: Affected by list sampling optimization BUG
         await test_edge_cases()
-        # await test_list_sampling_optimization()  # 跳过：受列表采样优化 BUG 影响
-        # await test_recursion_depth_limit()  # 跳过：已通过测试4验证
+        # await test_list_sampling_optimization()  # Skipped: Affected by list sampling optimization BUG
+        # await test_recursion_depth_limit()  # Skipped: Already verified by test 4
         await test_timezone_consistency()
-        # await test_tuple_datetime_conversion()  # 跳过：元组场景不常用
+        # await test_tuple_datetime_conversion()  # Skipped: Tuple scenario not commonly used
         logger.info("=" * 80)
-        logger.info("✅✅✅ 所有测试完成！")
+        logger.info("✅✅✅ All tests completed!")
         logger.info("=" * 80)
-        logger.info("测试总结：")
+        logger.info("Test summary:")
         logger.info(
-            "✅ 通过的测试：单个 datetime、嵌套 BaseModel、边界情况、时区一致性"
+            "✅ Passed tests: single datetime, nested BaseModel, edge cases, timezone consistency"
         )
-        logger.info("⚠️  发现的 BUG：列表采样优化（只转换第一个元素）")
-        logger.info("⚠️  发现的限制：递归深度限制（MAX_RECURSION_DEPTH = 4）")
+        logger.info("⚠️  Discovered BUG: list sampling optimization (only first element converted)")
+        logger.info("⚠️  Discovered limitation: recursive depth limit (MAX_RECURSION_DEPTH = 4)")
         logger.info("=" * 80)
     except Exception as e:
-        logger.error("❌ 测试过程中出现错误: %s", e)
+        logger.error("❌ Error occurred during testing: %s", e)
         raise
 
 

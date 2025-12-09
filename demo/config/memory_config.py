@@ -9,7 +9,7 @@ from memory_layer.profile_manager.config import ScenarioType
 
 @dataclass
 class LLMConfig:
-    """LLM 配置 - 从环境变量自动加载"""
+    """LLM configuration - loaded from environment variables automatically"""
     provider: str = "openai"
     model: Optional[str] = field(default_factory=lambda: os.getenv("LLM_MODEL"))
     api_key: Optional[str] = field(default_factory=lambda: os.getenv("LLM_API_KEY"))
@@ -26,7 +26,7 @@ class EmbeddingConfig:
 
 @dataclass
 class MongoDBConfig:
-    """MongoDB 配置 - 支持通过 URI 参数追加认证信息"""
+    """MongoDB Configuration - supports adding authentication information through URI parameters"""
     uri: Optional[str] = None
     host: str = "localhost"
     port: str = "27017"
@@ -35,7 +35,7 @@ class MongoDBConfig:
     password: Optional[str] = None
     
     def __post_init__(self):
-        """从环境变量加载配置并构建 URI"""
+        """Load configuration from environment variables and build URI"""
         if not os.getenv("MONGODB_URI"):
             self.host = os.getenv("MONGODB_HOST", self.host)
             self.port = os.getenv("MONGODB_PORT", self.port)
@@ -64,7 +64,7 @@ class ExtractModeConfig:
     scenario_type: ScenarioType = ScenarioType.GROUP_CHAT
     language: str = "zh"
     
-    # 可选覆盖
+    # Optional overrides
     data_file: Optional[Path] = None
     output_dir: Optional[Path] = None
     group_id: Optional[str] = None
@@ -73,11 +73,11 @@ class ExtractModeConfig:
     enable_foresight_extraction: bool = False
 
     def __post_init__(self):
-        # 自动设置输出目录
+        # Automatically set output directory
         if self.output_dir is None:
             self.output_dir = Path(__file__).parent.parent / "memcell_outputs" / f"{self.scenario_type.value}_{self.language}"
         
-        # 根据场景设置默认值
+        # Set default values based on scenario
         if self.scenario_type == ScenarioType.GROUP_CHAT:
             self.group_id = self.group_id or "group_chat_001"
             self.group_name = self.group_name or "Project Discussion Group"
@@ -87,22 +87,22 @@ class ExtractModeConfig:
             self.group_name = self.group_name or "Personal Assistant"
             self.enable_foresight_extraction = True
         
-        # 向后兼容
+        # Backward compatibility
         self.prompt_language = self.language
 
 
 @dataclass
 class ChatModeConfig:
-    """对话系统配置 - 使用合理默认值"""
+    """Chat system configuration - using reasonable default values"""
     
-    # 核心参数（通常不需要修改）
+    # Core parameters (usually no need to modify)
     api_base_url: str = field(default_factory=lambda: os.getenv("API_BASE_URL", "http://localhost:8001"))
     top_k_memories: int = 20
     conversation_history_size: int = 10
     time_range_days: int = 365
     show_retrieved_memories: bool = True
     
-    # 路径（自动设置）
+    # Paths (automatically set)
     chat_history_dir: Path = field(default_factory=lambda: Path(__file__).parent.parent / "chat_history")
     memcell_output_dir: Path = field(default_factory=lambda: Path(__file__).parent.parent / "memcell_outputs")
 

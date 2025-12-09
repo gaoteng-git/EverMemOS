@@ -1,12 +1,12 @@
-"""聊天模块
+"""Chat module
 
-提供以下核心组件：
-- ChatOrchestrator: 聊天应用编排器（主入口）
-- ChatSession: 会话管理
-- ChatUI: 用户界面
-- LanguageSelector: 语言选择器
-- ScenarioSelector: 场景选择器
-- GroupSelector: 群组选择器
+Provides the following core components:
+- ChatOrchestrator: Chat application orchestrator (main entry)
+- ChatSession: Session management
+- ChatUI: User interface
+- LanguageSelector: Language selector
+- ScenarioSelector: Scenario selector
+- GroupSelector: Group selector
 """
 
 from .orchestrator import ChatOrchestrator

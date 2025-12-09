@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-简化版 GroupProfile 测试
+Simplified GroupProfile Test
 
-测试内容包括:
-1. 模型创建和验证
-2. 字段类型检查
-3. JSON 序列化测试
+Test contents include:
+1. Model creation and validation
+2. Field type checking
+3. JSON serialization test
 """
 
 from datetime import datetime
@@ -20,15 +20,15 @@ from infra_layer.adapters.out.persistence.document.memory.group_profile import (
 
 
 def test_topic_info_creation():
-    """测试 TopicInfo 模型创建"""
-    print("开始测试 TopicInfo 模型创建...")
+    """Test TopicInfo model creation"""
+    print("Starting TopicInfo model creation test...")
 
     current_time = get_now_with_timezone()
 
-    # 测试完整参数创建
+    # Test full parameter creation
     topic = TopicInfo(
-        name="Python最佳实践",
-        summary="讨论Python编程的最佳实践方法",
+        name="Python Best Practices",
+        summary="Discuss best practices for Python programming",
         status="exploring",
         last_active_at=current_time,
         id="topic_001",
@@ -36,100 +36,100 @@ def test_topic_info_creation():
         old_topic_id=None,
     )
 
-    assert topic.name == "Python最佳实践"
-    assert topic.summary == "讨论Python编程的最佳实践方法"
+    assert topic.name == "Python Best Practices"
+    assert topic.summary == "Discuss best practices for Python programming"
     assert topic.status == "exploring"
     assert topic.last_active_at == current_time
     assert topic.id == "topic_001"
     assert topic.update_type == "new"
     assert topic.old_topic_id is None
 
-    print("✅ TopicInfo 完整参数创建测试成功")
+    print("✅ TopicInfo full parameter creation test passed")
 
-    # 测试必填参数创建
+    # Test required parameter creation
     topic_minimal = TopicInfo(
-        name="代码Review",
-        summary="建立代码审查流程",
+        name="Code Review",
+        summary="Establish code review process",
         status="consensus",
         last_active_at=current_time,
     )
 
-    assert topic_minimal.name == "代码Review"
-    assert topic_minimal.id is None  # 可选参数应为None
+    assert topic_minimal.name == "Code Review"
+    assert topic_minimal.id is None  # Optional parameter should be None
     assert topic_minimal.update_type is None
     assert topic_minimal.old_topic_id is None
 
-    print("✅ TopicInfo 必填参数创建测试成功")
+    print("✅ TopicInfo required parameter creation test passed")
 
-    # 测试 JSON 序列化
+    # Test JSON serialization
     topic_dict = topic.model_dump()
     assert "name" in topic_dict
     assert "last_active_at" in topic_dict
 
-    print("✅ TopicInfo JSON序列化测试成功")
-    print("TopicInfo 模型创建测试完成\n")
+    print("✅ TopicInfo JSON serialization test passed")
+    print("TopicInfo model creation test completed\n")
 
 
 def test_group_profile_creation():
-    """测试 GroupProfile 模型创建"""
-    print("开始测试 GroupProfile 模型创建...")
+    """Test GroupProfile model creation"""
+    print("Starting GroupProfile model creation test...")
 
     current_time = get_now_with_timezone()
     current_timestamp = int(datetime.now().timestamp() * 1000)
 
-    # 创建测试话题
+    # Create test topics
     topics = [
         TopicInfo(
-            name="Python最佳实践",
-            summary="讨论Python编程的最佳实践方法",
+            name="Python Best Practices",
+            summary="Discuss best practices for Python programming",
             status="exploring",
             last_active_at=current_time,
             id="topic_001",
         ),
         TopicInfo(
-            name="代码Review流程",
-            summary="建立有效的代码审查流程",
+            name="Code Review Process",
+            summary="Establish an effective code review process",
             status="consensus",
             last_active_at=current_time,
             id="topic_002",
         ),
     ]
 
-    # 创建测试角色
+    # Create test roles
     roles = {
         "core_contributor": [
-            {"user_id": "user_001", "user_name": "张三"},
-            {"user_id": "user_002", "user_name": "李四"},
+            {"user_id": "user_001", "user_name": "Zhang San"},
+            {"user_id": "user_002", "user_name": "Li Si"},
         ],
-        "reviewer": [{"user_id": "user_003", "user_name": "王五"}],
+        "reviewer": [{"user_id": "user_003", "user_name": "Wang Wu"}],
     }
 
-    # 测试完整参数创建
+    # Test full parameter creation
     group_profile = GroupProfile(
         group_id="test_group_001",
-        group_name="技术讨论组",
+        group_name="Technical Discussion Group",
         topics=topics,
         roles=roles,
         timestamp=current_timestamp,
-        subject="技术交流与学习",
-        summary="本群组主要讨论各种技术话题，促进技术交流",
+        subject="Technical Exchange and Learning",
+        summary="This group mainly discusses various technical topics to promote technical communication",
         extend={"priority": "high"},
     )
 
     assert group_profile.group_id == "test_group_001"
-    assert group_profile.group_name == "技术讨论组"
+    assert group_profile.group_name == "Technical Discussion Group"
     assert len(group_profile.topics) == 2
-    assert group_profile.topics[0].name == "Python最佳实践"
+    assert group_profile.topics[0].name == "Python Best Practices"
     assert group_profile.topics[1].status == "consensus"
     assert "core_contributor" in group_profile.roles
     assert len(group_profile.roles["core_contributor"]) == 2
     assert group_profile.timestamp == current_timestamp
-    assert group_profile.subject == "技术交流与学习"
+    assert group_profile.subject == "Technical Exchange and Learning"
     assert group_profile.extend["priority"] == "high"
 
-    print("✅ GroupProfile 完整参数创建测试成功")
+    print("✅ GroupProfile full parameter creation test passed")
 
-    # 测试必填参数创建
+    # Test required parameter creation
     minimal_profile = GroupProfile(
         group_id="test_group_002", timestamp=current_timestamp
     )
@@ -142,116 +142,116 @@ def test_group_profile_creation():
     assert minimal_profile.subject is None
     assert minimal_profile.summary is None
 
-    print("✅ GroupProfile 必填参数创建测试成功")
+    print("✅ GroupProfile required parameter creation test passed")
 
-    # 测试 JSON 序列化
+    # Test JSON serialization
     profile_dict = group_profile.model_dump()
     assert "group_id" in profile_dict
     assert "timestamp" in profile_dict
     assert "topics" in profile_dict
     assert len(profile_dict["topics"]) == 2
 
-    print("✅ GroupProfile JSON序列化测试成功")
+    print("✅ GroupProfile JSON serialization test passed")
 
-    # 测试时间序列化
+    # Test time serialization
     profile_json = group_profile.model_dump_json()
     assert "last_active_at" in profile_json
 
-    print("✅ GroupProfile 时间序列化测试成功")
-    print("GroupProfile 模型创建测试完成\n")
+    print("✅ GroupProfile time serialization test passed")
+    print("GroupProfile model creation test completed\n")
 
 
 def test_timezone_handling():
-    """测试不同时区的处理"""
-    print("开始测试时区处理...")
+    """Test handling of different timezones"""
+    print("Starting timezone handling test...")
 
-    # 创建不同时区的时间
+    # Create times in different timezones
     utc_time = datetime.now(ZoneInfo("UTC"))
     tokyo_time = datetime.now(ZoneInfo("Asia/Tokyo"))
     shanghai_time = get_now_with_timezone()
 
-    print(f"UTC时间: {to_iso_format(utc_time)}")
-    print(f"东京时间: {to_iso_format(tokyo_time)}")
-    print(f"上海时间: {to_iso_format(shanghai_time)}")
+    print(f"UTC time: {to_iso_format(utc_time)}")
+    print(f"Tokyo time: {to_iso_format(tokyo_time)}")
+    print(f"Shanghai time: {to_iso_format(shanghai_time)}")
 
-    # 创建使用不同时区的话题
+    # Create topics using different timezones
     topics = [
         TopicInfo(
-            name="UTC话题",
-            summary="使用UTC时间的话题",
+            name="UTC Topic",
+            summary="Topic using UTC time",
             status="exploring",
             last_active_at=utc_time,
         ),
         TopicInfo(
-            name="东京话题",
-            summary="使用东京时间的话题",
+            name="Tokyo Topic",
+            summary="Topic using Tokyo time",
             status="consensus",
             last_active_at=tokyo_time,
         ),
         TopicInfo(
-            name="上海话题",
-            summary="使用上海时间的话题",
+            name="Shanghai Topic",
+            summary="Topic using Shanghai time",
             status="implemented",
             last_active_at=shanghai_time,
         ),
     ]
 
-    # 创建群组
+    # Create group
     group_profile = GroupProfile(
         group_id="timezone_test_group",
         timestamp=int(datetime.now().timestamp() * 1000),
         topics=topics,
     )
 
-    # 验证时间是否正确保存
+    # Verify time is correctly saved
     assert len(group_profile.topics) == 3
 
-    utc_topic = next(t for t in group_profile.topics if t.name == "UTC话题")
-    tokyo_topic = next(t for t in group_profile.topics if t.name == "东京话题")
-    shanghai_topic = next(t for t in group_profile.topics if t.name == "上海话题")
+    utc_topic = next(t for t in group_profile.topics if t.name == "UTC Topic")
+    tokyo_topic = next(t for t in group_profile.topics if t.name == "Tokyo Topic")
+    shanghai_topic = next(t for t in group_profile.topics if t.name == "Shanghai Topic")
 
-    # 输出序列化后的时间
+    # Output serialized time
     profile_dict = group_profile.model_dump()
-    print("序列化后的话题时间:")
+    print("Serialized topic times:")
     for topic in profile_dict["topics"]:
         print(f"{topic['name']}: {topic['last_active_at']}")
 
-    print("✅ 时区处理测试成功")
-    print("时区处理测试完成\n")
+    print("✅ Timezone handling test passed")
+    print("Timezone handling test completed\n")
 
 
 def test_validation():
-    """测试数据验证"""
-    print("开始测试数据验证...")
+    """Test data validation"""
+    print("Starting data validation test...")
 
     current_time = get_now_with_timezone()
 
     try:
-        # 测试缺少必填字段
+        # Test missing required field
         TopicInfo(
-            name="测试话题",
-            summary="测试摘要",
+            name="Test Topic",
+            summary="Test summary",
             status="exploring",
-            # 缺少 last_active_at
+            # Missing last_active_at
         )
-        assert False, "应该抛出验证错误"
+        assert False, "Should raise validation error"
     except Exception as e:
-        print(f"✅ 必填字段验证成功: {type(e).__name__}")
+        print(f"✅ Required field validation passed: {type(e).__name__}")
 
     try:
-        # 测试缺少必填字段
+        # Test missing required field
         GroupProfile(
             group_id="test_group"
-            # 缺少 timestamp
+            # Missing timestamp
         )
-        assert False, "应该抛出验证错误"
+        assert False, "Should raise validation error"
     except Exception as e:
-        print(f"✅ 必填字段验证成功: {type(e).__name__}")
+        print(f"✅ Required field validation passed: {type(e).__name__}")
 
-    # 测试正确的创建
+    # Test correct creation
     valid_topic = TopicInfo(
-        name="有效话题",
-        summary="有效摘要",
+        name="Valid Topic",
+        summary="Valid summary",
         status="exploring",
         last_active_at=current_time,
     )
@@ -260,13 +260,13 @@ def test_validation():
         group_id="valid_group", timestamp=int(datetime.now().timestamp() * 1000)
     )
 
-    print("✅ 有效数据创建成功")
-    print("数据验证测试完成\n")
+    print("✅ Valid data creation passed")
+    print("Data validation test completed\n")
 
 
 def run_all_tests():
-    """运行所有测试"""
-    print("🚀 开始运行 GroupProfile 简化测试...")
+    """Run all tests"""
+    print("🚀 Starting GroupProfile simplified tests...")
     print("=" * 60)
 
     try:
@@ -276,9 +276,9 @@ def run_all_tests():
         test_validation()
 
         print("=" * 60)
-        print("✅ 所有测试完成")
+        print("✅ All tests completed")
     except Exception as e:
-        print(f"❌ 测试过程中出现错误: {e}")
+        print(f"❌ Error during test: {e}")
         import traceback
 
         traceback.print_exc()

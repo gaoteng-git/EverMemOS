@@ -1,4 +1,4 @@
-"""配置模块"""
+"""Configuration module."""
 
 from demo.config.memory_config import (
     ScenarioType,
