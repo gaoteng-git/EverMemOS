@@ -217,8 +217,8 @@ class RerankService(RerankServiceInterface):
         self, query: str, documents: List[str], instruction: Optional[str] = None
     ):
         """Build Rerank request text (Qwen-Reranker general format)"""
-        prefix = '<tool_call>system\nJudge whether the Document meets the requirements based on the Query and the Instruct provided. Note that the answer can only be "yes" or "no".</tool_call>\n<tool_call>user\n'
-        suffix = "</tool_call>\n<tool_call>assistant\n<tool_call>\n\nFound\n\n"
+        prefix = '<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and the Instruct provided. Note that the answer can only be "yes" or "no".<|im_end|>\n<|im_start|>user\n'
+        suffix = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
         instruction = (
             instruction
             or "Given a question and a passage, determine if the passage contains information relevant to answering the question."
