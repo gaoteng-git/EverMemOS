@@ -1,3 +1,9 @@
+"""
+Memory types module
+
+This module contains the definitions of memory types and related data structures, just for extraction.
+"""
+
 from enum import Enum
 from typing import List, Dict, Any, Optional, Union
 from dataclasses import dataclass
