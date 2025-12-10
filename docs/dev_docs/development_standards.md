@@ -6,10 +6,9 @@ This document introduces various standards and best practices in the project dev
 
 ## 🚀 TL;DR (Core Principles)
 
-### Quick Start for Newcomers (3 Steps)
+### Quick Start for Newcomers (2 Steps)
 ```bash
-uv sync --group dev-full    # Sync dependencies
-pre-commit install          # Install code check hooks
+make dev-setup              # One-click dev environment setup (sync deps + install hooks)
 ```
 
 ### Core Conventions
@@ -287,12 +286,11 @@ The project uses `pre-commit` to unify code style. It's recommended to install p
 #### Installation Steps
 
 ```bash
-# 1. Ensure development dependencies are synced
-uv sync --dev
-
-# 2. Install pre-commit hook
-pre-commit install
+# One-click dev environment setup (sync deps + install hooks)
+make dev-setup
 ```
+
+> **Tip**: `make dev-setup` automatically runs `uv sync --dev` and installs pre-commit hooks. If you only need to install hooks separately, run `make setup-hooks`.
 
 #### Functions
 
@@ -1587,7 +1585,7 @@ Data migration and Schema changes are high-risk operations that may affect:
 ### Q1: Forgot to install pre-commit hook?
 
 ```bash
-pre-commit install
+make setup-hooks
 pre-commit run --all-files  # Run check on existing code
 ```
 

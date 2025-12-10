@@ -6,10 +6,9 @@
 
 ## 🚀 TL;DR (核心原则)
 
-### 新人上手（3 步启动）
+### 新人上手（2 步启动）
 ```bash
-uv sync --group dev-full    # 同步依赖
-pre-commit install           # 安装代码检查钩子
+make dev-setup              # 一键配置开发环境（同步依赖 + 安装 hooks）
 ```
 
 ### 核心约定
@@ -305,12 +304,11 @@ ES_PORT=...
 #### 安装步骤
 
 ```bash
-# 1. 确保已同步开发依赖
-uv sync --dev
-
-# 2. 安装 pre-commit hook
-pre-commit install
+# 一键配置开发环境（同步依赖 + 安装 hooks）
+make dev-setup
 ```
+
+> **提示**：`make dev-setup` 会自动执行 `uv sync --dev` 和安装 pre-commit hooks。如果只需要单独安装 hooks，可以运行 `make setup-hooks`。
 
 #### 作用
 
@@ -2494,7 +2492,7 @@ git push origin your-branch-name
 ### Q1: 忘记安装 pre-commit hook 怎么办？
 
 ```bash
-pre-commit install
+make setup-hooks
 pre-commit run --all-files  # 对现有代码运行检查
 ```
 

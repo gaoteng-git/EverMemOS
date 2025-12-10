@@ -367,11 +367,11 @@ class OrderService:
 
 ## ⚙️ Development Environment Configuration
 
-**Note**: Before starting development, please run `pre-commit install` to install code format checking tools to ensure code style consistency.
+**Note**: Before starting development, run `make dev-setup` to set up the development environment (sync dependencies + install code check hooks).
 
 ### 1. Environment Variable Configuration
 
-Create `.env.development` file:
+Create `.env` file:
 
 ```bash
 # Development environment configuration
@@ -405,7 +405,7 @@ import os
 # ============= Development Environment Initialization (Must be at top) =============
 # 1. Set environment variables and Python path
 from common_utils.load_env import setup_environment
-setup_environment(load_env_file_name=".env.development", check_env_var="MONGODB_HOST")
+setup_environment(load_env_file_name=".env", check_env_var="MONGODB_HOST")
 
 # 2. Enable Mock mode (enabled by default in development environment)
 from core.di.utils import enable_mock_mode
@@ -451,7 +451,7 @@ import os
 
 # ============= Development Environment Initialization =============
 from common_utils.load_env import setup_environment
-setup_environment(load_env_file_name=".env.development")
+setup_environment(load_env_file_name=".env")
 
 from core.di.utils import enable_mock_mode
 if os.getenv("MOCK_MODE", "true").lower() == "true":
@@ -505,8 +505,8 @@ python test_service.py
 
 #### Start Development Service
 ```bash
-# Start web service with development environment
-python run.py --env-file .env.development
+# Start web service (automatically loads .env file)
+python run.py
 
 # Or set environment variable and start
 export MOCK_MODE=true
@@ -525,7 +525,7 @@ Add development configuration to VS Code's `launch.json`:
     "env": {
         "PYTHONPATH": "${workspaceFolder}/src"
     },
-    "envFile": "${workspaceFolder}/.env.development",
+    "envFile": "${workspaceFolder}/.env",
     "cwd": "${workspaceFolder}/src",
     "python": "${workspaceFolder}/.venv/bin/python",
     "program": "dev_run.py",
