@@ -3,6 +3,7 @@ repos:
     rev: 24.3.0  # Use latest stable version
     hooks:
     -   id: black
+        stages: [pre-commit]
 
 # Local hooks for non-English character detection
 -   repo: local
@@ -12,6 +13,7 @@ repos:
         name: Check Non-English Characters in Files
         entry: env PYTHONPATH=src python -m devops_scripts.i18n.i18n_tool hook
         language: system
+        stages: [pre-commit]
         pass_filenames: true
         # Skip this hook by setting SKIP_I18N_CHECK=1
 
