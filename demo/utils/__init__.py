@@ -1,6 +1,6 @@
-"""工具模块
+"""Utility Module
 
-本模块包含通用的工具函数和简单的记忆管理器。
+Provides common utility functions and a simple memory manager.
 """
 
 from demo.utils.memory_utils import (

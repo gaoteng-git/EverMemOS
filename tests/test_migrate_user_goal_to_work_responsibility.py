@@ -1,31 +1,31 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Core Memories 数据迁移脚本
+Core Memories Data Migration Script
 
-功能1: 将 core_memories 和 group_core_profile_memory 表中每条记录的 user_goal 值复制到 work_responsibility 字段，
-       并将 user_goal 字段置为 null。
+Feature 1: Copy the user_goal value from each record in the core_memories and group_core_profile_memory tables to the work_responsibility field,
+           and set the user_goal field to null.
 
-功能2: 将 core_memories 和 group_core_profile_memory 表中 soft_skills 和 hard_skills 字段里的 "value" 键重命名为 "value" 键。
+Feature 2: Rename the "skill" key to "value" key within the soft_skills and hard_skills fields of the core_memories and group_core_profile_memory tables.
 
-功能选择:
-    1. 仅执行 user_goal 数据迁移
-    2. 仅执行技能字段重命名
-    3. 执行所有功能
-    4. 退出
+Function Selection:
+    1. Execute user_goal data migration only
+    2. Execute skill field renaming only
+    3. Execute all functions
+    4. Exit
 
-使用方法：
+Usage:
     python src/bootstrap.py tests/migrate_user_goal_to_work_responsibility.py
 """
 
 import asyncio
 from typing import List, Optional, Dict, Any
 
-# 导入依赖注入相关模块
+# Import dependency injection related modules
 from core.di.utils import get_bean_by_type, get_bean
 from core.observation.logger import get_logger
 
-# 导入 MongoDB 相关模块
+# Import MongoDB related modules
 from infra_layer.adapters.out.persistence.document.memory.core_memory import CoreMemory
 from infra_layer.adapters.out.persistence.repository.core_memory_raw_repository import (
     CoreMemoryRawRepository,
@@ -37,56 +37,56 @@ from infra_layer.adapters.out.persistence.repository.group_user_profile_memory_r
     GroupUserProfileMemoryRawRepository,
 )
 
-# 获取日志记录器
+# Get logger
 logger = get_logger(__name__)
 
 
 async def get_core_memory_repository():
-    """获取 CoreMemory 仓库实例"""
+    """Get CoreMemory repository instance"""
     try:
-        # 通过类型获取Bean（推荐）
+        # Get Bean by type (recommended)
         core_memory_repo = get_bean_by_type(CoreMemoryRawRepository)
-        logger.info(f"✅ 成功获取 CoreMemoryRawRepository: {type(core_memory_repo)}")
+        logger.info(f"✅ Successfully obtained CoreMemoryRawRepository: {type(core_memory_repo)}")
         return core_memory_repo
     except Exception as e:
-        logger.error(f"❌ 获取 CoreMemoryRawRepository 失败: {e}")
+        logger.error(f"❌ Failed to get CoreMemoryRawRepository: {e}")
         raise
 
 
 async def get_group_user_profile_memory_repository():
-    """获取 GroupUserProfileMemory 仓库实例"""
+    """Get GroupUserProfileMemory repository instance"""
     try:
-        # 通过类型获取Bean（推荐）
+        # Get Bean by type (recommended)
         group_repo = get_bean_by_type(GroupUserProfileMemoryRawRepository)
         logger.info(
-            f"✅ 成功获取 GroupUserProfileMemoryRawRepository: {type(group_repo)}"
+            f"✅ Successfully obtained GroupUserProfileMemoryRawRepository: {type(group_repo)}"
         )
         return group_repo
     except Exception as e:
-        logger.error(f"❌ 获取 GroupUserProfileMemoryRawRepository 失败: {e}")
+        logger.error(f"❌ Failed to get GroupUserProfileMemoryRawRepository: {e}")
         raise
 
 
 async def preview_migration_data(repo: CoreMemoryRawRepository):
-    """预览需要迁移的数据"""
+    """Preview data to be migrated"""
     print("\n" + "=" * 60)
-    print("📊 预览迁移数据")
+    print("📊 Preview migration data")
     print("=" * 60)
 
     try:
-        # 分批查询数据，避免一次性加载所有数据到内存
+        # Query data in batches to avoid loading all data into memory at once
         batch_size = 2000
         all_records = []
         total_count = 0
         batch_num = 0
 
-        print("🔍 正在分批查询数据...")
+        print("🔍 Querying data in batches...")
 
         while True:
             batch_num += 1
-            print(f"📦 查询批次 {batch_num}...")
+            print(f"📦 Querying batch {batch_num}...")
 
-            # 分批查询，使用排序确保数据一致性，使用 skip 和 limit
+            # Batch query, use sorting to ensure data consistency, use skip and limit
             batch_records = (
                 await CoreMemory.find({"user_goal": {"$ne": None, "$exists": True}})
                 .sort([("_id", 1)])
@@ -100,16 +100,16 @@ async def preview_migration_data(repo: CoreMemoryRawRepository):
 
             all_records.extend(batch_records)
             total_count += len(batch_records)
-            print(f"   批次 {batch_num} 找到 {len(batch_records)} 条记录")
+            print(f"   Found {len(batch_records)} records in batch {batch_num}")
 
-            # 如果返回的记录数少于批次大小，说明已经查询完毕
+            # If the number of returned records is less than the batch size, it means the query is complete
             if len(batch_records) < batch_size:
                 break
 
-        print(f"📈 总共找到 {total_count} 条包含 user_goal 数据的记录")
+        print(f"📈 Found a total of {total_count} records containing user_goal data")
 
         if total_count > 0:
-            print("\n📋 前5条记录预览:")
+            print("\n📋 Preview of first 5 records:")
             for i, record in enumerate(all_records[:5]):
                 print(f"  {i+1}. User ID: {record.user_id}")
                 print(f"     user_goal: {record.user_goal}")
@@ -119,16 +119,16 @@ async def preview_migration_data(repo: CoreMemoryRawRepository):
         return all_records
 
     except Exception as e:
-        logger.error(f"❌ 预览数据失败: {e}")
+        logger.error(f"❌ Failed to preview data: {e}")
         raise
 
 
 async def migrate_user_goal_to_work_responsibility(
     repo: CoreMemoryRawRepository, records: List[CoreMemory]
 ):
-    """执行数据迁移：将 user_goal 复制到 work_responsibility，并将 user_goal 置为 null"""
+    """Execute data migration: copy user_goal to work_responsibility, and set user_goal to null"""
     print("\n" + "=" * 60)
-    print("🔄 开始数据迁移")
+    print("🔄 Starting data migration")
     print("=" * 60)
 
     success_count = 0
@@ -136,95 +136,95 @@ async def migrate_user_goal_to_work_responsibility(
 
     for record in records:
         try:
-            # 检查是否有 user_goal 数据
+            # Check if there is user_goal data
             if not record.user_goal:
-                logger.warning(f"⚠️  记录 {record.user_id} 的 user_goal 为空，跳过")
+                logger.warning(f"⚠️  Record {record.user_id} has empty user_goal, skipping")
                 continue
 
-            # 直接修改记录属性
+            # Directly modify record attributes
             record.work_responsibility = (
                 record.user_goal
-            )  # 复制 user_goal 到 work_responsibility
-            record.user_goal = None  # 将 user_goal 置为 null
+            )  # Copy user_goal to work_responsibility
+            record.user_goal = None  # Set user_goal to null
 
-            # 保存更新后的记录
+            # Save updated record
             await record.save()
 
-            # 更新成功
+            # Update success
             success_count += 1
-            logger.info(f"✅ 成功迁移记录 {record.user_id}")
-            print(f"✅ 迁移成功: {record.user_id}")
+            logger.info(f"✅ Successfully migrated record {record.user_id}")
+            print(f"✅ Migration successful: {record.user_id}")
 
         except Exception as e:
             error_count += 1
-            logger.error(f"❌ 迁移记录 {record.user_id} 时出错: {e}")
-            print(f"❌ 迁移出错: {record.user_id} - {e}")
+            logger.error(f"❌ Error migrating record {record.user_id}: {e}")
+            print(f"❌ Migration error: {record.user_id} - {e}")
 
-    print(f"\n📊 迁移完成统计:")
-    print(f"   ✅ 成功: {success_count} 条")
-    print(f"   ❌ 失败: {error_count} 条")
-    print(f"   📈 总计: {len(records)} 条")
+    print(f"\n📊 Migration completion statistics:")
+    print(f"   ✅ Success: {success_count} records")
+    print(f"   ❌ Failure: {error_count} records")
+    print(f"   📈 Total: {len(records)} records")
 
     return success_count, error_count
 
 
 async def verify_migration_results(repo: CoreMemoryRawRepository):
-    """验证迁移结果"""
+    """Verify migration results"""
     print("\n" + "=" * 60)
-    print("🔍 验证迁移结果")
+    print("🔍 Verifying migration results")
     print("=" * 60)
 
     try:
-        # 检查是否还有 user_goal 不为 null 的记录
+        # Check if there are still records where user_goal is not null
         remaining_user_goals = await CoreMemory.find(
             {"user_goal": {"$ne": None}}
         ).to_list()
 
-        # 检查有多少记录的 work_responsibility 有数据
+        # Check how many records have data in work_responsibility
         records_with_work_responsibility = await CoreMemory.find(
             {"work_responsibility": {"$ne": None, "$exists": True}}
         ).to_list()
 
-        print(f"📊 验证结果:")
-        print(f"   剩余 user_goal 不为 null 的记录: {len(remaining_user_goals)}")
+        print(f"📊 Verification results:")
+        print(f"   Remaining records where user_goal is not null: {len(remaining_user_goals)}")
         print(
-            f"   work_responsibility 有数据的记录: {len(records_with_work_responsibility)}"
+            f"   Records with work_responsibility data: {len(records_with_work_responsibility)}"
         )
 
         if len(remaining_user_goals) == 0:
-            print("✅ 所有 user_goal 字段已成功置为 null")
+            print("✅ All user_goal fields have been successfully set to null")
         else:
-            print("⚠️  仍有部分 user_goal 字段未置为 null")
-            for record in remaining_user_goals[:3]:  # 显示前3条
+            print("⚠️  Some user_goal fields have not been set to null")
+            for record in remaining_user_goals[:3]:  # Show first 3
                 print(f"   - {record.user_id}: {record.user_goal}")
 
         return len(remaining_user_goals) == 0
 
     except Exception as e:
-        logger.error(f"❌ 验证迁移结果失败: {e}")
+        logger.error(f"❌ Failed to verify migration results: {e}")
         raise
 
 
 async def preview_group_migration_data():
-    """预览群组用户档案记忆需要迁移的数据"""
+    """Preview data to be migrated for group user profile memory"""
     print("\n" + "=" * 60)
-    print("📊 预览群组用户档案记忆迁移数据")
+    print("📊 Previewing group user profile memory migration data")
     print("=" * 60)
 
     try:
-        # 分批查询数据，避免一次性加载所有数据到内存
+        # Query data in batches to avoid loading all data into memory at once
         batch_size = 2000
         all_records = []
         total_count = 0
         batch_num = 0
 
-        print("🔍 正在分批查询群组数据...")
+        print("🔍 Querying group data in batches...")
 
         while True:
             batch_num += 1
-            print(f"📦 查询批次 {batch_num}...")
+            print(f"📦 Querying batch {batch_num}...")
 
-            # 分批查询，使用排序确保数据一致性，使用 skip 和 limit
+            # Batch query, use sorting to ensure data consistency, use skip and limit
             batch_records = (
                 await GroupUserProfileMemory.find(
                     {"user_goal": {"$ne": None, "$exists": True}}
@@ -240,16 +240,16 @@ async def preview_group_migration_data():
 
             all_records.extend(batch_records)
             total_count += len(batch_records)
-            print(f"   批次 {batch_num} 找到 {len(batch_records)} 条记录")
+            print(f"   Found {len(batch_records)} records in batch {batch_num}")
 
-            # 如果返回的记录数少于批次大小，说明已经查询完毕
+            # If the number of returned records is less than the batch size, it means the query is complete
             if len(batch_records) < batch_size:
                 break
 
-        print(f"📈 总共找到 {total_count} 条包含 user_goal 数据的群组用户档案记录")
+        print(f"📈 Found a total of {total_count} group user profile records containing user_goal data")
 
         if total_count > 0:
-            print("\n📋 前5条记录预览:")
+            print("\n📋 Preview of first 5 records:")
             for i, record in enumerate(all_records[:5]):
                 print(
                     f"  {i+1}. User ID: {record.user_id}, Group ID: {record.group_id}"
@@ -261,16 +261,16 @@ async def preview_group_migration_data():
         return all_records
 
     except Exception as e:
-        logger.error(f"❌ 预览群组数据失败: {e}")
+        logger.error(f"❌ Failed to preview group data: {e}")
         raise
 
 
 async def migrate_group_user_goal_to_work_responsibility(
     records: List[GroupUserProfileMemory],
 ):
-    """执行群组用户档案记忆数据迁移：将 user_goal 复制到 work_responsibility，并将 user_goal 置为 null"""
+    """Execute group user profile memory data migration: copy user_goal to work_responsibility, and set user_goal to null"""
     print("\n" + "=" * 60)
-    print("🔄 开始群组用户档案记忆数据迁移")
+    print("🔄 Starting group user profile memory data migration")
     print("=" * 60)
 
     success_count = 0
@@ -278,88 +278,88 @@ async def migrate_group_user_goal_to_work_responsibility(
 
     for record in records:
         try:
-            # 检查是否有 user_goal 数据
+            # Check if there is user_goal data
             if not record.user_goal:
                 logger.warning(
-                    f"⚠️  群组记录 {record.user_id}-{record.group_id} 的 user_goal 为空，跳过"
+                    f"⚠️  Group record {record.user_id}-{record.group_id} has empty user_goal, skipping"
                 )
                 continue
 
-            # 直接修改记录属性
+            # Directly modify record attributes
             record.work_responsibility = (
                 record.user_goal
-            )  # 复制 user_goal 到 work_responsibility
-            record.user_goal = None  # 将 user_goal 置为 null
+            )  # Copy user_goal to work_responsibility
+            record.user_goal = None  # Set user_goal to null
 
-            # 保存更新后的记录
+            # Save updated record
             await record.save()
 
-            # 更新成功
+            # Update success
             success_count += 1
-            logger.info(f"✅ 成功迁移群组记录 {record.user_id}-{record.group_id}")
-            print(f"✅ 群组迁移成功: {record.user_id}-{record.group_id}")
+            logger.info(f"✅ Successfully migrated group record {record.user_id}-{record.group_id}")
+            print(f"✅ Group migration successful: {record.user_id}-{record.group_id}")
 
         except Exception as e:
             error_count += 1
             logger.error(
-                f"❌ 迁移群组记录 {record.user_id}-{record.group_id} 时出错: {e}"
+                f"❌ Error migrating group record {record.user_id}-{record.group_id}: {e}"
             )
-            print(f"❌ 群组迁移出错: {record.user_id}-{record.group_id} - {e}")
+            print(f"❌ Group migration error: {record.user_id}-{record.group_id} - {e}")
 
-    print(f"\n📊 群组迁移完成统计:")
-    print(f"   ✅ 成功: {success_count} 条")
-    print(f"   ❌ 失败: {error_count} 条")
-    print(f"   📈 总计: {len(records)} 条")
+    print(f"\n📊 Group migration completion statistics:")
+    print(f"   ✅ Success: {success_count} records")
+    print(f"   ❌ Failure: {error_count} records")
+    print(f"   📈 Total: {len(records)} records")
 
     return success_count, error_count
 
 
 async def verify_group_migration_results():
-    """验证群组用户档案记忆迁移结果"""
+    """Verify group user profile memory migration results"""
     print("\n" + "=" * 60)
-    print("🔍 验证群组用户档案记忆迁移结果")
+    print("🔍 Verifying group user profile memory migration results")
     print("=" * 60)
 
     try:
-        # 检查是否还有 user_goal 不为 null 的记录
+        # Check if there are still records where user_goal is not null
         remaining_user_goals = await GroupUserProfileMemory.find(
             {"user_goal": {"$ne": None}}
         ).to_list()
 
-        # 检查有多少记录的 work_responsibility 有数据
+        # Check how many records have data in work_responsibility
         records_with_work_responsibility = await GroupUserProfileMemory.find(
             {"work_responsibility": {"$ne": None, "$exists": True}}
         ).to_list()
 
-        print(f"📊 群组验证结果:")
-        print(f"   剩余 user_goal 不为 null 的记录: {len(remaining_user_goals)}")
+        print(f"📊 Group verification results:")
+        print(f"   Remaining records where user_goal is not null: {len(remaining_user_goals)}")
         print(
-            f"   work_responsibility 有数据的记录: {len(records_with_work_responsibility)}"
+            f"   Records with work_responsibility data: {len(records_with_work_responsibility)}"
         )
 
         if len(remaining_user_goals) == 0:
-            print("✅ 所有群组 user_goal 字段已成功置为 null")
+            print("✅ All group user_goal fields have been successfully set to null")
         else:
-            print("⚠️  仍有部分群组 user_goal 字段未置为 null")
-            for record in remaining_user_goals[:3]:  # 显示前3条
+            print("⚠️  Some group user_goal fields have not been set to null")
+            for record in remaining_user_goals[:3]:  # Show first 3
                 print(f"   - {record.user_id}-{record.group_id}: {record.user_goal}")
 
         return len(remaining_user_goals) == 0
 
     except Exception as e:
-        logger.error(f"❌ 验证群组迁移结果失败: {e}")
+        logger.error(f"❌ Failed to verify group migration results: {e}")
         raise
 
 
 async def preview_skills_rename_data():
-    """预览需要重命名技能字段的数据"""
+    """Preview data for skill field renaming"""
     print("\n" + "=" * 60)
-    print("📊 预览技能字段重命名数据")
+    print("📊 Previewing skill field renaming data")
     print("=" * 60)
 
     try:
-        # 分批查询 CoreMemory 中包含 skill 字段的记录
-        print("🔍 正在分批查询 CoreMemory 技能字段数据...")
+        # Query CoreMemory records containing skill fields in batches
+        print("🔍 Querying CoreMemory skill field data in batches...")
         core_batch_size = 2000
         core_all_records = []
         core_total_count = 0
@@ -367,7 +367,7 @@ async def preview_skills_rename_data():
 
         while True:
             core_batch_num += 1
-            print(f"📦 查询 CoreMemory 批次 {core_batch_num}...")
+            print(f"📦 Querying CoreMemory batch {core_batch_num}...")
 
             batch_records = (
                 await CoreMemory.find(
@@ -389,13 +389,13 @@ async def preview_skills_rename_data():
 
             core_all_records.extend(batch_records)
             core_total_count += len(batch_records)
-            print(f"   批次 {core_batch_num} 找到 {len(batch_records)} 条记录")
+            print(f"   Found {len(batch_records)} records in batch {core_batch_num}")
 
             if len(batch_records) < core_batch_size:
                 break
 
-        # 分批查询 GroupUserProfileMemory 中包含 skill 字段的记录
-        print("🔍 正在分批查询 GroupUserProfileMemory 技能字段数据...")
+        # Query GroupUserProfileMemory records containing skill fields in batches
+        print("🔍 Querying GroupUserProfileMemory skill field data in batches...")
         group_batch_size = 2000
         group_all_records = []
         group_total_count = 0
@@ -403,7 +403,7 @@ async def preview_skills_rename_data():
 
         while True:
             group_batch_num += 1
-            print(f"📦 查询 GroupUserProfileMemory 批次 {group_batch_num}...")
+            print(f"📦 Querying GroupUserProfileMemory batch {group_batch_num}...")
 
             batch_records = (
                 await GroupUserProfileMemory.find(
@@ -425,18 +425,18 @@ async def preview_skills_rename_data():
 
             group_all_records.extend(batch_records)
             group_total_count += len(batch_records)
-            print(f"   批次 {group_batch_num} 找到 {len(batch_records)} 条记录")
+            print(f"   Found {len(batch_records)} records in batch {group_batch_num}")
 
             if len(batch_records) < group_batch_size:
                 break
 
-        print(f"📈 CoreMemory 表总共找到 {core_total_count} 条包含 skill 字段的记录")
+        print(f"📈 Found a total of {core_total_count} records in CoreMemory table containing skill fields")
         print(
-            f"📈 GroupUserProfileMemory 表总共找到 {group_total_count} 条包含 skill 字段的记录"
+            f"📈 Found a total of {group_total_count} records in GroupUserProfileMemory table containing skill fields"
         )
 
         if core_all_records:
-            print("\n📋 CoreMemory 前3条记录预览:")
+            print("\n📋 Preview of first 3 CoreMemory records:")
             for i, record in enumerate(core_all_records[:3]):
                 print(f"  {i+1}. User ID: {record.user_id}")
                 if hasattr(record, 'soft_skills') and record.soft_skills:
@@ -446,7 +446,7 @@ async def preview_skills_rename_data():
                 print()
 
         if group_all_records:
-            print("\n📋 GroupUserProfileMemory 前3条记录预览:")
+            print("\n📋 Preview of first 3 GroupUserProfileMemory records:")
             for i, record in enumerate(group_all_records[:3]):
                 print(
                     f"  {i+1}. User ID: {record.user_id}, Group ID: {record.group_id}"
@@ -460,14 +460,14 @@ async def preview_skills_rename_data():
         return core_all_records, group_all_records
 
     except Exception as e:
-        logger.error(f"❌ 预览技能字段数据失败: {e}")
+        logger.error(f"❌ Failed to preview skill field data: {e}")
         raise
 
 
 async def rename_skill_to_value_in_core_memory(records: List[CoreMemory]):
-    """重命名 CoreMemory 中技能字段的 skill 键为 value"""
+    """Rename the skill key to value key in skill fields of CoreMemory"""
     print("\n" + "=" * 60)
-    print("🔄 开始重命名 CoreMemory 技能字段")
+    print("🔄 Starting renaming of CoreMemory skill fields")
     print("=" * 60)
 
     success_count = 0
@@ -477,7 +477,7 @@ async def rename_skill_to_value_in_core_memory(records: List[CoreMemory]):
         try:
             updated = False
 
-            # 处理 soft_skills 字段
+            # Process soft_skills field
             if hasattr(record, 'soft_skills') and record.soft_skills:
                 if isinstance(record.soft_skills, list):
                     for skill_item in record.soft_skills:
@@ -491,7 +491,7 @@ async def rename_skill_to_value_in_core_memory(records: List[CoreMemory]):
                     record.soft_skills['value'] = record.soft_skills.pop('skill')
                     updated = True
 
-            # 处理 hard_skills 字段
+            # Process hard_skills field
             if hasattr(record, 'hard_skills') and record.hard_skills:
                 if isinstance(record.hard_skills, list):
                     for skill_item in record.hard_skills:
@@ -506,35 +506,35 @@ async def rename_skill_to_value_in_core_memory(records: List[CoreMemory]):
                     updated = True
 
             if updated:
-                # 保存更新后的记录
+                # Save updated record
                 await record.save()
                 success_count += 1
                 logger.info(
-                    f"✅ 成功重命名 CoreMemory 记录 {record.user_id} 的技能字段"
+                    f"✅ Successfully renamed skill fields in CoreMemory record {record.user_id}"
                 )
-                print(f"✅ 重命名成功: {record.user_id}")
+                print(f"✅ Rename successful: {record.user_id}")
             else:
                 logger.warning(
-                    f"⚠️  CoreMemory 记录 {record.user_id} 没有需要重命名的技能字段"
+                    f"⚠️  CoreMemory record {record.user_id} has no skill fields to rename"
                 )
 
         except Exception as e:
             error_count += 1
-            logger.error(f"❌ 重命名 CoreMemory 记录 {record.user_id} 时出错: {e}")
-            print(f"❌ 重命名出错: {record.user_id} - {e}")
+            logger.error(f"❌ Error renaming skill fields in CoreMemory record {record.user_id}: {e}")
+            print(f"❌ Rename error: {record.user_id} - {e}")
 
-    print(f"\n📊 CoreMemory 重命名完成统计:")
-    print(f"   ✅ 成功: {success_count} 条")
-    print(f"   ❌ 失败: {error_count} 条")
-    print(f"   📈 总计: {len(records)} 条")
+    print(f"\n📊 CoreMemory rename completion statistics:")
+    print(f"   ✅ Success: {success_count} records")
+    print(f"   ❌ Failure: {error_count} records")
+    print(f"   📈 Total: {len(records)} records")
 
     return success_count, error_count
 
 
 async def rename_skill_to_value_in_group_memory(records: List[GroupUserProfileMemory]):
-    """重命名 GroupUserProfileMemory 中技能字段的 skill 键为 value"""
+    """Rename the skill key to value key in skill fields of GroupUserProfileMemory"""
     print("\n" + "=" * 60)
-    print("🔄 开始重命名 GroupUserProfileMemory 技能字段")
+    print("🔄 Starting renaming of GroupUserProfileMemory skill fields")
     print("=" * 60)
 
     success_count = 0
@@ -544,7 +544,7 @@ async def rename_skill_to_value_in_group_memory(records: List[GroupUserProfileMe
         try:
             updated = False
 
-            # 处理 soft_skills 字段
+            # Process soft_skills field
             if hasattr(record, 'soft_skills') and record.soft_skills:
                 if isinstance(record.soft_skills, list):
                     for skill_item in record.soft_skills:
@@ -558,7 +558,7 @@ async def rename_skill_to_value_in_group_memory(records: List[GroupUserProfileMe
                     record.soft_skills['value'] = record.soft_skills.pop('skill')
                     updated = True
 
-            # 处理 hard_skills 字段
+            # Process hard_skills field
             if hasattr(record, 'hard_skills') and record.hard_skills:
                 if isinstance(record.hard_skills, list):
                     for skill_item in record.hard_skills:
@@ -573,41 +573,41 @@ async def rename_skill_to_value_in_group_memory(records: List[GroupUserProfileMe
                     updated = True
 
             if updated:
-                # 保存更新后的记录
+                # Save updated record
                 await record.save()
                 success_count += 1
                 logger.info(
-                    f"✅ 成功重命名 GroupUserProfileMemory 记录 {record.user_id}-{record.group_id} 的技能字段"
+                    f"✅ Successfully renamed skill fields in GroupUserProfileMemory record {record.user_id}-{record.group_id}"
                 )
-                print(f"✅ 群组重命名成功: {record.user_id}-{record.group_id}")
+                print(f"✅ Group rename successful: {record.user_id}-{record.group_id}")
             else:
                 logger.warning(
-                    f"⚠️  GroupUserProfileMemory 记录 {record.user_id}-{record.group_id} 没有需要重命名的技能字段"
+                    f"⚠️  GroupUserProfileMemory record {record.user_id}-{record.group_id} has no skill fields to rename"
                 )
 
         except Exception as e:
             error_count += 1
             logger.error(
-                f"❌ 重命名 GroupUserProfileMemory 记录 {record.user_id}-{record.group_id} 时出错: {e}"
+                f"❌ Error renaming skill fields in GroupUserProfileMemory record {record.user_id}-{record.group_id}: {e}"
             )
-            print(f"❌ 群组重命名出错: {record.user_id}-{record.group_id} - {e}")
+            print(f"❌ Group rename error: {record.user_id}-{record.group_id} - {e}")
 
-    print(f"\n📊 GroupUserProfileMemory 重命名完成统计:")
-    print(f"   ✅ 成功: {success_count} 条")
-    print(f"   ❌ 失败: {error_count} 条")
-    print(f"   📈 总计: {len(records)} 条")
+    print(f"\n📊 GroupUserProfileMemory rename completion statistics:")
+    print(f"   ✅ Success: {success_count} records")
+    print(f"   ❌ Failure: {error_count} records")
+    print(f"   📈 Total: {len(records)} records")
 
     return success_count, error_count
 
 
 async def verify_skills_rename_results():
-    """验证技能字段重命名结果"""
+    """Verify skill field rename results"""
     print("\n" + "=" * 60)
-    print("🔍 验证技能字段重命名结果")
+    print("🔍 Verifying skill field rename results")
     print("=" * 60)
 
     try:
-        # 检查 CoreMemory 中是否还有 skill 字段的记录
+        # Check if there are still records with skill fields in CoreMemory
         core_remaining_skill = await CoreMemory.find(
             {
                 "$or": [
@@ -617,7 +617,7 @@ async def verify_skills_rename_results():
             }
         ).to_list()
 
-        # 检查 GroupUserProfileMemory 中是否还有 skill 字段的记录
+        # Check if there are still records with skill fields in GroupUserProfileMemory
         group_remaining_skill = await GroupUserProfileMemory.find(
             {
                 "$or": [
@@ -627,7 +627,7 @@ async def verify_skills_rename_results():
             }
         ).to_list()
 
-        # 检查有多少记录的 value 字段有数据
+        # Check how many records have data in value fields
         core_records_with_value = await CoreMemory.find(
             {
                 "$or": [
@@ -646,76 +646,76 @@ async def verify_skills_rename_results():
             }
         ).to_list()
 
-        print(f"📊 技能字段重命名验证结果:")
-        print(f"   CoreMemory 剩余 skill 字段记录: {len(core_remaining_skill)}")
+        print(f"📊 Skill field rename verification results:")
+        print(f"   CoreMemory records with remaining skill fields: {len(core_remaining_skill)}")
         print(
-            f"   GroupUserProfileMemory 剩余 skill 字段记录: {len(group_remaining_skill)}"
+            f"   GroupUserProfileMemory records with remaining skill fields: {len(group_remaining_skill)}"
         )
-        print(f"   CoreMemory 有 value 字段记录: {len(core_records_with_value)}")
+        print(f"   CoreMemory records with value fields: {len(core_records_with_value)}")
         print(
-            f"   GroupUserProfileMemory 有 value 字段记录: {len(group_records_with_value)}"
+            f"   GroupUserProfileMemory records with value fields: {len(group_records_with_value)}"
         )
 
         if len(core_remaining_skill) == 0 and len(group_remaining_skill) == 0:
-            print("✅ 所有技能字段的 skill 键已成功重命名为 value")
+            print("✅ All skill keys in skill fields have been successfully renamed to value")
         else:
-            print("⚠️  仍有部分技能字段的 skill 键未重命名")
+            print("⚠️  Some skill keys in skill fields have not been renamed")
             if core_remaining_skill:
-                print("   CoreMemory 剩余记录:")
+                print("   CoreMemory remaining records:")
                 for record in core_remaining_skill[:2]:
                     print(f"   - {record.user_id}")
             if group_remaining_skill:
-                print("   GroupUserProfileMemory 剩余记录:")
+                print("   GroupUserProfileMemory remaining records:")
                 for record in group_remaining_skill[:2]:
                     print(f"   - {record.user_id}-{record.group_id}")
 
         return len(core_remaining_skill) == 0 and len(group_remaining_skill) == 0
 
     except Exception as e:
-        logger.error(f"❌ 验证技能字段重命名结果失败: {e}")
+        logger.error(f"❌ Failed to verify skill field rename results: {e}")
         raise
 
 
 async def main():
-    """主函数"""
-    print("🚀 Core Memories 和 Group User Profile Memory 数据迁移脚本启动")
-    print(f"📝 当前脚本: {__file__}")
-    print("📋 涉及表: core_memories, group_core_profile_memory")
+    """Main function"""
+    print("🚀 Core Memories and Group User Profile Memory Data Migration Script Started")
+    print(f"📝 Current script: {__file__}")
+    print("📋 Involved tables: core_memories, group_core_profile_memory")
 
-    # 功能选择菜单
+    # Function selection menu
     print("\n" + "=" * 60)
-    print("📋 请选择要执行的功能:")
+    print("📋 Please select the function to execute:")
     print("=" * 60)
-    print("1. user_goal 数据迁移到 work_responsibility 字段")
-    print("2. 技能字段重命名 (skill -> value)")
-    print("3. 执行所有功能")
-    print("4. 退出")
+    print("1. Migrate user_goal data to work_responsibility field")
+    print("2. Rename skill fields (skill -> value)")
+    print("3. Execute all functions")
+    print("4. Exit")
     print("=" * 60)
 
     try:
-        # 获取用户选择
+        # Get user selection
         while True:
             try:
-                choice = input("\n请输入选择 (1-4): ").strip()
+                choice = input("\nPlease enter your choice (1-4): ").strip()
                 if choice in ['1', '2', '3', '4']:
                     break
                 else:
-                    print("❌ 无效选择，请输入 1-4 之间的数字")
+                    print("❌ Invalid choice, please enter a number between 1-4")
             except KeyboardInterrupt:
-                print("\n\n👋 用户取消操作，退出程序")
+                print("\n\n👋 User canceled operation, exiting program")
                 return
             except EOFError:
-                print("\n\n👋 输入结束，退出程序")
+                print("\n\n👋 Input ended, exiting program")
                 return
 
-        # 根据选择执行相应功能
+        # Execute selected function
         if choice == '4':
-            print("👋 退出程序")
+            print("👋 Exiting program")
             return
 
-        print(f"\n✅ 已选择功能: {choice}")
+        print(f"\n✅ Selected function: {choice}")
 
-        # 执行选中的功能
+        # Execute selected function
         if choice == '1':
             await execute_user_goal_migration()
         elif choice == '2':
@@ -724,234 +724,234 @@ async def main():
             await execute_all_functions()
 
     except Exception as e:
-        logger.error(f"❌ 迁移脚本执行失败: {e}")
-        print(f"\n❌ 迁移失败: {e}")
+        logger.error(f"❌ Migration script execution failed: {e}")
+        print(f"\n❌ Migration failed: {e}")
         raise
 
 
 async def execute_user_goal_migration():
-    """执行 user_goal 数据迁移功能"""
+    """Execute user_goal data migration function"""
     print("\n" + "=" * 80)
-    print("🏠 开始执行 user_goal 数据迁移")
+    print("🏠 Starting user_goal data migration")
     print("=" * 80)
 
     try:
-        # ==================== 1. Core Memories 迁移 ====================
+        # ==================== 1. Core Memories Migration ====================
         print("\n" + "=" * 80)
-        print("🏠 开始处理 Core Memories 表")
+        print("🏠 Starting processing of Core Memories table")
         print("=" * 80)
 
-        # 1.1 获取仓库实例
+        # 1.1 Get repository instance
         core_memory_repo = await get_core_memory_repository()
 
-        # 1.2 预览需要迁移的数据
+        # 1.2 Preview data to be migrated
         core_records_to_migrate = await preview_migration_data(core_memory_repo)
 
         if core_records_to_migrate:
-            print(f"\n⚠️  即将迁移 {len(core_records_to_migrate)} 条 Core Memories 记录")
-            print("   此操作将:")
-            print("   - 将 user_goal 的值复制到 work_responsibility")
-            print("   - 将 user_goal 字段置为 null")
-            print("   - 此操作不可逆，请确认继续")
+            print(f"\n⚠️  About to migrate {len(core_records_to_migrate)} Core Memories records")
+            print("   This operation will:")
+            print("   - Copy the value of user_goal to work_responsibility")
+            print("   - Set the user_goal field to null")
+            print("   - This operation is irreversible, please confirm to continue")
 
-            # 1.3 执行 Core Memories 数据迁移
+            # 1.3 Execute Core Memories data migration
             core_success_count, core_error_count = (
                 await migrate_user_goal_to_work_responsibility(
                     core_memory_repo, core_records_to_migrate
                 )
             )
 
-            # 1.4 验证 Core Memories 迁移结果
+            # 1.4 Verify Core Memories migration results
             core_migration_success = await verify_migration_results(core_memory_repo)
         else:
-            print("ℹ️  Core Memories 表没有需要迁移的数据")
+            print("ℹ️  No data to migrate in Core Memories table")
             core_success_count, core_error_count = 0, 0
             core_migration_success = True
 
-        # ==================== 2. Group User Profile Memory 迁移 ====================
+        # ==================== 2. Group User Profile Memory Migration ====================
         print("\n" + "=" * 80)
-        print("👥 开始处理 Group User Profile Memory 表")
+        print("👥 Starting processing of Group User Profile Memory table")
         print("=" * 80)
 
-        # 2.1 获取群组仓库实例
+        # 2.1 Get group repository instance
         group_repo = await get_group_user_profile_memory_repository()
 
-        # 2.2 预览需要迁移的群组数据
+        # 2.2 Preview group data to be migrated
         group_records_to_migrate = await preview_group_migration_data()
 
         if group_records_to_migrate:
             print(
-                f"\n⚠️  即将迁移 {len(group_records_to_migrate)} 条 Group User Profile Memory 记录"
+                f"\n⚠️  About to migrate {len(group_records_to_migrate)} Group User Profile Memory records"
             )
-            print("   此操作将:")
-            print("   - 将 user_goal 的值复制到 work_responsibility")
-            print("   - 将 user_goal 字段置为 null")
-            print("   - 此操作不可逆，请确认继续")
+            print("   This operation will:")
+            print("   - Copy the value of user_goal to work_responsibility")
+            print("   - Set the user_goal field to null")
+            print("   - This operation is irreversible, please confirm to continue")
 
-            # 2.3 执行群组数据迁移
+            # 2.3 Execute group data migration
             group_success_count, group_error_count = (
                 await migrate_group_user_goal_to_work_responsibility(
                     group_records_to_migrate
                 )
             )
 
-            # 2.4 验证群组迁移结果
+            # 2.4 Verify group migration results
             group_migration_success = await verify_group_migration_results()
         else:
-            print("ℹ️  Group User Profile Memory 表没有需要迁移的数据")
+            print("ℹ️  No data to migrate in Group User Profile Memory table")
             group_success_count, group_error_count = 0, 0
             group_migration_success = True
 
-        # ==================== 3. 总结报告 ====================
+        # ==================== 3. Summary Report ====================
         print("\n" + "=" * 80)
-        print("📊 user_goal 迁移完成总结报告")
+        print("📊 user_goal migration completion summary report")
         print("=" * 80)
 
-        print(f"🏠 Core Memories 表:")
-        print(f"   ✅ 成功: {core_success_count} 条")
-        print(f"   ❌ 失败: {core_error_count} 条")
+        print(f"🏠 Core Memories table:")
+        print(f"   ✅ Success: {core_success_count} records")
+        print(f"   ❌ Failure: {core_error_count} records")
         print(
-            f"   📈 总计: {len(core_records_to_migrate) if core_records_to_migrate else 0} 条"
+            f"   📈 Total: {len(core_records_to_migrate) if core_records_to_migrate else 0} records"
         )
 
-        print(f"\n👥 Group User Profile Memory 表:")
-        print(f"   ✅ 成功: {group_success_count} 条")
-        print(f"   ❌ 失败: {group_error_count} 条")
+        print(f"\n👥 Group User Profile Memory table:")
+        print(f"   ✅ Success: {group_success_count} records")
+        print(f"   ❌ Failure: {group_error_count} records")
         print(
-            f"   📈 总计: {len(group_records_to_migrate) if group_records_to_migrate else 0} 条"
+            f"   📈 Total: {len(group_records_to_migrate) if group_records_to_migrate else 0} records"
         )
 
         total_success = core_success_count + group_success_count
         total_error = core_error_count + group_error_count
 
-        print(f"\n🎯 总体结果:")
-        print(f"   ✅ 总成功: {total_success} 条")
-        print(f"   ❌ 总失败: {total_error} 条")
+        print(f"\n🎯 Overall results:")
+        print(f"   ✅ Total success: {total_success} records")
+        print(f"   ❌ Total failure: {total_error} records")
 
         if core_migration_success and group_migration_success and total_error == 0:
-            print("\n🎉 user_goal 数据迁移完全成功！")
+            print("\n🎉 user_goal data migration completed successfully!")
         elif total_success > 0:
-            print("\n⚠️  user_goal 数据迁移部分成功，请检查错误日志")
+            print("\n⚠️  user_goal data migration partially successful, please check error logs")
         else:
-            print("\n❌ user_goal 数据迁移失败，请检查错误日志")
+            print("\n❌ user_goal data migration failed, please check error logs")
         print("=" * 80)
 
     except Exception as e:
-        logger.error(f"❌ user_goal 迁移脚本执行失败: {e}")
-        print(f"\n❌ user_goal 迁移失败: {e}")
+        logger.error(f"❌ user_goal migration script execution failed: {e}")
+        print(f"\n❌ user_goal migration failed: {e}")
         raise
 
 
 async def execute_skills_rename():
-    """执行技能字段重命名功能"""
+    """Execute skill field rename function"""
     print("\n" + "=" * 80)
-    print("🔧 开始执行技能字段重命名")
+    print("🔧 Starting skill field rename")
     print("=" * 80)
 
     try:
-        # ==================== 1. 预览技能字段重命名数据 ====================
+        # ==================== 1. Preview skill field rename data ====================
         print("\n" + "=" * 80)
-        print("🔧 开始处理技能字段重命名")
+        print("🔧 Starting processing of skill field rename")
         print("=" * 80)
 
-        # 1.1 预览需要重命名的技能字段数据
+        # 1.1 Preview data for skill field rename
         core_skill_records, group_skill_records = await preview_skills_rename_data()
 
-        # ==================== 2. 处理 CoreMemory 技能字段重命名 ====================
+        # ==================== 2. Process CoreMemory skill field rename ====================
         core_skill_success_count = 0
         core_skill_error_count = 0
         if core_skill_records:
-            print(f"\n⚠️  即将重命名 {len(core_skill_records)} 条 CoreMemory 技能字段")
-            print("   此操作将:")
-            print("   - 将 soft_skills 和 hard_skills 中的 'skill' 键重命名为 'value'")
-            print("   - 此操作不可逆，请确认继续")
+            print(f"\n⚠️  About to rename {len(core_skill_records)} CoreMemory skill fields")
+            print("   This operation will:")
+            print("   - Rename the 'skill' key to 'value' key in soft_skills and hard_skills")
+            print("   - This operation is irreversible, please confirm to continue")
 
             core_skill_success_count, core_skill_error_count = (
                 await rename_skill_to_value_in_core_memory(core_skill_records)
             )
         else:
-            print("ℹ️  CoreMemory 表没有需要重命名的技能字段")
+            print("ℹ️  No skill fields to rename in CoreMemory table")
 
-        # ==================== 3. 处理 GroupUserProfileMemory 技能字段重命名 ====================
+        # ==================== 3. Process GroupUserProfileMemory skill field rename ====================
         group_skill_success_count = 0
         group_skill_error_count = 0
         if group_skill_records:
             print(
-                f"\n⚠️  即将重命名 {len(group_skill_records)} 条 GroupUserProfileMemory 技能字段"
+                f"\n⚠️  About to rename {len(group_skill_records)} GroupUserProfileMemory skill fields"
             )
-            print("   此操作将:")
-            print("   - 将 soft_skills 和 hard_skills 中的 'skill' 键重命名为 'value'")
-            print("   - 此操作不可逆，请确认继续")
+            print("   This operation will:")
+            print("   - Rename the 'skill' key to 'value' key in soft_skills and hard_skills")
+            print("   - This operation is irreversible, please confirm to continue")
 
             group_skill_success_count, group_skill_error_count = (
                 await rename_skill_to_value_in_group_memory(group_skill_records)
             )
         else:
-            print("ℹ️  GroupUserProfileMemory 表没有需要重命名的技能字段")
+            print("ℹ️  No skill fields to rename in GroupUserProfileMemory table")
 
-        # ==================== 4. 验证技能字段重命名结果 ====================
+        # ==================== 4. Verify skill field rename results ====================
         skills_rename_success = await verify_skills_rename_results()
 
-        # ==================== 5. 总结报告 ====================
+        # ==================== 5. Summary Report ====================
         print("\n" + "=" * 80)
-        print("📊 技能字段重命名完成总结报告")
+        print("📊 Skill field rename completion summary report")
         print("=" * 80)
 
-        print(f"🔧 CoreMemory 表:")
-        print(f"   ✅ 成功: {core_skill_success_count} 条")
-        print(f"   ❌ 失败: {core_skill_error_count} 条")
-        print(f"   📈 总计: {len(core_skill_records) if core_skill_records else 0} 条")
+        print(f"🔧 CoreMemory table:")
+        print(f"   ✅ Success: {core_skill_success_count} records")
+        print(f"   ❌ Failure: {core_skill_error_count} records")
+        print(f"   📈 Total: {len(core_skill_records) if core_skill_records else 0} records")
 
-        print(f"\n🔧 GroupUserProfileMemory 表:")
-        print(f"   ✅ 成功: {group_skill_success_count} 条")
-        print(f"   ❌ 失败: {group_skill_error_count} 条")
+        print(f"\n🔧 GroupUserProfileMemory table:")
+        print(f"   ✅ Success: {group_skill_success_count} records")
+        print(f"   ❌ Failure: {group_skill_error_count} records")
         print(
-            f"   📈 总计: {len(group_skill_records) if group_skill_records else 0} 条"
+            f"   📈 Total: {len(group_skill_records) if group_skill_records else 0} records"
         )
 
         total_success = core_skill_success_count + group_skill_success_count
         total_error = core_skill_error_count + group_skill_error_count
 
-        print(f"\n🎯 总体结果:")
-        print(f"   ✅ 总成功: {total_success} 条")
-        print(f"   ❌ 总失败: {total_error} 条")
+        print(f"\n🎯 Overall results:")
+        print(f"   ✅ Total success: {total_success} records")
+        print(f"   ❌ Total failure: {total_error} records")
 
         if skills_rename_success and total_error == 0:
-            print("\n🎉 技能字段重命名完全成功！")
+            print("\n🎉 Skill field rename completed successfully!")
         elif total_success > 0:
-            print("\n⚠️  技能字段重命名部分成功，请检查错误日志")
+            print("\n⚠️  Skill field rename partially successful, please check error logs")
         else:
-            print("\n❌ 技能字段重命名失败，请检查错误日志")
+            print("\n❌ Skill field rename failed, please check error logs")
         print("=" * 80)
 
     except Exception as e:
-        logger.error(f"❌ 技能字段重命名脚本执行失败: {e}")
-        print(f"\n❌ 技能字段重命名失败: {e}")
+        logger.error(f"❌ Skill field rename script execution failed: {e}")
+        print(f"\n❌ Skill field rename failed: {e}")
         raise
 
 
 async def execute_all_functions():
-    """执行所有功能"""
+    """Execute all functions"""
     print("\n" + "=" * 80)
-    print("🚀 开始执行所有功能")
+    print("🚀 Starting execution of all functions")
     print("=" * 80)
 
     try:
-        # 执行 user_goal 迁移
+        # Execute user_goal migration
         # await execute_user_goal_migration()
 
-        # 执行技能字段重命名
+        # Execute skill field rename
         await execute_skills_rename()
 
-        print("\n🎉 所有功能执行完成！")
+        print("\n🎉 All functions executed successfully!")
 
     except Exception as e:
-        logger.error(f"❌ 执行所有功能失败: {e}")
-        print(f"\n❌ 执行所有功能失败: {e}")
+        logger.error(f"❌ Failed to execute all functions: {e}")
+        print(f"\n❌ Failed to execute all functions: {e}")
         raise
 
 
 if __name__ == "__main__":
-    # 当直接运行此脚本时执行
-    # 注意：通过 bootstrap.py 运行时，环境已经初始化完成
+    # Execute when this script is run directly
+    # Note: When running through bootstrap.py, the environment has already been initialized
     asyncio.run(main())

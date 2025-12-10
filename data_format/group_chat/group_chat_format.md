@@ -1,16 +1,16 @@
-# 群聊格式规范
+# Group Chat Format Specification
 
-## 概述
+## Overview
 
-这是一个开源的群聊数据格式规范，用于标准化存储和交换群聊对话数据。
+This is an open-source group chat data format specification for standardizing the storage and exchange of group chat conversation data.
 
-## 格式定义
+## Format Definition
 
-完整的格式定义请参考 [`group_chat_format.py`](../group_chat_format.py)
+For the complete format definition, please refer to [`group_chat_format.py`](../group_chat_format.py)
 
-## 核心特性
+## Core Features
 
-### 1. 分离的元信息和消息列表
+### 1. Separated Metadata and Message List
 
 ```json
 {
@@ -20,18 +20,18 @@
 }
 ```
 
-- **version**: 格式版本号（遵循语义化版本）
-- **conversation_meta**: 会话元信息
-- **conversation_list**: 消息列表
+- **version**: Format version number (follows semantic versioning)
+- **conversation_meta**: Conversation metadata
+- **conversation_list**: Message list
 
-### 2. 场景类型和场景描述
+### 2. Scene Types and Scene Descriptions
 
-支持两种核心对话场景：
+Two core conversation scenes are supported:
 
-- **company**: 人机助手对话场景，一对一对话，AI 扮演个人助理
-- **work**: 工作群聊场景，多人群聊，团队协作
+- **company**: Human-AI assistant conversation scene, one-on-one dialogue, AI acts as a personal assistant
+- **work**: Work group chat scene, multi-person group chat, team collaboration
 
-**Company 场景示例**:
+**Company Scene Example**:
 ```json
 "conversation_meta": {
   "scene": "company",
@@ -42,7 +42,7 @@
 }
 ```
 
-**Work 场景示例**:
+**Work Scene Example**:
 ```json
 "conversation_meta": {
   "scene": "work",
@@ -51,29 +51,29 @@
 }
 ```
 
-- **scene**: 场景类型标识符（`company` 或 `work`）
-- **scene_desc**: 场景描述信息
-  - Company 场景：包含 `bot_ids` 列表，标注哪些用户是助手机器人
-  - Work 场景：通常为空对象，表示多人协作场景
+- **scene**: Scene type identifier (`company` or `work`)
+- **scene_desc**: Scene description information
+  - Company scene: Contains `bot_ids` list, indicating which users are assistant bots
+  - Work scene: Usually an empty object, representing a multi-person collaboration scene
 
-### 3. 用户详细信息
+### 3. User Details
 
-所有用户的详细信息集中存储在 `conversation_meta.user_details` 中：
+All user details are centrally stored in `conversation_meta.user_details`:
 
 ```json
 "user_details": {
   "user_101": {
     "full_name": "Alex",
-    "role": "技术负责人",
-    "department": "技术部",
+    "role": "Tech Lead",
+    "department": "Technology",
     "email": "alex@example.com"
   }
 }
 ```
 
-### 4. 消息结构
+### 4. Message Structure
 
-每条消息使用用户 ID 作为 `sender`，可选的 `sender_name` 用于方便阅读：
+Each message uses user ID as `sender`, with an optional `sender_name` for readability:
 
 ```json
 {
@@ -82,41 +82,41 @@
   "sender": "user_103",
   "sender_name": "Chen",
   "type": "text",
-  "content": "消息内容",
+  "content": "Message content",
   "refer_list": []
 }
 ```
 
-### 5. 时区感知的时间戳
+### 5. Timezone-Aware Timestamps
 
-- 使用 ISO 8601 格式
-- 推荐包含时区信息（如 `+08:00`）
-- 如果消息没有时区信息，可从 `conversation_meta.default_timezone` 获取
+- Uses ISO 8601 format
+- Recommended to include timezone information (e.g., `+08:00`)
+- If a message doesn't have timezone information, it can be obtained from `conversation_meta.default_timezone`
 
-### 6. 消息类型
+### 6. Message Types
 
-支持多种消息类型：
+Multiple message types are supported:
 
-- **text**: 文本消息
-- **image**: 图片消息
-- **file**: 文件消息
-- **audio**: 音频消息
-- **video**: 视频消息
-- **link**: 链接消息
-- **system**: 系统消息
+- **text**: Text message
+- **image**: Image message
+- **file**: File message
+- **audio**: Audio message
+- **video**: Video message
+- **link**: Link message
+- **system**: System message
 
-### 7. 消息引用
+### 7. Message References
 
-支持灵活的引用方式，`refer_list` 中的每个元素可以是：
+Flexible reference methods are supported, each element in `refer_list` can be:
 
-**方式1：字符串引用（仅 message_id）**
+**Method 1: String Reference (message_id only)**
 ```json
 "refer_list": ["msg_002", "msg_005"]
 ```
 
-**方式2：对象引用（只有 message_id 必需，其他字段可选）**
+**Method 2: Object Reference (only message_id is required, other fields are optional)**
 
-最简形式：
+Minimal form:
 ```json
 "refer_list": [
   {
@@ -125,17 +125,17 @@
 ]
 ```
 
-包含部分字段（如 content 用于预览）：
+Including partial fields (e.g., content for preview):
 ```json
 "refer_list": [
   {
     "message_id": "msg_002",
-    "content": "早。先对齐下目标？是能用于内测的MVP，还是直接客户试点？"
+    "content": "Good morning. Let's align on the goal first. Is it an MVP for internal testing or direct customer pilot?"
   }
 ]
 ```
 
-包含完整信息：
+Including complete information:
 ```json
 "refer_list": [
   {
@@ -144,47 +144,47 @@
     "sender": "user_102",
     "sender_name": "Betty",
     "type": "text",
-    "content": "早。先对齐下目标？是能用于内测的MVP，还是直接客户试点？",
+    "content": "Good morning. Let's align on the goal first. Is it an MVP for internal testing or direct customer pilot?",
     "refer_list": []
   }
 ]
 ```
 
-**方式3：混合使用**
+**Method 3: Mixed Usage**
 ```json
 "refer_list": [
   "msg_001",
   {
     "message_id": "msg_002",
-    "content": "部分内容..."
+    "content": "Partial content..."
   }
 ]
 ```
 
-**使用建议：**
-- 字符串引用：最简洁，适合引用关系明确的场景
-- 最小对象引用：仅 message_id，适合需要统一格式但不需要额外信息的场景
-- 带预览内容：包含 message_id + content，适合快速预览的场景
-- 完整对象引用：包含所有字段，适合导出、归档或脱离原始数据使用的场景
+**Usage Recommendations:**
+- String reference: Most concise, suitable for scenarios with clear reference relationships
+- Minimal object reference: Only message_id, suitable for scenarios requiring unified format but no additional information
+- With preview content: Includes message_id + content, suitable for quick preview scenarios
+- Complete object reference: Includes all fields, suitable for export, archiving, or use independent of original data
 
-### 7. 扩展字段
+### 8. Extension Fields
 
-使用 `extra` 字段存储额外信息：
+Use `extra` field to store additional information:
 
 ```json
 "extra": {
-  "file_name": "UI草稿_v1.pdf",
+  "file_name": "UI_draft_v1.pdf",
   "file_size": 2048576,
   "file_type": "application/pdf"
 }
 ```
 
-## 示例文件
+## Example Files
 
-- [`group_chat_format_example.json`](./group_chat_format_example.json) - 完整的示例文件
-- [`group_chat_compatible.json`](./group_chat_compatible.json) - 旧格式的兼容示例
+- [`group_chat_format_example.json`](./group_chat_format_example.json) - Complete example file
+- [`group_chat_compatible.json`](./group_chat_compatible.json) - Legacy format compatibility example
 
-## 使用方法
+## Usage
 
 ### Python
 
@@ -192,52 +192,51 @@
 from data.group_chat_format import GroupChatFormat, validate_group_chat_format
 import json
 
-# 读取群聊数据
+# Read group chat data
 with open('group_chat_example.json', 'r', encoding='utf-8') as f:
     data = json.load(f)
 
-# 验证格式
+# Validate format
 is_valid = validate_group_chat_format(data)
-print(f"格式验证: {'通过' if is_valid else '失败'}")
+print(f"Format validation: {'Passed' if is_valid else 'Failed'}")
 
-# 访问用户信息
+# Access user information
 user_details = data['conversation_meta']['user_details']
-print(f"用户列表: {list(user_details.keys())}")
+print(f"User list: {list(user_details.keys())}")
 
-# 遍历消息
+# Iterate through messages
 for msg in data['conversation_list']:
     sender_info = user_details[msg['sender']]
     print(f"{sender_info['full_name']}: {msg['content']}")
 ```
 
-### 创建新的群聊数据
+### Creating New Group Chat Data
 
 ```python
 from data.group_chat_format import create_example_group_chat
 import json
 
-# 创建示例数据
+# Create example data
 chat_data = create_example_group_chat()
 
-# 保存到文件
+# Save to file
 with open('my_chat.json', 'w', encoding='utf-8') as f:
     json.dump(chat_data, f, ensure_ascii=False, indent=2)
 ```
 
-## 版本历史
+## Version History
 
 - **1.0.0** (2025-02-01)
-  - 初始版本
-  - 支持基本消息类型
-  - 支持用户详细信息
-  - 支持消息引用
-  - 支持时区感知的时间戳
+  - Initial version
+  - Support for basic message types
+  - Support for user details
+  - Support for message references
+  - Support for timezone-aware timestamps
 
-## 贡献指南
+## Contributing
 
-欢迎提交 Issue 和 Pull Request 来改进这个格式规范。
+Issues and Pull Requests are welcome to improve this format specification.
 
-## 许可证
+## License
 
-开源许可证待定
-
+Open source license to be determined

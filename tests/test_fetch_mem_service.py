@@ -1,5 +1,5 @@
 """
-单元测试：测试 fetch_mem_service.py 的功能
+Unit test: Test the functionality of fetch_mem_service.py
 """
 
 import pytest
@@ -21,16 +21,16 @@ from api_specs.memory_models import (
 
 
 class TestFakeFetchMemoryService:
-    """测试 FakeFetchMemoryService"""
+    """Test FakeFetchMemoryService"""
 
     @pytest.fixture
     def service(self):
-        """创建服务实例"""
+        """Create service instance"""
         return get_fetch_memory_service()
 
     @pytest.mark.asyncio
     async def test_find_by_user_id_base_memory(self, service):
-        """测试查找基础记忆"""
+        """Test finding base memory"""
         response = await service.find_by_user_id(
             "user_001", MemoryType.BASE_MEMORY, limit=5
         )
@@ -44,7 +44,7 @@ class TestFakeFetchMemoryService:
 
     @pytest.mark.asyncio
     async def test_find_by_user_id_profile(self, service):
-        """测试查找用户画像"""
+        """Test finding user profile"""
         response = await service.find_by_user_id(
             "user_001", MemoryType.PROFILE, limit=5
         )
@@ -56,7 +56,7 @@ class TestFakeFetchMemoryService:
 
     @pytest.mark.asyncio
     async def test_find_by_user_id_preference(self, service):
-        """测试查找用户偏好"""
+        """Test finding user preferences"""
         response = await service.find_by_user_id(
             "user_001", MemoryType.PREFERENCE, limit=5
         )
@@ -67,7 +67,7 @@ class TestFakeFetchMemoryService:
 
     @pytest.mark.asyncio
     async def test_find_by_user_id_episodic_memory(self, service):
-        """测试查找情景记忆"""
+        """Test finding episodic memory"""
         response = await service.find_by_user_id(
             "user_001", MemoryType.EPISODIC_MEMORY, limit=5
         )
@@ -80,7 +80,7 @@ class TestFakeFetchMemoryService:
 
     @pytest.mark.asyncio
     async def test_find_by_user_id_foresight(self, service):
-        """测试查找前瞻"""
+        """Test finding foresight"""
         response = await service.find_by_user_id(
             "user_001", MemoryType.FORESIGHT, limit=5
         )
@@ -91,7 +91,7 @@ class TestFakeFetchMemoryService:
 
     @pytest.mark.asyncio
     async def test_find_by_user_id_entity(self, service):
-        """测试查找实体"""
+        """Test finding entity"""
         response = await service.find_by_user_id("user_001", MemoryType.ENTITY, limit=5)
 
         assert response.total_count > 0
@@ -100,7 +100,7 @@ class TestFakeFetchMemoryService:
 
     @pytest.mark.asyncio
     async def test_find_by_user_id_relation(self, service):
-        """测试查找关系"""
+        """Test finding relation"""
         response = await service.find_by_user_id(
             "user_001", MemoryType.RELATION, limit=5
         )
@@ -111,7 +111,7 @@ class TestFakeFetchMemoryService:
 
     @pytest.mark.asyncio
     async def test_find_by_user_id_behavior_history(self, service):
-        """测试查找行为历史"""
+        """Test finding behavior history"""
         response = await service.find_by_user_id(
             "user_001", MemoryType.BEHAVIOR_HISTORY, limit=5
         )
@@ -124,7 +124,7 @@ class TestFakeFetchMemoryService:
 
     @pytest.mark.asyncio
     async def test_find_by_user_id_personal_event_log(self, service):
-        """测试查找个人事件日志"""
+        """Test finding personal event log"""
         response = await service.find_by_user_id(
             "user_001", MemoryType.EVENT_LOG, limit=5
         )
@@ -135,7 +135,7 @@ class TestFakeFetchMemoryService:
 
     @pytest.mark.asyncio
     async def test_find_by_user_id_foresight_2(self, service):
-        """测试查找个人前瞻"""
+        """Test finding personal foresight"""
         response = await service.find_by_user_id(
             "user_001", MemoryType.FORESIGHT, limit=5
         )
@@ -144,11 +144,11 @@ class TestFakeFetchMemoryService:
         assert all(
             isinstance(memory, ForesightRecordModel) for memory in response.memories
         )
-        # 个人前瞻的 user_id 可能为 None（群组场景），所以不强制检查
+        # The user_id of personal foresight may be None (group scenario), so no strict check
 
     @pytest.mark.asyncio
     async def test_find_by_user_id_nonexistent_user(self, service):
-        """测试查找不存在的用户"""
+        """Test finding non-existent user"""
         response = await service.find_by_user_id(
             "nonexistent_user", MemoryType.BASE_MEMORY, limit=5
         )
@@ -159,7 +159,7 @@ class TestFakeFetchMemoryService:
 
     @pytest.mark.asyncio
     async def test_find_by_user_id_limit(self, service):
-        """测试限制返回数量"""
+        """Test limiting return count"""
         response = await service.find_by_user_id(
             "user_001", MemoryType.BASE_MEMORY, limit=1
         )
@@ -168,7 +168,7 @@ class TestFakeFetchMemoryService:
 
     @pytest.mark.asyncio
     async def test_different_users_have_different_data(self, service):
-        """测试不同用户有不同的数据"""
+        """Test different users have different data"""
         response1 = await service.find_by_user_id(
             "user_001", MemoryType.PROFILE, limit=5
         )
@@ -179,21 +179,21 @@ class TestFakeFetchMemoryService:
         assert len(response1.memories) > 0
         assert len(response2.memories) > 0
 
-        # 检查用户ID不同
+        # Check user IDs are different
         profile1 = response1.memories[0]
         profile2 = response2.memories[0]
         assert profile1.user_id != profile2.user_id
 
 
 class TestGetFetchMemoryService:
-    """测试获取服务实例"""
+    """Test getting service instance"""
 
     @pytest.mark.asyncio
     async def test_get_fetch_memory_service(self):
-        """测试通过工厂函数获取服务实例"""
+        """Test getting service instance via factory function"""
         service = get_fetch_memory_service()
 
-        # 验证服务实例可用
+        # Verify service instance is available
         response = await service.find_by_user_id(
             "user_001", MemoryType.BASE_MEMORY, limit=3
         )
@@ -205,7 +205,7 @@ class TestGetFetchMemoryService:
 
 
 class TestMemoryTypes:
-    """测试所有记忆类型"""
+    """Test all memory types"""
 
     @pytest.fixture
     def service(self):
@@ -213,7 +213,7 @@ class TestMemoryTypes:
 
     @pytest.mark.asyncio
     async def test_all_memory_types_available(self, service):
-        """测试所有记忆类型都有数据"""
+        """Test all memory types have data"""
         user_id = "user_001"
 
         for memory_type in MemoryType:
@@ -222,7 +222,7 @@ class TestMemoryTypes:
                 response.total_count >= 0
             ), f"Memory type {memory_type} should have data or empty result"
 
-            # 验证返回的记忆类型正确
+            # Verify returned memory type is correct
             if response.memories:
                 memory = response.memories[0]
                 expected_types = {

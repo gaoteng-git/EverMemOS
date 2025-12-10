@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-测试 MemCellRawRepository 的功能
+Test the functionality of MemCellRawRepository
 
-测试内容包括:
-1. 基于 event_id 的增删改查操作
-2. 基于 user_id 的查询
-3. 基于时间范围的查询（包括分段查询）
-4. 基于 group_id 的查询
-5. 基于参与者的查询
-6. 基于关键词的查询
-7. 批量删除操作
-8. 统计和聚合查询
+Test contents include:
+1. CRUD operations based on event_id
+2. Queries based on user_id
+3. Queries based on time range (including segmented queries)
+4. Queries based on group_id
+5. Queries based on participants
+6. Queries based on keywords
+7. Batch deletion operations
+8. Statistical and aggregation queries
 """
 
 import asyncio
@@ -33,11 +33,11 @@ from core.observation.logger import get_logger
 logger = get_logger(__name__)
 
 
-# ==================== 投影模型定义 ====================
+# ==================== Projection Model Definition ====================
 class MemCellProjection(BaseModel):
     """
-    MemCell 投影模型 - 用于测试字段投影功能
-    只包含部分字段，排除了 original_data 等大字段
+    MemCell projection model - used to test field projection functionality
+    Includes only partial fields, excluding large fields such as original_data
     """
 
     id: ObjectId = Field(alias="_id")
@@ -52,152 +52,152 @@ class MemCellProjection(BaseModel):
 
 
 async def test_basic_crud_operations():
-    """测试基于 event_id 的基本增删改查操作"""
-    logger.info("开始测试基于 event_id 的基本增删改查操作...")
+    """Test basic CRUD operations based on event_id"""
+    logger.info("Starting test of basic CRUD operations based on event_id...")
 
     repo = get_bean_by_type(MemCellRawRepository)
     user_id = "test_user_001"
 
     try:
-        # 先清理可能存在的测试数据
+        # First clean up any existing test data
         await repo.delete_by_user_id(user_id)
-        logger.info("✅ 清理已存在的测试数据")
+        logger.info("✅ Cleaned up existing test data")
 
-        # 测试创建新 MemCell
+        # Test creating a new MemCell
         now = get_now_with_timezone()
         memcell = MemCell(
             user_id=user_id,
             timestamp=now,
-            summary="这是一条测试记忆：讨论了项目的技术方案",
+            summary="This is a test memory: discussed the project's technical solution",
             type=DataTypeEnum.CONVERSATION,
-            keywords=["技术方案", "项目讨论"],
-            participants=["张三", "李四"],
+            keywords=["technical solution", "project discussion"],
+            participants=["Zhang San", "Li Si"],
         )
 
         created = await repo.append_memcell(memcell)
         assert created is not None
         assert created.user_id == user_id
-        assert created.summary == "这是一条测试记忆：讨论了项目的技术方案"
+        assert created.summary == "This is a test memory: discussed the project's technical solution"
         assert created.event_id is not None
-        logger.info("✅ 测试创建新 MemCell 成功, event_id=%s", created.event_id)
+        logger.info("✅ Test creating new MemCell succeeded, event_id=%s", created.event_id)
 
         event_id = str(created.event_id)
 
-        # 测试根据 event_id 查询
+        # Test querying by event_id
         queried = await repo.get_by_event_id(event_id)
         assert queried is not None
         assert queried.user_id == user_id
         assert str(queried.event_id) == event_id
-        logger.info("✅ 测试根据 event_id 查询成功")
+        logger.info("✅ Test querying by event_id succeeded")
 
-        # 测试更新 MemCell
+        # Test updating MemCell
         update_data = {
-            "summary": "更新后的摘要：项目技术方案已确定",
-            "keywords": ["技术方案", "项目讨论", "已确定"],
+            "summary": "Updated summary: project technical solution has been confirmed",
+            "keywords": ["technical solution", "project discussion", "confirmed"],
         }
 
         updated = await repo.update_by_event_id(event_id, update_data)
         assert updated is not None
-        assert updated.summary == "更新后的摘要：项目技术方案已确定"
+        assert updated.summary == "Updated summary: project technical solution has been confirmed"
         assert len(updated.keywords) == 3
-        logger.info("✅ 测试更新 MemCell 成功")
+        logger.info("✅ Test updating MemCell succeeded")
 
-        # 测试删除 MemCell
+        # Test deleting MemCell
         deleted = await repo.delete_by_event_id(event_id)
         assert deleted is True
-        logger.info("✅ 测试删除 MemCell 成功")
+        logger.info("✅ Test deleting MemCell succeeded")
 
-        # 验证删除
+        # Verify deletion
         final_check = await repo.get_by_event_id(event_id)
-        assert final_check is None, "记录应该已被删除"
-        logger.info("✅ 验证删除成功")
+        assert final_check is None, "Record should have been deleted"
+        logger.info("✅ Verified deletion succeeded")
 
     except Exception as e:
-        logger.error("❌ 测试基本增删改查操作失败: %s", e)
+        logger.error("❌ Basic CRUD operations test failed: %s", e)
         raise
 
-    logger.info("✅ 基本增删改查操作测试完成")
+    logger.info("✅ Basic CRUD operations test completed")
 
 
 async def test_find_by_user_id():
-    """测试基于 user_id 的查询"""
-    logger.info("开始测试基于 user_id 的查询...")
+    """Test queries based on user_id"""
+    logger.info("Starting test of queries based on user_id...")
 
     repo = get_bean_by_type(MemCellRawRepository)
     user_id = "test_user_002"
 
     try:
-        # 先清理
+        # First clean up
         await repo.delete_by_user_id(user_id)
-        logger.info("✅ 清理已存在的测试数据")
+        logger.info("✅ Cleaned up existing test data")
 
-        # 创建多条记录
+        # Create multiple records
         now = get_now_with_timezone()
         for i in range(5):
             memcell = MemCell(
                 user_id=user_id,
                 timestamp=now - timedelta(hours=i),
-                summary=f"测试记忆 {i+1}",
+                summary=f"Test memory {i+1}",
                 type=DataTypeEnum.CONVERSATION,
             )
             await repo.append_memcell(memcell)
 
-        logger.info("✅ 创建了 5 条测试记录")
+        logger.info("✅ Created 5 test records")
 
-        # 测试查询所有记录（降序）
+        # Test querying all records (descending)
         results = await repo.find_by_user_id(user_id, sort_desc=True)
         assert len(results) == 5
-        assert results[0].summary == "测试记忆 1"  # 最新的
-        logger.info("✅ 测试查询所有记录（降序）成功")
+        assert results[0].summary == "Test memory 1"  # Latest
+        logger.info("✅ Test querying all records (descending) succeeded")
 
-        # 测试查询所有记录（升序）
+        # Test querying all records (ascending)
         results_asc = await repo.find_by_user_id(user_id, sort_desc=False)
         assert len(results_asc) == 5
-        assert results_asc[0].summary == "测试记忆 5"  # 最早的
-        logger.info("✅ 测试查询所有记录（升序）成功")
+        assert results_asc[0].summary == "Test memory 5"  # Earliest
+        logger.info("✅ Test querying all records (ascending) succeeded")
 
-        # 测试限制数量
+        # Test limiting number
         limited_results = await repo.find_by_user_id(user_id, limit=2)
         assert len(limited_results) == 2
-        logger.info("✅ 测试限制数量成功")
+        logger.info("✅ Test limiting number succeeded")
 
-        # 测试跳过和限制
+        # Test skip and limit
         skip_results = await repo.find_by_user_id(user_id, skip=2, limit=2)
         assert len(skip_results) == 2
-        logger.info("✅ 测试跳过和限制成功")
+        logger.info("✅ Test skip and limit succeeded")
 
-        # 清理
+        # Clean up
         await repo.delete_by_user_id(user_id)
-        logger.info("✅ 清理测试数据成功")
+        logger.info("✅ Cleaned up test data successfully")
 
     except Exception as e:
-        logger.error("❌ 测试基于 user_id 查询失败: %s", e)
+        logger.error("❌ Test based on user_id query failed: %s", e)
         raise
 
-    logger.info("✅ 基于 user_id 的查询测试完成")
+    logger.info("✅ Queries based on user_id test completed")
 
 
 async def test_find_by_time_range():
-    """测试基于时间范围的查询（包括分段查询）"""
-    logger.info("开始测试基于时间范围的查询...")
+    """Test queries based on time range (including segmented queries)"""
+    logger.info("Starting test of queries based on time range...")
 
     repo = get_bean_by_type(MemCellRawRepository)
     user_id = "test_user_003"
 
     try:
-        # 先清理
+        # First clean up
         await repo.delete_by_user_id(user_id)
-        logger.info("✅ 清理已存在的测试数据")
+        logger.info("✅ Cleaned up existing test data")
 
-        # 创建跨度较大的测试数据（10天）
-        # 使用1990年的时间避免与现有数据冲突
-        # 注意：必须使用带时区的时间，否则会与 MongoDB 存储的时区不匹配
+        # Create test data with a large span (10 days)
+        # Use time from 1990 to avoid conflicts with existing data
+        # Note: Must use timezone-aware time, otherwise it will not match the timezone stored in MongoDB
         from common_utils.datetime_utils import get_timezone
 
         tz = get_timezone()
         start_time = datetime(1990, 1, 1, 0, 0, 0, tzinfo=tz)
 
-        # 每天创建一条记录
+        # Create one record per day
         created_timestamps = []
         for i in range(10):
             ts = start_time + timedelta(days=i)
@@ -205,107 +205,107 @@ async def test_find_by_time_range():
             memcell = MemCell(
                 user_id=user_id,
                 timestamp=ts,
-                summary=f"第 {i+1} 天的记忆",
+                summary=f"Day {i+1} memory",
                 type=DataTypeEnum.CONVERSATION,
             )
             await repo.append_memcell(memcell)
 
-        logger.info("✅ 创建了 10 天的测试数据")
+        logger.info("✅ Created 10 days of test data")
         logger.info(
-            "   时间戳范围: %s 到 %s", created_timestamps[0], created_timestamps[-1]
+            "   Timestamp range: %s to %s", created_timestamps[0], created_timestamps[-1]
         )
 
-        # 测试小范围查询（3天，不触发分段）
-        # 查询 day 0, 1, 2（共3条记录）
+        # Test small range query (3 days, does not trigger segmentation)
+        # Query day 0, 1, 2 (total 3 records)
         small_start = start_time  # 1990-01-01 00:00:00
-        small_end = start_time + timedelta(days=3)  # 1990-01-04 00:00:00（不包含）
+        small_end = start_time + timedelta(days=3)  # 1990-01-04 00:00:00 (exclusive)
         small_results = await repo.find_by_time_range(small_start, small_end)
-        logger.info("   小范围查询返回了 %d 条记录（期望 3 条）", len(small_results))
+        logger.info("   Small range query returned %d records (expected 3)", len(small_results))
         assert (
             len(small_results) == 3
-        ), f"期望返回3条记录，实际返回 {len(small_results)} 条"
-        logger.info("✅ 测试小范围查询（3天）成功，找到 %d 条记录", len(small_results))
+        ), f"Expected 3 records, got {len(small_results)}"
+        logger.info("✅ Test small range query (3 days) succeeded, found %d records", len(small_results))
 
-        # 测试大范围查询（10天，触发分段查询）
-        # 查询 day 0-9（共10条记录）
-        # 最后一条记录是 1990-01-10 00:00:00，查询使用 $lt，所以结束时间必须 > 1990-01-10
+        # Test large range query (10 days, triggers segmented query)
+        # Query day 0-9 (total 10 records)
+        # The last record is 1990-01-10 00:00:00, query uses $lt, so end time must be > 1990-01-10
         large_start = start_time  # 1990-01-01 00:00:00
         large_end = start_time + timedelta(
             days=10, seconds=1
-        )  # 1990-01-11 00:00:01（确保包含 day 9）
-        logger.info("   查询时间范围: %s 到 %s", large_start, large_end)
+        )  # 1990-01-11 00:00:01 (ensure day 9 is included)
+        logger.info("   Query time range: %s to %s", large_start, large_end)
         large_results = await repo.find_by_time_range(large_start, large_end)
-        logger.info("   大范围查询返回了 %d 条记录（期望 10 条）", len(large_results))
+        logger.info("   Large range query returned %d records (expected 10)", len(large_results))
 
-        # 打印返回的记录时间戳以便调试
-        logger.info("   返回的记录详情:")
+        # Print returned record timestamps for debugging
+        logger.info("   Returned record details:")
         for idx, mc in enumerate(large_results):
             logger.info("     [%d] %s - %s", idx, mc.timestamp, mc.summary)
 
         if len(large_results) != 10:
-            logger.warning("   ⚠️ 记录数量不匹配！")
-            logger.warning("   期望的时间戳:")
+            logger.warning("   ⚠️ Record count mismatch!")
+            logger.warning("   Expected timestamps:")
             for idx, ts in enumerate(created_timestamps):
                 logger.warning("     [%d] %s", idx, ts)
 
-            # 找出缺失的记录
+            # Find missing records
             returned_timestamps = {mc.timestamp for mc in large_results}
             missing = [ts for ts in created_timestamps if ts not in returned_timestamps]
             if missing:
-                logger.error("   ❌ 缺失的时间戳:")
+                logger.error("   ❌ Missing timestamps:")
                 for ts in missing:
                     logger.error("     - %s", ts)
 
         assert (
             len(large_results) == 10
-        ), f"期望返回10条记录，实际返回 {len(large_results)} 条"
-        logger.info("✅ 测试大范围查询（10天）成功，找到 %d 条记录", len(large_results))
+        ), f"Expected 10 records, got {len(large_results)}"
+        logger.info("✅ Test large range query (10 days) succeeded, found %d records", len(large_results))
 
-        # 测试降序查询
+        # Test descending query
         desc_results = await repo.find_by_time_range(
             large_start, large_end, sort_desc=True
         )
         assert len(desc_results) == 10
-        assert "第 10 天" in desc_results[0].summary  # 最新的在前
-        logger.info("✅ 测试降序查询成功")
+        assert "Day 10" in desc_results[0].summary  # Latest first
+        logger.info("✅ Test descending query succeeded")
 
-        # 测试升序查询
+        # Test ascending query
         asc_results = await repo.find_by_time_range(
             large_start, large_end, sort_desc=False
         )
         assert len(asc_results) == 10
-        assert "第 1 天" in asc_results[0].summary  # 最早的在前
-        logger.info("✅ 测试升序查询成功")
+        assert "Day 1" in asc_results[0].summary  # Earliest first
+        logger.info("✅ Test ascending query succeeded")
 
-        # 测试分页
+        # Test pagination
         page_results = await repo.find_by_time_range(large_start, large_end, limit=5)
         assert len(page_results) == 5
-        logger.info("✅ 测试分页成功")
+        logger.info("✅ Test pagination succeeded")
 
-        # 清理
+        # Clean up
         await repo.delete_by_user_id(user_id)
-        logger.info("✅ 清理测试数据成功")
+        logger.info("✅ Cleaned up test data successfully")
 
     except Exception as e:
-        logger.error("❌ 测试时间范围查询失败: %s", e)
+        logger.error("❌ Test time range query failed: %s", e)
         raise
 
-    logger.info("✅ 时间范围查询测试完成")
+    logger.info("✅ Time range query test completed")
 
 
 async def test_find_by_user_and_time_range():
-    """测试基于用户和时间范围的查询"""
-    logger.info("开始测试基于用户和时间范围的查询...")
+    """Test queries based on user and time range"""
+    logger.info("Starting test of queries based on user and time range...")
 
     repo = get_bean_by_type(MemCellRawRepository)
     user_id = "test_user_004"
 
     try:
-        # 先清理
+        # First clean up
         await repo.delete_by_user_id(user_id)
-        logger.info("✅ 清理已存在的测试数据")
+        logger.info("✅ Cleaned up existing test data")
 
-        # 创建测试数据
+        # Create test data
         now = get_now_with_timezone()
         start_time = now - timedelta(days=5)
 
@@ -313,14 +313,14 @@ async def test_find_by_user_and_time_range():
             memcell = MemCell(
                 user_id=user_id,
                 timestamp=start_time + timedelta(days=i),
-                summary=f"用户记忆 {i+1}",
+                summary=f"User memory {i+1}",
                 type=DataTypeEnum.CONVERSATION,
             )
             await repo.append_memcell(memcell)
 
-        logger.info("✅ 创建了 5 条测试数据")
+        logger.info("✅ Created 5 test records")
 
-        # 测试查询中间3天的数据
+        # Test querying data for middle 3 days
         query_start = start_time + timedelta(days=1)
         query_end = start_time + timedelta(days=4)
         results = await repo.find_by_user_and_time_range(
@@ -328,270 +328,270 @@ async def test_find_by_user_and_time_range():
         )
 
         assert len(results) == 3
-        logger.info("✅ 测试用户和时间范围查询成功，找到 %d 条记录", len(results))
+        logger.info("✅ Test user and time range query succeeded, found %d records", len(results))
 
-        # 清理
+        # Clean up
         await repo.delete_by_user_id(user_id)
-        logger.info("✅ 清理测试数据成功")
+        logger.info("✅ Cleaned up test data successfully")
 
     except Exception as e:
-        logger.error("❌ 测试用户和时间范围查询失败: %s", e)
+        logger.error("❌ Test user and time range query failed: %s", e)
         raise
 
-    logger.info("✅ 用户和时间范围查询测试完成")
+    logger.info("✅ User and time range query test completed")
 
 
 async def test_find_by_group_id():
-    """测试基于 group_id 的查询"""
-    logger.info("开始测试基于 group_id 的查询...")
+    """Test queries based on group_id"""
+    logger.info("Starting test of queries based on group_id...")
 
     repo = get_bean_by_type(MemCellRawRepository)
     user_id = "test_user_005"
     group_id = "test_group_001"
 
     try:
-        # 先清理
+        # First clean up
         await repo.delete_by_user_id(user_id)
-        logger.info("✅ 清理已存在的测试数据")
+        logger.info("✅ Cleaned up existing test data")
 
-        # 创建群组记录
+        # Create group records
         now = get_now_with_timezone()
         for i in range(3):
             memcell = MemCell(
                 user_id=user_id,
                 group_id=group_id,
                 timestamp=now - timedelta(hours=i),
-                summary=f"群组记忆 {i+1}",
+                summary=f"Group memory {i+1}",
                 type=DataTypeEnum.CONVERSATION,
             )
             await repo.append_memcell(memcell)
 
-        logger.info("✅ 创建了 3 条群组记录")
+        logger.info("✅ Created 3 group records")
 
-        # 测试查询
+        # Test query
         results = await repo.find_by_group_id(group_id)
         assert len(results) == 3
-        logger.info("✅ 测试根据 group_id 查询成功，找到 %d 条记录", len(results))
+        logger.info("✅ Test querying by group_id succeeded, found %d records", len(results))
 
-        # 清理
+        # Clean up
         await repo.delete_by_user_id(user_id)
-        logger.info("✅ 清理测试数据成功")
+        logger.info("✅ Cleaned up test data successfully")
 
     except Exception as e:
-        logger.error("❌ 测试 group_id 查询失败: %s", e)
+        logger.error("❌ Test group_id query failed: %s", e)
         raise
 
-    logger.info("✅ group_id 查询测试完成")
+    logger.info("✅ group_id query test completed")
 
 
 async def test_find_by_participants():
-    """测试基于参与者的查询"""
-    logger.info("开始测试基于参与者的查询...")
+    """Test queries based on participants"""
+    logger.info("Starting test of queries based on participants...")
 
     repo = get_bean_by_type(MemCellRawRepository)
     user_id = "test_user_006"
 
     try:
-        # 先清理
+        # First clean up
         await repo.delete_by_user_id(user_id)
-        logger.info("✅ 清理已存在的测试数据")
+        logger.info("✅ Cleaned up existing test data")
 
-        # 创建测试数据
+        # Create test data
         now = get_now_with_timezone()
 
-        # 记录1：张三、李四
+        # Record 1: Zhang San, Li Si
         memcell1 = MemCell(
             user_id=user_id,
             timestamp=now - timedelta(hours=1),
-            summary="记录1：张三和李四的对话",
-            participants=["张三", "李四"],
+            summary="Record 1: Conversation between Zhang San and Li Si",
+            participants=["Zhang San", "Li Si"],
         )
         await repo.append_memcell(memcell1)
 
-        # 记录2：张三、王五
+        # Record 2: Zhang San, Wang Wu
         memcell2 = MemCell(
             user_id=user_id,
             timestamp=now - timedelta(hours=2),
-            summary="记录2：张三和王五的对话",
-            participants=["张三", "王五"],
+            summary="Record 2: Conversation between Zhang San and Wang Wu",
+            participants=["Zhang San", "Wang Wu"],
         )
         await repo.append_memcell(memcell2)
 
-        # 记录3：李四、王五
+        # Record 3: Li Si, Wang Wu
         memcell3 = MemCell(
             user_id=user_id,
             timestamp=now - timedelta(hours=3),
-            summary="记录3：李四和王五的对话",
-            participants=["李四", "王五"],
+            summary="Record 3: Conversation between Li Si and Wang Wu",
+            participants=["Li Si", "Wang Wu"],
         )
         await repo.append_memcell(memcell3)
 
-        logger.info("✅ 创建了 3 条测试记录")
+        logger.info("✅ Created 3 test records")
 
-        # 测试匹配任一参与者（包含"张三"）
-        results_any = await repo.find_by_participants(["张三"], match_all=False)
+        # Test matching any participant (containing "Zhang San")
+        results_any = await repo.find_by_participants(["Zhang San"], match_all=False)
         assert len(results_any) == 2
-        logger.info("✅ 测试匹配任一参与者成功，找到 %d 条记录", len(results_any))
+        logger.info("✅ Test matching any participant succeeded, found %d records", len(results_any))
 
-        # 测试匹配所有参与者（同时包含"张三"和"李四"）
-        results_all = await repo.find_by_participants(["张三", "李四"], match_all=True)
+        # Test matching all participants (containing both "Zhang San" and "Li Si")
+        results_all = await repo.find_by_participants(["Zhang San", "Li Si"], match_all=True)
         assert len(results_all) == 1
-        logger.info("✅ 测试匹配所有参与者成功，找到 %d 条记录", len(results_all))
+        logger.info("✅ Test matching all participants succeeded, found %d records", len(results_all))
 
-        # 清理
+        # Clean up
         await repo.delete_by_user_id(user_id)
-        logger.info("✅ 清理测试数据成功")
+        logger.info("✅ Cleaned up test data successfully")
 
     except Exception as e:
-        logger.error("❌ 测试参与者查询失败: %s", e)
+        logger.error("❌ Test participant query failed: %s", e)
         raise
 
-    logger.info("✅ 参与者查询测试完成")
+    logger.info("✅ Participant query test completed")
 
 
 async def test_search_by_keywords():
-    """测试基于关键词的查询"""
-    logger.info("开始测试基于关键词的查询...")
+    """Test queries based on keywords"""
+    logger.info("Starting test of queries based on keywords...")
 
     repo = get_bean_by_type(MemCellRawRepository)
     user_id = "test_user_007"
 
     try:
-        # 先清理
+        # First clean up
         await repo.delete_by_user_id(user_id)
-        logger.info("✅ 清理已存在的测试数据")
+        logger.info("✅ Cleaned up existing test data")
 
-        # 创建测试数据
+        # Create test data
         now = get_now_with_timezone()
 
-        # 记录1：技术、Python
+        # Record 1: technology, Python
         memcell1 = MemCell(
             user_id=user_id,
             timestamp=now - timedelta(hours=1),
-            summary="记录1：Python技术讨论",
-            keywords=["技术", "Python"],
+            summary="Record 1: Python technology discussion",
+            keywords=["technology", "Python"],
         )
         await repo.append_memcell(memcell1)
 
-        # 记录2：技术、Java
+        # Record 2: technology, Java
         memcell2 = MemCell(
             user_id=user_id,
             timestamp=now - timedelta(hours=2),
-            summary="记录2：Java技术讨论",
-            keywords=["技术", "Java"],
+            summary="Record 2: Java technology discussion",
+            keywords=["technology", "Java"],
         )
         await repo.append_memcell(memcell2)
 
-        # 记录3：设计、架构
+        # Record 3: design, architecture
         memcell3 = MemCell(
             user_id=user_id,
             timestamp=now - timedelta(hours=3),
-            summary="记录3：架构设计讨论",
-            keywords=["设计", "架构"],
+            summary="Record 3: Architecture design discussion",
+            keywords=["design", "architecture"],
         )
         await repo.append_memcell(memcell3)
 
-        logger.info("✅ 创建了 3 条测试记录")
+        logger.info("✅ Created 3 test records")
 
-        # 测试匹配任一关键词（包含"技术"）
-        results_any = await repo.search_by_keywords(["技术"], match_all=False)
+        # Test matching any keyword (containing "technology")
+        results_any = await repo.search_by_keywords(["technology"], match_all=False)
         assert len(results_any) == 2
-        logger.info("✅ 测试匹配任一关键词成功，找到 %d 条记录", len(results_any))
+        logger.info("✅ Test matching any keyword succeeded, found %d records", len(results_any))
 
-        # 测试匹配所有关键词（同时包含"技术"和"Python"）
-        results_all = await repo.search_by_keywords(["技术", "Python"], match_all=True)
+        # Test matching all keywords (containing both "technology" and "Python")
+        results_all = await repo.search_by_keywords(["technology", "Python"], match_all=True)
         assert len(results_all) == 1
-        logger.info("✅ 测试匹配所有关键词成功，找到 %d 条记录", len(results_all))
+        logger.info("✅ Test matching all keywords succeeded, found %d records", len(results_all))
 
-        # 清理
+        # Clean up
         await repo.delete_by_user_id(user_id)
-        logger.info("✅ 清理测试数据成功")
+        logger.info("✅ Cleaned up test data successfully")
 
     except Exception as e:
-        logger.error("❌ 测试关键词查询失败: %s", e)
+        logger.error("❌ Test keyword query failed: %s", e)
         raise
 
-    logger.info("✅ 关键词查询测试完成")
+    logger.info("✅ Keyword query test completed")
 
 
 async def test_batch_delete_operations():
-    """测试批量删除操作"""
-    logger.info("开始测试批量删除操作...")
+    """Test batch deletion operations"""
+    logger.info("Starting test of batch deletion operations...")
 
     repo = get_bean_by_type(MemCellRawRepository)
     user_id = "test_user_008"
 
     try:
-        # 先清理
+        # First clean up
         await repo.delete_by_user_id(user_id)
-        logger.info("✅ 清理已存在的测试数据")
+        logger.info("✅ Cleaned up existing test data")
 
-        # 创建测试数据
+        # Create test data
         now = get_now_with_timezone()
         for i in range(10):
             memcell = MemCell(
                 user_id=user_id,
                 timestamp=now - timedelta(days=i),
-                summary=f"测试记忆 {i+1}",
+                summary=f"Test memory {i+1}",
                 type=DataTypeEnum.CONVERSATION,
             )
             await repo.append_memcell(memcell)
 
-        logger.info("✅ 创建了 10 条测试数据")
+        logger.info("✅ Created 10 test records")
 
-        # 测试删除时间范围内的记录（前5天）
+        # Test deleting records within a time range (first 5 days)
         delete_start = now - timedelta(days=5)
         delete_end = now
         deleted_count = await repo.delete_by_time_range(
             delete_start, delete_end, user_id=user_id
         )
         assert deleted_count == 5
-        logger.info("✅ 测试删除时间范围内的记录成功，删除了 %d 条", deleted_count)
+        logger.info("✅ Test deleting records within time range succeeded, deleted %d records", deleted_count)
 
-        # 验证剩余记录
+        # Verify remaining records
         remaining = await repo.find_by_user_id(user_id)
         assert len(remaining) == 5
-        logger.info("✅ 验证剩余记录成功，还有 %d 条", len(remaining))
+        logger.info("✅ Verified remaining records successfully, %d records left", len(remaining))
 
-        # 测试删除用户所有记录
+        # Test deleting all user records
         total_deleted = await repo.delete_by_user_id(user_id)
         assert total_deleted == 5
-        logger.info("✅ 测试删除用户所有记录成功，删除了 %d 条", total_deleted)
+        logger.info("✅ Test deleting all user records succeeded, deleted %d records", total_deleted)
 
-        # 验证全部删除
+        # Verify all deleted
         final_check = await repo.find_by_user_id(user_id)
         assert len(final_check) == 0
-        logger.info("✅ 验证全部删除成功")
+        logger.info("✅ Verified all deleted successfully")
 
     except Exception as e:
-        logger.error("❌ 测试批量删除操作失败: %s", e)
+        logger.error("❌ Test batch deletion operations failed: %s", e)
         raise
 
-    logger.info("✅ 批量删除操作测试完成")
+    logger.info("✅ Batch deletion operations test completed")
 
 
 async def test_statistics_and_aggregation():
-    """测试统计和聚合查询"""
-    logger.info("开始测试统计和聚合查询...")
+    """Test statistical and aggregation queries"""
+    logger.info("Starting test of statistical and aggregation queries...")
 
     repo = get_bean_by_type(MemCellRawRepository)
     user_id = "test_user_009"
 
     try:
-        # 先清理
+        # First clean up
         await repo.delete_by_user_id(user_id)
-        logger.info("✅ 清理已存在的测试数据")
+        logger.info("✅ Cleaned up existing test data")
 
-        # 创建不同类型的测试数据
+        # Create test data of different types
         now = get_now_with_timezone()
         start_time = now - timedelta(days=7)
 
-        # 创建6条对话记忆（注：原本是3条对话、2条邮件、1条文档，但现在只有CONVERSATION类型）
+        # Create 6 conversation memories (Note: Originally 3 conversations, 2 emails, 1 document, but now only CONVERSATION type)
         for i in range(3):
             memcell = MemCell(
                 user_id=user_id,
                 timestamp=start_time + timedelta(days=i),
-                summary=f"对话记忆 {i+1}",
+                summary=f"Conversation memory {i+1}",
                 type=DataTypeEnum.CONVERSATION,
             )
             await repo.append_memcell(memcell)
@@ -600,7 +600,7 @@ async def test_statistics_and_aggregation():
             memcell = MemCell(
                 user_id=user_id,
                 timestamp=start_time + timedelta(days=i + 3),
-                summary=f"邮件记忆 {i+1}",
+                summary=f"Email memory {i+1}",
                 type=DataTypeEnum.CONVERSATION,
             )
             await repo.append_memcell(memcell)
@@ -608,68 +608,68 @@ async def test_statistics_and_aggregation():
         memcell = MemCell(
             user_id=user_id,
             timestamp=start_time + timedelta(days=5),
-            summary="文档记忆",
+            summary="Document memory",
             type=DataTypeEnum.CONVERSATION,
         )
         await repo.append_memcell(memcell)
 
-        logger.info("✅ 创建了 6 条测试数据（全部为CONVERSATION类型）")
+        logger.info("✅ Created 6 test records (all CONVERSATION type)")
 
-        # 测试统计用户总记录数
+        # Test counting total user records
         total_count = await repo.count_by_user_id(user_id)
         assert total_count == 6
-        logger.info("✅ 测试统计用户总记录数成功，共 %d 条", total_count)
+        logger.info("✅ Test counting total user records succeeded, total %d records", total_count)
 
-        # 测试统计时间范围内的记录数
+        # Test counting records within a time range
         range_start = start_time
         range_end = start_time + timedelta(days=4)
         range_count = await repo.count_by_time_range(
             range_start, range_end, user_id=user_id
         )
-        assert range_count == 4  # 前4天的记录（3条对话记忆 + 1条邮件记忆）
-        logger.info("✅ 测试统计时间范围内的记录数成功，共 %d 条", range_count)
+        assert range_count == 4  # Records from first 4 days (3 conversation memories + 1 email memory)
+        logger.info("✅ Test counting records within time range succeeded, total %d records", range_count)
 
-        # 测试获取用户最新记录
+        # Test getting user's latest records
         latest = await repo.get_latest_by_user(user_id, limit=3)
         assert len(latest) == 3
-        assert latest[0].summary == "文档记忆"  # 最新的
-        logger.info("✅ 测试获取用户最新记录成功")
+        assert latest[0].summary == "Document memory"  # Latest
+        logger.info("✅ Test getting user's latest records succeeded")
 
-        # 测试获取用户活动摘要
+        # Test getting user activity summary
         summary = await repo.get_user_activity_summary(user_id, start_time, now)
         assert summary["total_count"] == 6
         assert summary["user_id"] == user_id
         assert DataTypeEnum.CONVERSATION.value in summary["type_distribution"]
         assert (
             summary["type_distribution"][DataTypeEnum.CONVERSATION.value] == 6
-        )  # 所有记录都是CONVERSATION类型
-        logger.info("✅ 测试获取用户活动摘要成功")
-        logger.info("   活动摘要: %s", summary)
+        )  # All records are of CONVERSATION type
+        logger.info("✅ Test getting user activity summary succeeded")
+        logger.info("   Activity summary: %s", summary)
 
-        # 清理
+        # Clean up
         await repo.delete_by_user_id(user_id)
-        logger.info("✅ 清理测试数据成功")
+        logger.info("✅ Cleaned up test data successfully")
 
     except Exception as e:
-        logger.error("❌ 测试统计和聚合查询失败: %s", e)
+        logger.error("❌ Test statistical and aggregation queries failed: %s", e)
         raise
 
-    logger.info("✅ 统计和聚合查询测试完成")
+    logger.info("✅ Statistical and aggregation queries test completed")
 
 
 async def test_get_by_event_ids():
-    """测试根据 event_ids 批量查询"""
-    logger.info("开始测试根据 event_ids 批量查询...")
+    """Test batch query by event_ids"""
+    logger.info("Starting test of batch query by event_ids...")
 
     repo = get_bean_by_type(MemCellRawRepository)
     user_id = "test_user_010"
 
     try:
-        # 先清理
+        # First clean up
         await repo.delete_by_user_id(user_id)
-        logger.info("✅ 清理已存在的测试数据")
+        logger.info("✅ Cleaned up existing test data")
 
-        # 创建测试数据
+        # Create test data
         now = get_now_with_timezone()
         created_memcells = []
 
@@ -677,96 +677,96 @@ async def test_get_by_event_ids():
             memcell = MemCell(
                 user_id=user_id,
                 timestamp=now - timedelta(hours=i),
-                summary=f"测试记忆 {i+1}",
-                episode=f"这是测试记忆 {i+1} 的详细内容",
+                summary=f"Test memory {i+1}",
+                episode=f"This is the detailed content of test memory {i+1}",
                 type=DataTypeEnum.CONVERSATION,
-                keywords=[f"关键词{i+1}", "测试"],
+                keywords=[f"keyword{i+1}", "test"],
             )
             created = await repo.append_memcell(memcell)
             created_memcells.append(created)
 
-        logger.info("✅ 创建了 5 条测试数据")
+        logger.info("✅ Created 5 test records")
 
-        # 准备 event_ids
+        # Prepare event_ids
         event_ids = [str(mc.event_id) for mc in created_memcells[:3]]
-        logger.info("   准备查询的 event_ids: %s", event_ids)
+        logger.info("   Preparing to query event_ids: %s", event_ids)
 
-        # 测试1: 批量查询（不带投影）
+        # Test 1: Batch query (without projection)
         results = await repo.get_by_event_ids(event_ids)
-        assert isinstance(results, dict), "返回结果应该是字典"
-        assert len(results) == 3, f"应该返回3条记录，实际返回 {len(results)} 条"
+        assert isinstance(results, dict), "Return result should be a dictionary"
+        assert len(results) == 3, f"Should return 3 records, got {len(results)}"
 
-        # 验证返回的是字典，key 是 event_id
+        # Verify returned is a dictionary, key is event_id
         for event_id in event_ids:
-            assert event_id in results, f"event_id {event_id} 应该在结果中"
+            assert event_id in results, f"event_id {event_id} should be in results"
             memcell = results[event_id]
             assert memcell.user_id == user_id
             assert memcell.episode is not None
 
-        logger.info("✅ 测试批量查询（不带投影）成功，返回 %d 条记录", len(results))
+        logger.info("✅ Test batch query (without projection) succeeded, returned %d records", len(results))
 
-        # 测试2: 批量查询（带字段投影）
-        # 使用 Pydantic 投影模型，只返回指定的字段，排除 original_data 等大字段
+        # Test 2: Batch query (with field projection)
+        # Use Pydantic projection model to return only specified fields, excluding large fields like original_data
         results_with_projection = await repo.get_by_event_ids(
             event_ids, projection_model=MemCellProjection
         )
 
-        assert isinstance(results_with_projection, dict), "返回结果应该是字典"
+        assert isinstance(results_with_projection, dict), "Return result should be a dictionary"
         assert (
             len(results_with_projection) == 3
-        ), f"应该返回3条记录，实际返回 {len(results_with_projection)} 条"
+        ), f"Should return 3 records, got {len(results_with_projection)}"
 
-        # 验证投影效果：返回的应该是 MemCellProjection 实例
+        # Verify projection effect: returned should be MemCellProjection instances
         for event_id, memcell_projection in results_with_projection.items():
             assert isinstance(
                 memcell_projection, MemCellProjection
-            ), "返回的应该是 MemCellProjection 实例"
-            assert memcell_projection.summary is not None, "summary 字段应该存在"
-            assert memcell_projection.timestamp is not None, "timestamp 字段应该存在"
-            assert memcell_projection.type is not None, "type 字段应该存在"
-            assert memcell_projection.user_id == user_id, "user_id 应该匹配"
-            # 验证投影模型中没有定义的字段不会被包含
+            ), "Returned should be MemCellProjection instance"
+            assert memcell_projection.summary is not None, "summary field should exist"
+            assert memcell_projection.timestamp is not None, "timestamp field should exist"
+            assert memcell_projection.type is not None, "type field should exist"
+            assert memcell_projection.user_id == user_id, "user_id should match"
+            # Verify fields not defined in projection model are not included
             assert not hasattr(
                 memcell_projection, 'original_data'
-            ), "original_data 字段不应该存在"
-            assert not hasattr(memcell_projection, 'episode'), "episode 字段不应该存在"
+            ), "original_data field should not exist"
+            assert not hasattr(memcell_projection, 'episode'), "episode field should not exist"
 
         logger.info(
-            "✅ 测试批量查询（带字段投影）成功，返回 %d 条记录",
+            "✅ Test batch query (with field projection) succeeded, returned %d records",
             len(results_with_projection),
         )
 
-        # 测试3: 查询部分有效的 event_ids（包含一个无效的）
+        # Test 3: Query partially valid event_ids (including an invalid one)
         mixed_event_ids = event_ids[:2] + ["invalid_id_123", "507f1f77bcf86cd799439011"]
         results_mixed = await repo.get_by_event_ids(mixed_event_ids)
 
-        # 应该只返回有效的2条记录
+        # Should only return 2 valid records
         assert (
             len(results_mixed) == 2
-        ), f"应该返回2条记录，实际返回 {len(results_mixed)} 条"
+        ), f"Should return 2 records, got {len(results_mixed)}"
         assert event_ids[0] in results_mixed
         assert event_ids[1] in results_mixed
         assert "invalid_id_123" not in results_mixed
         assert "507f1f77bcf86cd799439011" not in results_mixed
 
         logger.info(
-            "✅ 测试查询部分有效的 event_ids 成功，返回 %d 条记录", len(results_mixed)
+            "✅ Test querying partially valid event_ids succeeded, returned %d records", len(results_mixed)
         )
 
-        # 测试4: 空列表输入
+        # Test 4: Empty list input
         results_empty = await repo.get_by_event_ids([])
-        assert isinstance(results_empty, dict), "返回结果应该是字典"
-        assert len(results_empty) == 0, "空列表应该返回空字典"
-        logger.info("✅ 测试空列表输入成功")
+        assert isinstance(results_empty, dict), "Return result should be a dictionary"
+        assert len(results_empty) == 0, "Empty list should return empty dictionary"
+        logger.info("✅ Test empty list input succeeded")
 
-        # 测试5: 查询不存在的 event_ids
+        # Test 5: Query non-existent event_ids
         non_existent_ids = ["507f1f77bcf86cd799439011", "507f1f77bcf86cd799439012"]
         results_non_existent = await repo.get_by_event_ids(non_existent_ids)
-        assert isinstance(results_non_existent, dict), "返回结果应该是字典"
-        assert len(results_non_existent) == 0, "不存在的 event_ids 应该返回空字典"
-        logger.info("✅ 测试查询不存在的 event_ids 成功")
+        assert isinstance(results_non_existent, dict), "Return result should be a dictionary"
+        assert len(results_non_existent) == 0, "Non-existent event_ids should return empty dictionary"
+        logger.info("✅ Test querying non-existent event_ids succeeded")
 
-        # 测试6: 验证返回的数据完整性
+        # Test 6: Verify returned data integrity
         first_event_id = event_ids[0]
         first_memcell = results[first_event_id]
         original_memcell = created_memcells[0]
@@ -774,25 +774,25 @@ async def test_get_by_event_ids():
         assert str(first_memcell.event_id) == str(original_memcell.event_id)
         assert first_memcell.summary == original_memcell.summary
         assert first_memcell.user_id == original_memcell.user_id
-        logger.info("✅ 验证返回数据完整性成功")
+        logger.info("✅ Verified returned data integrity succeeded")
 
-        # 清理
+        # Clean up
         await repo.delete_by_user_id(user_id)
-        logger.info("✅ 清理测试数据成功")
+        logger.info("✅ Cleaned up test data successfully")
 
     except Exception as e:
-        logger.error("❌ 测试根据 event_ids 批量查询失败: %s", e)
+        logger.error("❌ Test batch query by event_ids failed: %s", e)
         import traceback
 
-        logger.error("详细错误: %s", traceback.format_exc())
+        logger.error("Detailed error: %s", traceback.format_exc())
         raise
 
-    logger.info("✅ 根据 event_ids 批量查询测试完成")
+    logger.info("✅ Batch query by event_ids test completed")
 
 
 async def run_all_tests():
-    """运行所有测试"""
-    logger.info("🚀 开始运行 MemCellRawRepository 所有测试...")
+    """Run all tests"""
+    logger.info("🚀 Starting to run all MemCellRawRepository tests...")
 
     try:
         await test_basic_crud_operations()
@@ -805,9 +805,9 @@ async def run_all_tests():
         await test_batch_delete_operations()
         await test_statistics_and_aggregation()
         await test_get_by_event_ids()
-        logger.info("✅✅✅ 所有测试完成！")
+        logger.info("✅✅✅ All tests completed!")
     except Exception as e:
-        logger.error("❌ 测试过程中出现错误: %s", e)
+        logger.error("❌ Error occurred during testing: %s", e)
         raise
 
 

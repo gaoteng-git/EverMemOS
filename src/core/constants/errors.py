@@ -1,7 +1,7 @@
 """
-错误定义模块
+Error definition module
 
-包含所有错误代码、错误消息和翻译的统一定义
+Contains unified definitions of all error codes, error messages, and translations
 """
 
 from enum import Enum
@@ -9,10 +9,10 @@ from typing import Dict
 
 
 class ErrorStatus(Enum):
-    """错误状态枚举
+    """Error status enumeration
 
-    定义了系统中所有可能的错误状态，便于错误分类和处理。
-    每个错误状态都有明确的含义和对应的处理方式。
+    Defines all possible error statuses in the system, facilitating error classification and handling.
+    Each error status has a clear meaning and corresponding handling method.
     """
 
     OK = "ok"
@@ -20,13 +20,13 @@ class ErrorStatus(Enum):
 
 
 class ErrorCode(Enum):
-    """错误代码枚举
+    """Error code enumeration
 
-    定义了系统中所有可能的错误代码，便于错误分类和处理。
-    每个错误代码都有明确的含义和对应的处理方式。
+    Defines all possible error codes in the system, facilitating error classification and handling.
+    Each error code has a clear meaning and corresponding handling method.
     """
 
-    # 通用错误
+    # General errors
     UNKNOWN_ERROR = "UNKNOWN_ERROR"
     HTTP_ERROR = "HTTP_ERROR"
     INVALID_PARAMETER = "INVALID_PARAMETER"
@@ -37,7 +37,7 @@ class ErrorCode(Enum):
     TYPE_ERROR = "TYPE_ERROR"
     OPERATION_FAILED = "OPERATION_FAILED"
 
-    # 认证相关错误
+    # Authentication related errors
     AUTHENTICATION_ERROR = "AUTHENTICATION_ERROR"
     AUTHENTICATION_FAILED = "AUTHENTICATION_FAILED"
     TOKEN_INVALID = "TOKEN_INVALID"
@@ -46,7 +46,7 @@ class ErrorCode(Enum):
     USER_NOT_FOUND = "USER_NOT_FOUND"
     USER_INVALID = "USER_INVALID"
 
-    # Agent相关错误
+    # Agent related errors
     AGENT_INITIALIZATION_ERROR = "AGENT_INITIALIZATION_ERROR"
     AGENT_EXECUTION_ERROR = "AGENT_EXECUTION_ERROR"
     AGENT_STATE_ERROR = "AGENT_STATE_ERROR"
@@ -54,7 +54,7 @@ class ErrorCode(Enum):
     AGENT_CANCELLED = "AGENT_CANCELLED"
     AGENT_MEMORY_ERROR = "AGENT_MEMORY_ERROR"
 
-    # 数据库相关错误
+    # Database related errors
     DATABASE_ERROR = "DATABASE_ERROR"
     DATABASE_CONNECTION_ERROR = "DATABASE_CONNECTION_ERROR"
     DATABASE_QUERY_ERROR = "DATABASE_QUERY_ERROR"
@@ -62,7 +62,7 @@ class ErrorCode(Enum):
     DATABASE_CONSTRAINT_ERROR = "DATABASE_CONSTRAINT_ERROR"
     DATABASE_TIMEOUT = "DATABASE_TIMEOUT"
 
-    # 文件相关错误
+    # File related errors
     FILE_NOT_FOUND = "FILE_NOT_FOUND"
     FILE_READ_ERROR = "FILE_READ_ERROR"
     FILE_WRITE_ERROR = "FILE_WRITE_ERROR"
@@ -73,94 +73,94 @@ class ErrorCode(Enum):
     FILE_DOWNLOAD_FAILED = "FILE_DOWNLOAD_FAILED"
     FILE_PARSE_ERROR = "FILE_PARSE_ERROR"
 
-    # 网络相关错误
+    # Network related errors
     NETWORK_ERROR = "NETWORK_ERROR"
     HTTP_REQUEST_ERROR = "HTTP_REQUEST_ERROR"
     HTTP_TIMEOUT = "HTTP_TIMEOUT"
     URL_INVALID = "URL_INVALID"
     URL_SHORTENING_FAILED = "URL_SHORTENING_FAILED"
 
-    # 外部服务错误
+    # External service errors
     EXTERNAL_SERVICE_ERROR = "EXTERNAL_SERVICE_ERROR"
     EXTERNAL_SERVICE_TIMEOUT = "EXTERNAL_SERVICE_TIMEOUT"
     EXTERNAL_SERVICE_UNAVAILABLE = "EXTERNAL_SERVICE_UNAVAILABLE"
     API_RATE_LIMIT_EXCEEDED = "API_RATE_LIMIT_EXCEEDED"
     API_KEY_INVALID = "API_KEY_INVALID"
 
-    # 配置相关错误
+    # Configuration related errors
     CONFIGURATION_ERROR = "CONFIGURATION_ERROR"
     CONFIGURATION_INVALID = "CONFIGURATION_INVALID"
     CONFIGURATION_MISSING = "CONFIGURATION_MISSING"
     ENVIRONMENT_VARIABLE_MISSING = "ENVIRONMENT_VARIABLE_MISSING"
 
-    # 生成相关错误
+    # Generation related errors
     GENERATION_ERROR = "GENERATION_ERROR"
     GENERATION_TIMEOUT = "GENERATION_TIMEOUT"
     GENERATION_CANCELLED = "GENERATION_CANCELLED"
     GENERATION_IN_PROGRESS = "GENERATION_IN_PROGRESS"
     GENERATION_QUEUE_FULL = "GENERATION_QUEUE_FULL"
 
-    # 对话相关错误
+    # Conversation related errors
     CONVERSATION_NOT_FOUND = "CONVERSATION_NOT_FOUND"
     CONVERSATION_INVALID = "CONVERSATION_INVALID"
     CONVERSATION_TYPE_INVALID = "CONVERSATION_TYPE_INVALID"
     CONVERSATION_LIMIT_EXCEEDED = "CONVERSATION_LIMIT_EXCEEDED"
     MESSAGE_TOO_LONG = "MESSAGE_TOO_LONG"
 
-    # 内容相关错误
+    # Content related errors
     CONTENT_EMPTY = "CONTENT_EMPTY"
     CONTENT_TOO_LONG = "CONTENT_TOO_LONG"
     CONTENT_INVALID_FORMAT = "CONTENT_INVALID_FORMAT"
     CONTENT_PROCESSING_ERROR = "CONTENT_PROCESSING_ERROR"
 
-    # 资源相关错误
+    # Resource related errors
     RESOURCE_PROCESSING_FAILED = "RESOURCE_PROCESSING_FAILED"
     RESOURCE_EXTRACTION_FAILED = "RESOURCE_EXTRACTION_FAILED"
     RESOURCE_IMPORT_FAILED = "RESOURCE_IMPORT_FAILED"
     RESOURCE_URI_MISSING = "RESOURCE_URI_MISSING"
 
-    # 系统错误
+    # System errors
     SYSTEM_ERROR = "SYSTEM_ERROR"
     INITIALIZATION_FAILED = "INITIALIZATION_FAILED"
     SERVICE_STARTUP_FAILED = "SERVICE_STARTUP_FAILED"
     SERVICE_SHUTDOWN_FAILED = "SERVICE_SHUTDOWN_FAILED"
 
-    # 上下文和会话错误
+    # Context and session errors
     CONTEXT_NOT_SET = "CONTEXT_NOT_SET"
     SESSION_NOT_INITIALIZED = "SESSION_NOT_INITIALIZED"
     MIDDLEWARE_ERROR = "MIDDLEWARE_ERROR"
 
-    # 工作流阶段相关错误代码
+    # Workflow stage related error codes
     REQUIREMENT_EXTRACTION_NOT_COMPLETED = "REQUIREMENT_EXTRACTION_NOT_COMPLETED"
     OUTLINE_GENERATION_NOT_COMPLETED = "OUTLINE_GENERATION_NOT_COMPLETED"
     OUTLINE_ID_NOT_FOUND = "OUTLINE_ID_NOT_FOUND"
     FULLTEXT_ID_NOT_FOUND = "FULLTEXT_ID_NOT_FOUND"
     DOCUMENT_SLICE_NOT_FOUND = "DOCUMENT_SLICE_NOT_FOUND"
 
-    # 任务相关错误代码
+    # Task related error codes
     TASK_NOT_FOUND = "TASK_NOT_FOUND"
     NO_GENERATION_IN_PROGRESS = "NO_GENERATION_IN_PROGRESS"
 
-    # 编辑器相关错误代码
+    # Editor related error codes
     UNSUPPORTED_EDITOR_TYPE = "UNSUPPORTED_EDITOR_TYPE"
 
-    # Agent特定错误代码
+    # Agent specific error codes
     LLM_OUTPUT_PARSING_ERROR = "LLM_OUTPUT_PARSING_ERROR"
     LLM_CALL_FAILED = "LLM_CALL_FAILED"
     LLM_RETRY_EXHAUSTED = "LLM_RETRY_EXHAUSTED"
 
-    # 配额相关错误代码
+    # Quota related error codes
     QUOTA_INSUFFICIENT = "QUOTA_INSUFFICIENT"
 
 
 class ErrorMessage(Enum):
-    """错误消息键枚举
+    """Error message key enumeration
 
-    定义了系统中所有错误消息的键，用于前端国际化翻译。
-    每个消息键对应具体的错误情况描述。
+    Defines all error message keys in the system, used for frontend internationalization translation.
+    Each message key corresponds to a specific error description.
     """
 
-    # 通用错误消息
+    # General error messages
     UNKNOWN_ERROR = "UNKNOWN_ERROR"
     HTTP_ERROR = "HTTP_ERROR"
     INVALID_PARAMETER = "INVALID_PARAMETER"
@@ -171,7 +171,7 @@ class ErrorMessage(Enum):
     TYPE_ERROR = "TYPE_ERROR"
     OPERATION_FAILED = "OPERATION_FAILED"
 
-    # 认证相关错误消息
+    # Authentication related error messages
     AUTHENTICATION_ERROR = "AUTHENTICATION_ERROR"
     AUTHENTICATION_FAILED = "AUTHENTICATION_FAILED"
     TOKEN_INVALID = "TOKEN_INVALID"
@@ -180,7 +180,7 @@ class ErrorMessage(Enum):
     USER_NOT_FOUND = "USER_NOT_FOUND"
     USER_INVALID = "USER_INVALID"
 
-    # Agent相关错误消息
+    # Agent related error messages
     AGENT_INITIALIZATION_ERROR = "AGENT_INITIALIZATION_ERROR"
     AGENT_EXECUTION_ERROR = "AGENT_EXECUTION_ERROR"
     AGENT_STATE_ERROR = "AGENT_STATE_ERROR"
@@ -188,7 +188,7 @@ class ErrorMessage(Enum):
     AGENT_CANCELLED = "AGENT_CANCELLED"
     AGENT_MEMORY_ERROR = "AGENT_MEMORY_ERROR"
 
-    # 数据库相关错误消息
+    # Database related error messages
     DATABASE_ERROR = "DATABASE_ERROR"
     DATABASE_CONNECTION_ERROR = "DATABASE_CONNECTION_ERROR"
     DATABASE_QUERY_ERROR = "DATABASE_QUERY_ERROR"
@@ -196,7 +196,7 @@ class ErrorMessage(Enum):
     DATABASE_CONSTRAINT_ERROR = "DATABASE_CONSTRAINT_ERROR"
     DATABASE_TIMEOUT = "DATABASE_TIMEOUT"
 
-    # 文件相关错误消息
+    # File related error messages
     FILE_NOT_FOUND = "FILE_NOT_FOUND"
     FILE_READ_ERROR = "FILE_READ_ERROR"
     FILE_WRITE_ERROR = "FILE_WRITE_ERROR"
@@ -207,27 +207,27 @@ class ErrorMessage(Enum):
     FILE_DOWNLOAD_FAILED = "FILE_DOWNLOAD_FAILED"
     FILE_PARSE_ERROR = "FILE_PARSE_ERROR"
 
-    # 网络相关错误消息
+    # Network related error messages
     NETWORK_ERROR = "NETWORK_ERROR"
     HTTP_REQUEST_ERROR = "HTTP_REQUEST_ERROR"
     HTTP_TIMEOUT = "HTTP_TIMEOUT"
     URL_INVALID = "URL_INVALID"
     URL_SHORTENING_FAILED = "URL_SHORTENING_FAILED"
 
-    # 外部服务错误消息
+    # External service error messages
     EXTERNAL_SERVICE_ERROR = "EXTERNAL_SERVICE_ERROR"
     EXTERNAL_SERVICE_TIMEOUT = "EXTERNAL_SERVICE_TIMEOUT"
     EXTERNAL_SERVICE_UNAVAILABLE = "EXTERNAL_SERVICE_UNAVAILABLE"
     API_RATE_LIMIT_EXCEEDED = "API_RATE_LIMIT_EXCEEDED"
     API_KEY_INVALID = "API_KEY_INVALID"
 
-    # 配置相关错误消息
+    # Configuration related error messages
     CONFIGURATION_ERROR = "CONFIGURATION_ERROR"
     CONFIGURATION_INVALID = "CONFIGURATION_INVALID"
     CONFIGURATION_MISSING = "CONFIGURATION_MISSING"
     ENVIRONMENT_VARIABLE_MISSING = "ENVIRONMENT_VARIABLE_MISSING"
 
-    # 生成相关错误消息
+    # Generation related error messages
     GENERATION_ERROR = "GENERATION_ERROR"
     GENERATION_TIMEOUT = "GENERATION_TIMEOUT"
     GENERATION_CANCELLED = "GENERATION_CANCELLED"
@@ -235,7 +235,7 @@ class ErrorMessage(Enum):
     GENERATION_QUEUE_FULL = "GENERATION_QUEUE_FULL"
     NO_GENERATION_IN_PROGRESS = "NO_GENERATION_IN_PROGRESS"
 
-    # 对话相关错误消息
+    # Conversation related error messages
     CONVERSATION_NOT_FOUND = "CONVERSATION_NOT_FOUND"
     CONVERSATION_INVALID = "CONVERSATION_INVALID"
     CONVERSATION_TYPE_INVALID = "CONVERSATION_TYPE_INVALID"
@@ -246,28 +246,28 @@ class ErrorMessage(Enum):
     CONVERSATION_DELETE_FAILED = "CONVERSATION_DELETE_FAILED"
     CONVERSATION_LIST_GET_FAILED = "CONVERSATION_LIST_GET_FAILED"
 
-    # 内容相关错误消息
+    # Content related error messages
     CONTENT_EMPTY = "CONTENT_EMPTY"
     CONTENT_TOO_LONG = "CONTENT_TOO_LONG"
     CONTENT_INVALID_FORMAT = "CONTENT_INVALID_FORMAT"
     CONTENT_PROCESSING_ERROR = "CONTENT_PROCESSING_ERROR"
 
-    # 工作流阶段相关错误消息
+    # Workflow stage related error messages
     REQUIREMENT_EXTRACTION_NOT_COMPLETED = "REQUIREMENT_EXTRACTION_NOT_COMPLETED"
     OUTLINE_GENERATION_NOT_COMPLETED = "OUTLINE_GENERATION_NOT_COMPLETED"
     OUTLINE_ID_NOT_FOUND = "OUTLINE_ID_NOT_FOUND"
     FULLTEXT_ID_NOT_FOUND = "FULLTEXT_ID_NOT_FOUND"
     DOCUMENT_SLICE_NOT_FOUND = "DOCUMENT_SLICE_NOT_FOUND"
 
-    # 编辑器和界面相关错误消息
+    # Editor and interface related error messages
     UNSUPPORTED_EDITOR_TYPE = "UNSUPPORTED_EDITOR_TYPE"
     BEAN_NOT_FOUND = "BEAN_NOT_FOUND"
     BEAN_OPERATION_FAILED = "BEAN_OPERATION_FAILED"
 
-    # 文件名和大小相关错误消息
+    # Filename and size related error messages
     FILENAME_EMPTY = "FILENAME_EMPTY"
 
-    # 文档版本相关错误消息
+    # Document version related error messages
     DOCUMENT_VERSION_NOT_FOUND = "DOCUMENT_VERSION_NOT_FOUND"
     DOCUMENT_VERSION_CREATE_FAILED = "DOCUMENT_VERSION_CREATE_FAILED"
     DOCUMENT_VERSION_UPDATE_FAILED = "DOCUMENT_VERSION_UPDATE_FAILED"
@@ -275,11 +275,11 @@ class ErrorMessage(Enum):
     DOCUMENT_VERSION_GET_FAILED = "DOCUMENT_VERSION_GET_FAILED"
     DOCUMENT_NOT_FOUND = "DOCUMENT_NOT_FOUND"
 
-    # 服务相关错误消息
+    # Service related error messages
     SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE"
     ANALYSIS_EXECUTION_FAILED = "ANALYSIS_EXECUTION_FAILED"
 
-    # 任务相关错误消息
+    # Task related error messages
     TASK_NOT_FOUND = "TASK_NOT_FOUND"
     TASK_CREATE_FAILED = "TASK_CREATE_FAILED"
     TASK_GET_FAILED = "TASK_GET_FAILED"
@@ -291,14 +291,14 @@ class ErrorMessage(Enum):
     TASK_CANNOT_CANCEL = "TASK_CANNOT_CANCEL"
     TASK_CANNOT_DELETE_RUNNING = "TASK_CANNOT_DELETE_RUNNING"
 
-    # 搜索相关错误消息
+    # Search related error messages
     SEARCH_QUERY_EMPTY = "SEARCH_QUERY_EMPTY"
     AI_SEARCH_FAILED = "AI_SEARCH_FAILED"
     QUICK_SEARCH_FAILED = "QUICK_SEARCH_FAILED"
     SEARCH_SUGGESTIONS_FAILED = "SEARCH_SUGGESTIONS_FAILED"
     SEARCH_TAGS_FAILED = "SEARCH_TAGS_FAILED"
 
-    # 资源相关错误消息
+    # Resource related error messages
     RESOURCE_PROCESSING_FAILED = "RESOURCE_PROCESSING_FAILED"
     RESOURCE_EXTRACTION_FAILED = "RESOURCE_EXTRACTION_FAILED"
     RESOURCE_IMPORT_FAILED = "RESOURCE_IMPORT_FAILED"
@@ -323,27 +323,27 @@ class ErrorMessage(Enum):
     RESOURCE_PROCESSING_STATUS_GET_FAILED = "RESOURCE_PROCESSING_STATUS_GET_FAILED"
     RESOURCE_SIGNED_URL_FAILED = "RESOURCE_SIGNED_URL_FAILED"
 
-    # 系统错误消息
+    # System error messages
     SYSTEM_ERROR = "SYSTEM_ERROR"
     INITIALIZATION_FAILED = "INITIALIZATION_FAILED"
     SERVICE_STARTUP_FAILED = "SERVICE_STARTUP_FAILED"
     SERVICE_SHUTDOWN_FAILED = "SERVICE_SHUTDOWN_FAILED"
 
-    # 上下文和会话错误消息
+    # Context and session error messages
     CONTEXT_NOT_SET = "CONTEXT_NOT_SET"
     SESSION_NOT_INITIALIZED = "SESSION_NOT_INITIALIZED"
     MIDDLEWARE_ERROR = "MIDDLEWARE_ERROR"
 
-    # LLM相关错误消息
+    # LLM related error messages
     LLM_OUTPUT_PARSING_ERROR = "LLM_OUTPUT_PARSING_ERROR"
     LLM_CALL_FAILED = "LLM_CALL_FAILED"
     LLM_RETRY_EXHAUSTED = "LLM_RETRY_EXHAUSTED"
 
-    # 配额相关错误消息
+    # Quota related error messages
     QUOTA_INSUFFICIENT = "QUOTA_INSUFFICIENT"
 
 
-# ErrorCode 翻译字典
+# ErrorCode translation dictionary
 ERROR_CODE_TRANSLATIONS_ZH: Dict[str, str] = {
     # 通用错误
     ErrorCode.UNKNOWN_ERROR.value: "未知错误",
@@ -455,7 +455,7 @@ ERROR_CODE_TRANSLATIONS_ZH: Dict[str, str] = {
 }
 
 ERROR_CODE_TRANSLATIONS_EN: Dict[str, str] = {
-    # 通用错误
+    # General errors
     ErrorCode.UNKNOWN_ERROR.value: "Unknown error",
     ErrorCode.HTTP_ERROR.value: "HTTP error",
     ErrorCode.INVALID_PARAMETER.value: "Invalid parameter",
@@ -465,7 +465,7 @@ ERROR_CODE_TRANSLATIONS_EN: Dict[str, str] = {
     ErrorCode.RESOURCE_INVALID.value: "Invalid resource",
     ErrorCode.TYPE_ERROR.value: "Type error",
     ErrorCode.OPERATION_FAILED.value: "Operation failed",
-    # 认证相关错误
+    # Authentication related errors
     ErrorCode.AUTHENTICATION_ERROR.value: "Authentication error",
     ErrorCode.AUTHENTICATION_FAILED.value: "Authentication failed",
     ErrorCode.TOKEN_INVALID.value: "Invalid token",
@@ -473,21 +473,21 @@ ERROR_CODE_TRANSLATIONS_EN: Dict[str, str] = {
     ErrorCode.PERMISSION_INSUFFICIENT.value: "Insufficient permissions",
     ErrorCode.USER_NOT_FOUND.value: "User not found",
     ErrorCode.USER_INVALID.value: "Invalid user information",
-    # Agent相关错误
+    # Agent related errors
     ErrorCode.AGENT_INITIALIZATION_ERROR.value: "Agent initialization error",
     ErrorCode.AGENT_EXECUTION_ERROR.value: "Agent execution error",
     ErrorCode.AGENT_STATE_ERROR.value: "Agent state error",
     ErrorCode.AGENT_TIMEOUT.value: "Agent timeout",
     ErrorCode.AGENT_CANCELLED.value: "Agent cancelled",
     ErrorCode.AGENT_MEMORY_ERROR.value: "Agent memory error",
-    # 数据库相关错误
+    # Database related errors
     ErrorCode.DATABASE_ERROR.value: "Database error",
     ErrorCode.DATABASE_CONNECTION_ERROR.value: "Database connection error",
     ErrorCode.DATABASE_QUERY_ERROR.value: "Database query error",
     ErrorCode.DATABASE_TRANSACTION_ERROR.value: "Database transaction error",
     ErrorCode.DATABASE_CONSTRAINT_ERROR.value: "Database constraint error",
     ErrorCode.DATABASE_TIMEOUT.value: "Database timeout",
-    # 文件相关错误
+    # File related errors
     ErrorCode.FILE_NOT_FOUND.value: "File not found",
     ErrorCode.FILE_READ_ERROR.value: "File read error",
     ErrorCode.FILE_WRITE_ERROR.value: "File write error",
@@ -497,75 +497,75 @@ ERROR_CODE_TRANSLATIONS_EN: Dict[str, str] = {
     ErrorCode.FILE_UPLOAD_FAILED.value: "File upload failed",
     ErrorCode.FILE_DOWNLOAD_FAILED.value: "File download failed",
     ErrorCode.FILE_PARSE_ERROR.value: "File parse error",
-    # 网络相关错误
+    # Network related errors
     ErrorCode.NETWORK_ERROR.value: "Network error",
     ErrorCode.HTTP_REQUEST_ERROR.value: "HTTP request error",
     ErrorCode.HTTP_TIMEOUT.value: "HTTP timeout",
     ErrorCode.URL_INVALID.value: "Invalid URL",
     ErrorCode.URL_SHORTENING_FAILED.value: "URL shortening failed",
-    # 外部服务错误
+    # External service errors
     ErrorCode.EXTERNAL_SERVICE_ERROR.value: "External service error",
     ErrorCode.EXTERNAL_SERVICE_TIMEOUT.value: "External service timeout",
     ErrorCode.EXTERNAL_SERVICE_UNAVAILABLE.value: "External service unavailable",
     ErrorCode.API_RATE_LIMIT_EXCEEDED.value: "API rate limit exceeded",
     ErrorCode.API_KEY_INVALID.value: "Invalid API key",
-    # 配置相关错误
+    # Configuration related errors
     ErrorCode.CONFIGURATION_ERROR.value: "Configuration error",
     ErrorCode.CONFIGURATION_INVALID.value: "Invalid configuration",
     ErrorCode.CONFIGURATION_MISSING.value: "Configuration missing",
     ErrorCode.ENVIRONMENT_VARIABLE_MISSING.value: "Environment variable missing",
-    # 生成相关错误
+    # Generation related errors
     ErrorCode.GENERATION_ERROR.value: "Generation error",
     ErrorCode.GENERATION_TIMEOUT.value: "Generation timeout",
     ErrorCode.GENERATION_CANCELLED.value: "Generation cancelled",
     ErrorCode.GENERATION_IN_PROGRESS.value: "Generation in progress",
     ErrorCode.GENERATION_QUEUE_FULL.value: "Generation queue full",
-    # 对话相关错误
+    # Conversation related errors
     ErrorCode.CONVERSATION_NOT_FOUND.value: "Conversation not found",
     ErrorCode.CONVERSATION_INVALID.value: "Invalid conversation",
     ErrorCode.CONVERSATION_LIMIT_EXCEEDED.value: "Conversation limit exceeded",
     ErrorCode.MESSAGE_TOO_LONG.value: "Message too long",
-    # 内容相关错误
+    # Content related errors
     ErrorCode.CONTENT_EMPTY.value: "Content empty",
     ErrorCode.CONTENT_TOO_LONG.value: "Content too long",
     ErrorCode.CONTENT_INVALID_FORMAT.value: "Invalid content format",
     ErrorCode.CONTENT_PROCESSING_ERROR.value: "Content processing error",
-    # 资源相关错误
+    # Resource related errors
     ErrorCode.RESOURCE_PROCESSING_FAILED.value: "Resource processing failed",
     ErrorCode.RESOURCE_EXTRACTION_FAILED.value: "Resource extraction failed",
     ErrorCode.RESOURCE_IMPORT_FAILED.value: "Resource import failed",
     ErrorCode.RESOURCE_URI_MISSING.value: "Resource URI missing",
-    # 系统错误
+    # System errors
     ErrorCode.SYSTEM_ERROR.value: "System error",
     ErrorCode.INITIALIZATION_FAILED.value: "Initialization failed",
     ErrorCode.SERVICE_STARTUP_FAILED.value: "Service startup failed",
     ErrorCode.SERVICE_SHUTDOWN_FAILED.value: "Service shutdown failed",
-    # 上下文和会话错误
+    # Context and session errors
     ErrorCode.CONTEXT_NOT_SET.value: "Context not set",
     ErrorCode.SESSION_NOT_INITIALIZED.value: "Session not initialized",
     ErrorCode.MIDDLEWARE_ERROR.value: "Middleware error",
-    # 工作流阶段相关错误代码
+    # Workflow stage related error codes
     ErrorCode.CONVERSATION_TYPE_INVALID.value: "Invalid conversation type",
     ErrorCode.REQUIREMENT_EXTRACTION_NOT_COMPLETED.value: "Requirement extraction not completed",
     ErrorCode.OUTLINE_GENERATION_NOT_COMPLETED.value: "Outline generation not completed",
     ErrorCode.OUTLINE_ID_NOT_FOUND.value: "Outline ID not found",
     ErrorCode.FULLTEXT_ID_NOT_FOUND.value: "Fulltext ID not found",
     ErrorCode.DOCUMENT_SLICE_NOT_FOUND.value: "Document slice not found",
-    # 任务相关错误代码
+    # Task related error codes
     ErrorCode.TASK_NOT_FOUND.value: "Task not found",
     ErrorCode.NO_GENERATION_IN_PROGRESS.value: "No generation in progress",
-    # 编辑器相关错误代码
+    # Editor related error codes
     ErrorCode.UNSUPPORTED_EDITOR_TYPE.value: "Unsupported editor type",
-    # Agent特定错误代码
+    # Agent specific error codes
     ErrorCode.LLM_OUTPUT_PARSING_ERROR.value: "LLM output parsing failed",
     ErrorCode.LLM_CALL_FAILED.value: "LLM call failed",
     ErrorCode.LLM_RETRY_EXHAUSTED.value: "LLM retry attempts exhausted",
-    # 配额相关错误代码
+    # Quota related error codes
     ErrorCode.QUOTA_INSUFFICIENT.value: "Quota insufficient",
 }
 
 
-# ErrorMessage 翻译字典
+# ErrorMessage translation dictionary
 ERROR_MESSAGES_ZH: Dict[str, str] = {
     # 通用错误
     ErrorMessage.UNKNOWN_ERROR.value: "未知错误",
@@ -731,7 +731,7 @@ ERROR_MESSAGES_ZH: Dict[str, str] = {
 }
 
 ERROR_MESSAGES_EN: Dict[str, str] = {
-    # 通用错误
+    # General errors
     ErrorMessage.UNKNOWN_ERROR.value: "An unknown error occurred",
     ErrorMessage.HTTP_ERROR.value: "HTTP error",
     ErrorMessage.INVALID_PARAMETER.value: "Invalid parameter provided",
@@ -741,7 +741,7 @@ ERROR_MESSAGES_EN: Dict[str, str] = {
     ErrorMessage.RESOURCE_INVALID.value: "Invalid resource",
     ErrorMessage.TYPE_ERROR.value: "Type error occurred",
     ErrorMessage.OPERATION_FAILED.value: "Operation failed",
-    # 认证相关错误
+    # Authentication related errors
     ErrorMessage.AUTHENTICATION_ERROR.value: "Authentication error",
     ErrorMessage.AUTHENTICATION_FAILED.value: "Authentication failed",
     ErrorMessage.TOKEN_INVALID.value: "Invalid token",
@@ -749,21 +749,21 @@ ERROR_MESSAGES_EN: Dict[str, str] = {
     ErrorMessage.PERMISSION_INSUFFICIENT.value: "Insufficient permissions",
     ErrorMessage.USER_NOT_FOUND.value: "User not found",
     ErrorMessage.USER_INVALID.value: "Invalid user information",
-    # Agent相关错误
+    # Agent related errors
     ErrorMessage.AGENT_INITIALIZATION_ERROR.value: "Agent initialization failed",
     ErrorMessage.AGENT_EXECUTION_ERROR.value: "Agent execution failed",
     ErrorMessage.AGENT_STATE_ERROR.value: "Agent state error",
     ErrorMessage.AGENT_TIMEOUT.value: "Agent execution timeout",
     ErrorMessage.AGENT_CANCELLED.value: "Agent execution cancelled",
     ErrorMessage.AGENT_MEMORY_ERROR.value: "Agent memory insufficient",
-    # 数据库相关错误
+    # Database related errors
     ErrorMessage.DATABASE_ERROR.value: "Database error",
     ErrorMessage.DATABASE_CONNECTION_ERROR.value: "Database connection failed",
     ErrorMessage.DATABASE_QUERY_ERROR.value: "Database query failed",
     ErrorMessage.DATABASE_TRANSACTION_ERROR.value: "Database transaction failed",
     ErrorMessage.DATABASE_CONSTRAINT_ERROR.value: "Database constraint violation",
     ErrorMessage.DATABASE_TIMEOUT.value: "Database operation timeout",
-    # 文件相关错误
+    # File related errors
     ErrorMessage.FILE_NOT_FOUND.value: "File not found",
     ErrorMessage.FILE_READ_ERROR.value: "File read error",
     ErrorMessage.FILE_WRITE_ERROR.value: "File write error",
@@ -773,31 +773,31 @@ ERROR_MESSAGES_EN: Dict[str, str] = {
     ErrorMessage.FILE_UPLOAD_FAILED.value: "File upload failed",
     ErrorMessage.FILE_DOWNLOAD_FAILED.value: "File download failed",
     ErrorMessage.FILE_PARSE_ERROR.value: "File parsing failed",
-    # 网络相关错误
+    # Network related errors
     ErrorMessage.NETWORK_ERROR.value: "Network connection error",
     ErrorMessage.HTTP_REQUEST_ERROR.value: "HTTP request failed",
     ErrorMessage.HTTP_TIMEOUT.value: "HTTP request timeout",
     ErrorMessage.URL_INVALID.value: "Invalid URL format",
     ErrorMessage.URL_SHORTENING_FAILED.value: "URL shortening failed",
-    # 外部服务错误
+    # External service errors
     ErrorMessage.EXTERNAL_SERVICE_ERROR.value: "External service call failed",
     ErrorMessage.EXTERNAL_SERVICE_TIMEOUT.value: "External service timeout",
     ErrorMessage.EXTERNAL_SERVICE_UNAVAILABLE.value: "External service unavailable",
     ErrorMessage.API_RATE_LIMIT_EXCEEDED.value: "API rate limit exceeded",
     ErrorMessage.API_KEY_INVALID.value: "Invalid API key",
-    # 配置相关错误
+    # Configuration related errors
     ErrorMessage.CONFIGURATION_ERROR.value: "Configuration error",
     ErrorMessage.CONFIGURATION_INVALID.value: "Invalid configuration format",
     ErrorMessage.CONFIGURATION_MISSING.value: "Configuration file missing",
     ErrorMessage.ENVIRONMENT_VARIABLE_MISSING.value: "Environment variable not set",
-    # 生成相关错误
+    # Generation related errors
     ErrorMessage.GENERATION_ERROR.value: "Generation process error",
     ErrorMessage.GENERATION_TIMEOUT.value: "Generation timeout",
     ErrorMessage.GENERATION_CANCELLED.value: "Generation cancelled",
     ErrorMessage.GENERATION_IN_PROGRESS.value: "Generation in progress",
     ErrorMessage.GENERATION_QUEUE_FULL.value: "Generation queue is full",
     ErrorMessage.NO_GENERATION_IN_PROGRESS.value: "No generation in progress",
-    # 对话相关错误
+    # Conversation related errors
     ErrorMessage.CONVERSATION_NOT_FOUND.value: "Conversation not found",
     ErrorMessage.CONVERSATION_INVALID.value: "Invalid conversation state",
     ErrorMessage.CONVERSATION_TYPE_INVALID.value: "Invalid conversation type",
@@ -807,34 +807,34 @@ ERROR_MESSAGES_EN: Dict[str, str] = {
     ErrorMessage.CONVERSATION_GET_FAILED.value: "Failed to get conversation",
     ErrorMessage.CONVERSATION_DELETE_FAILED.value: "Failed to delete conversation",
     ErrorMessage.CONVERSATION_LIST_GET_FAILED.value: "Failed to get conversation list",
-    # 内容相关错误
+    # Content related errors
     ErrorMessage.CONTENT_EMPTY.value: "Content cannot be empty",
     ErrorMessage.CONTENT_TOO_LONG.value: "Content length limit exceeded",
     ErrorMessage.CONTENT_INVALID_FORMAT.value: "Invalid content format",
     ErrorMessage.CONTENT_PROCESSING_ERROR.value: "Content processing failed",
-    # 工作流阶段相关错误
+    # Workflow stage related errors
     ErrorMessage.REQUIREMENT_EXTRACTION_NOT_COMPLETED.value: "Please complete the requirement extraction stage first",
     ErrorMessage.OUTLINE_GENERATION_NOT_COMPLETED.value: "Please complete the outline generation stage first",
     ErrorMessage.OUTLINE_ID_NOT_FOUND.value: "Unable to get outline_id",
     ErrorMessage.FULLTEXT_ID_NOT_FOUND.value: "Unable to get fulltext_id",
     ErrorMessage.DOCUMENT_SLICE_NOT_FOUND.value: "Document slice not found",
-    # 编辑器和界面相关错误
+    # Editor and interface related errors
     ErrorMessage.UNSUPPORTED_EDITOR_TYPE.value: "Unsupported editor type",
     ErrorMessage.BEAN_NOT_FOUND.value: "Bean component not found",
     ErrorMessage.BEAN_OPERATION_FAILED.value: "Bean operation failed",
-    # 文件名和大小相关错误
+    # Filename and size related errors
     ErrorMessage.FILENAME_EMPTY.value: "Filename cannot be empty",
-    # 文档版本相关错误
+    # Document version related errors
     ErrorMessage.DOCUMENT_VERSION_NOT_FOUND.value: "Document version not found",
     ErrorMessage.DOCUMENT_VERSION_CREATE_FAILED.value: "Failed to create document version",
     ErrorMessage.DOCUMENT_VERSION_UPDATE_FAILED.value: "Failed to update document version",
     ErrorMessage.DOCUMENT_VERSION_DELETE_FAILED.value: "Failed to delete document version",
     ErrorMessage.DOCUMENT_VERSION_GET_FAILED.value: "Failed to get document version",
     ErrorMessage.DOCUMENT_NOT_FOUND.value: "Document not found",
-    # 服务相关错误
+    # Service related errors
     ErrorMessage.SERVICE_UNAVAILABLE.value: "Service unavailable",
     ErrorMessage.ANALYSIS_EXECUTION_FAILED.value: "Analysis execution failed",
-    # 任务相关错误
+    # Task related errors
     ErrorMessage.TASK_NOT_FOUND.value: "Task not found",
     ErrorMessage.TASK_CREATE_FAILED.value: "Failed to create task",
     ErrorMessage.TASK_GET_FAILED.value: "Failed to get task details",
@@ -845,27 +845,27 @@ ERROR_MESSAGES_EN: Dict[str, str] = {
     ErrorMessage.TASK_REGISTERED_GET_FAILED.value: "Failed to get registered tasks",
     ErrorMessage.TASK_CANNOT_CANCEL.value: "Can only cancel pending or running tasks",
     ErrorMessage.TASK_CANNOT_DELETE_RUNNING.value: "Cannot delete running tasks, please cancel first",
-    # 搜索相关错误
+    # Search related errors
     ErrorMessage.SEARCH_QUERY_EMPTY.value: "Search query cannot be empty",
     ErrorMessage.AI_SEARCH_FAILED.value: "AI search failed",
     ErrorMessage.QUICK_SEARCH_FAILED.value: "Quick search failed",
     ErrorMessage.SEARCH_SUGGESTIONS_FAILED.value: "Failed to get search suggestions",
     ErrorMessage.SEARCH_TAGS_FAILED.value: "Failed to get popular tags",
-    # 资源相关错误
+    # Resource related errors
     ErrorMessage.RESOURCE_PROCESSING_FAILED.value: "Resource processing failed",
     ErrorMessage.RESOURCE_EXTRACTION_FAILED.value: "Resource extraction failed",
     ErrorMessage.RESOURCE_IMPORT_FAILED.value: "Resource import failed",
     ErrorMessage.RESOURCE_URI_MISSING.value: "Resource URI missing",
-    # 系统错误
+    # System errors
     ErrorMessage.SYSTEM_ERROR.value: "System internal error",
     ErrorMessage.INITIALIZATION_FAILED.value: "System initialization failed",
     ErrorMessage.SERVICE_STARTUP_FAILED.value: "Service startup failed",
     ErrorMessage.SERVICE_SHUTDOWN_FAILED.value: "Service shutdown failed",
-    # 上下文和会话错误
+    # Context and session errors
     ErrorMessage.CONTEXT_NOT_SET.value: "Request context not set",
     ErrorMessage.SESSION_NOT_INITIALIZED.value: "Database session not initialized",
     ErrorMessage.MIDDLEWARE_ERROR.value: "Middleware processing error",
-    # 资源相关错误消息（补充）
+    # Resource related error messages (additional)
     ErrorMessage.RESOURCE_UPLOAD_FAILED.value: "Resource upload failed",
     ErrorMessage.RESOURCE_BIND_FAILED.value: "Resource binding failed",
     ErrorMessage.RESOURCE_LIST_GET_FAILED.value: "Failed to get resource list",
@@ -875,7 +875,7 @@ ERROR_MESSAGES_EN: Dict[str, str] = {
     ErrorMessage.RESOURCE_NO_FILE.value: "Resource file does not exist",
     ErrorMessage.RESOURCE_DOWNLOAD_FAILED.value: "Resource download failed",
     ErrorMessage.RESOURCE_DELETE_FAILED.value: "Failed to delete resource",
-    # 灵感相关错误消息
+    # Inspiration related error messages
     ErrorMessage.INSPIRATION_CREATE_FAILED.value: "Failed to create inspiration",
     ErrorMessage.INSPIRATION_NOT_FOUND.value: "Inspiration not found",
     ErrorMessage.INSPIRATION_TYPE_INVALID.value: "Invalid inspiration type",
@@ -886,25 +886,25 @@ ERROR_MESSAGES_EN: Dict[str, str] = {
     ErrorMessage.RESOURCE_SCOPE_GET_FAILED.value: "Failed to get resource scope",
     ErrorMessage.RESOURCE_PROCESSING_STATUS_GET_FAILED.value: "Failed to get resource processing status",
     ErrorMessage.RESOURCE_SIGNED_URL_FAILED.value: "Failed to get resource signed URL",
-    # LLM相关错误
+    # LLM related errors
     ErrorMessage.LLM_OUTPUT_PARSING_ERROR.value: "LLM output parsing failed",
     ErrorMessage.LLM_CALL_FAILED.value: "LLM call failed",
     ErrorMessage.LLM_RETRY_EXHAUSTED.value: "LLM retry attempts exhausted",
-    # 配额相关错误
+    # Quota related errors
     ErrorMessage.QUOTA_INSUFFICIENT.value: "Insufficient balance to perform this operation",
 }
 
 
 def get_error_message_by_key(message_key: str, language: str = "zh") -> str:
     """
-    根据消息键和语言获取错误消息
+    Get error message by message key and language
 
     Args:
-        message_key: 错误消息键
-        language: 语言代码，支持 "zh" (中文) 和 "en" (英文)
+        message_key: Error message key
+        language: Language code, supports "zh" (Chinese) and "en" (English)
 
     Returns:
-        对应语言的错误消息
+        Error message in the specified language
     """
     if language == "zh":
         return ERROR_MESSAGES_ZH.get(
@@ -915,7 +915,7 @@ def get_error_message_by_key(message_key: str, language: str = "zh") -> str:
             message_key, ERROR_MESSAGES_EN[ErrorMessage.UNKNOWN_ERROR.value]
         )
     else:
-        # 默认返回中文
+        # Default to Chinese
         return ERROR_MESSAGES_ZH.get(
             message_key, ERROR_MESSAGES_ZH[ErrorMessage.UNKNOWN_ERROR.value]
         )
@@ -923,13 +923,13 @@ def get_error_message_by_key(message_key: str, language: str = "zh") -> str:
 
 def get_all_error_messages(language: str = "zh") -> Dict[str, str]:
     """
-    获取指定语言的所有错误消息
+    Get all error messages in the specified language
 
     Args:
-        language: 语言代码，支持 "zh" (中文) 和 "en" (英文)
+        language: Language code, supports "zh" (Chinese) and "en" (English)
 
     Returns:
-        错误代码到错误消息的映射字典
+        Dictionary mapping error codes to error messages
     """
     if language == "en":
         return ERROR_MESSAGES_EN.copy()
@@ -939,33 +939,33 @@ def get_all_error_messages(language: str = "zh") -> Dict[str, str]:
 
 def get_error_code_translation(error_code: str, language: str = "zh") -> str:
     """
-    根据错误代码和语言获取错误代码翻译
+    Get error code translation by error code and language
 
     Args:
-        error_code: 错误代码
-        language: 语言代码，支持 "zh" (中文) 和 "en" (英文)
+        error_code: Error code
+        language: Language code, supports "zh" (Chinese) and "en" (English)
 
     Returns:
-        对应语言的错误代码翻译
+        Translation of the error code in the specified language
     """
     if language == "zh":
         return ERROR_CODE_TRANSLATIONS_ZH.get(error_code, error_code)
     elif language == "en":
         return ERROR_CODE_TRANSLATIONS_EN.get(error_code, error_code)
     else:
-        # 默认返回中文
+        # Default to Chinese
         return ERROR_CODE_TRANSLATIONS_ZH.get(error_code, error_code)
 
 
 def get_all_error_code_translations(language: str = "zh") -> Dict[str, str]:
     """
-    获取指定语言的所有错误代码翻译
+    Get all error code translations in the specified language
 
     Args:
-        language: 语言代码，支持 "zh" (中文) 和 "en" (英文)
+        language: Language code, supports "zh" (Chinese) and "en" (English)
 
     Returns:
-        错误代码到翻译的映射字典
+        Dictionary mapping error codes to translations
     """
     if language == "en":
         return ERROR_CODE_TRANSLATIONS_EN.copy()
@@ -975,55 +975,61 @@ def get_all_error_code_translations(language: str = "zh") -> Dict[str, str]:
 
 def _validate_translations_completeness():
     """
-    验证翻译的完整性，如果发现缺失的翻译则抛出异常
+    Validate translation completeness, raise exception if missing translations are found
 
-    在模块导入时自动执行，确保所有错误代码和错误消息都有对应的中英文翻译。
-    实现"早失败"原则，避免运行时才发现翻译缺失的问题。
+    Automatically executed during module import, ensuring all error codes and error messages have corresponding Chinese and English translations.
+    Implements the "fail-fast" principle to avoid discovering missing translations at runtime.
 
     Raises:
-        RuntimeError: 当发现缺失的翻译时
+        RuntimeError: When missing translations are found
     """
     missing_translations = []
 
-    # 检查 ErrorCode 翻译完整性
+    # Check ErrorCode translation completeness
     for code in ErrorCode:
         code_value = code.value
 
-        # 检查中文翻译
+        # Check Chinese translation
         if code_value not in ERROR_CODE_TRANSLATIONS_ZH:
-            missing_translations.append(f"ErrorCode {code_value} 缺失中文翻译")
+            missing_translations.append(
+                f"ErrorCode {code_value} missing Chinese translation"
+            )
 
-        # 检查英文翻译
+        # Check English translation
         if code_value not in ERROR_CODE_TRANSLATIONS_EN:
-            missing_translations.append(f"ErrorCode {code_value} 缺失英文翻译")
+            missing_translations.append(
+                f"ErrorCode {code_value} missing English translation"
+            )
 
-    # 检查 ErrorMessage 翻译完整性
+    # Check ErrorMessage translation completeness
     for message in ErrorMessage:
         message_value = message.value
 
-        # 检查中文翻译
+        # Check Chinese translation
         if message_value not in ERROR_MESSAGES_ZH:
-            missing_translations.append(f"ErrorMessage {message_value} 缺失中文翻译")
+            missing_translations.append(
+                f"ErrorMessage {message_value} missing Chinese translation"
+            )
 
-        # 检查英文翻译
+        # Check English translation
         if message_value not in ERROR_MESSAGES_EN:
-            missing_translations.append(f"ErrorMessage {message_value} 缺失英文翻译")
+            missing_translations.append(
+                f"ErrorMessage {message_value} missing English translation"
+            )
 
-    # 如果发现缺失的翻译，抛出异常
+    # If missing translations are found, raise exception
     if missing_translations:
         error_message = (
-            f"发现 {len(missing_translations)} 个缺失的翻译，请补充完整后再运行:\n"
+            f"Found {len(missing_translations)} missing translations, please complete them before running:\n"
             + "\n".join(
                 f"  - {msg}" for msg in missing_translations[:10]
-            )  # 只显示前10个
+            )  # Show only first 10
         )
         if len(missing_translations) > 10:
-            error_message += (
-                f"\n  ... 还有 {len(missing_translations) - 10} 个缺失的翻译"
-            )
+            error_message += f"\n  ... and {len(missing_translations) - 10} more missing translations"
 
         raise RuntimeError(error_message)
 
 
-# 模块导入时自动执行翻译完整性检查
+# Automatically execute translation completeness check when module is imported
 _validate_translations_completeness()

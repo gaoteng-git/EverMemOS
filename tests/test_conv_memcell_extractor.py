@@ -1,12 +1,12 @@
 """
-ConvMemCellExtractor 测试
+ConvMemCellExtractor Test
 
-测试对话边界检测功能，包括：
-- 对话边界检测逻辑
-- MemCell生成
-- 状态判断
+Test conversation boundary detection functionality, including:
+- Conversation boundary detection logic
+- MemCell generation
+- Status judgment
 
-使用方法：
+Usage:
     python src/bootstrap.py tests/test_conv_memcell_extractor.py
 """
 
@@ -15,11 +15,11 @@ import asyncio
 from datetime import datetime, timedelta
 from typing import List, Dict, Any
 
-# 导入依赖注入相关模块
+# Import dependency injection related modules
 from core.di.utils import get_bean_by_type
 from core.observation.logger import get_logger
 
-# 导入要测试的模块
+# Import modules to be tested
 from memory_layer.memcell_extractor.conv_memcell_extractor import (
     ConvMemCellExtractor,
     ConversationMemCellExtractRequest,
@@ -29,26 +29,26 @@ from memory_layer.llm.llm_provider import LLMProvider
 from memory_layer.llm.openai_provider import OpenAIProvider
 from memory_layer.memory_manager import RawDataType
 
-# 获取日志记录器
+# Get logger
 logger = get_logger(__name__)
 
 
 def get_llm_provider() -> LLMProvider:
-    """获取LLM Provider，先尝试DI容器，失败则直接创建"""
+    """Get LLM Provider, first try DI container, if fails then create directly"""
     try:
-        # 尝试从DI容器获取
+        # Try to get from DI container
         return get_bean_by_type(LLMProvider)
     except:
-        # 如果DI容器中没有，则直接创建
-        logger.info("DI容器中未找到LLMProvider，直接创建...")
+        # If not found in DI container, create directly
+        logger.info("LLMProvider not found in DI container, creating directly...")
         return LLMProvider("openai")
 
 
 class TestConvMemCellExtractor:
-    """ConvMemCellExtractor 测试类"""
+    """ConvMemCellExtractor Test Class"""
 
     def setup_method(self):
-        """每个测试方法前的设置"""
+        """Setup before each test method"""
         self.base_time = datetime.now() - timedelta(hours=1)
 
     def create_test_messages(
@@ -58,7 +58,7 @@ class TestConvMemCellExtractor:
         time_offset_minutes: int = 0,
         content_prefix: str = "Test message",
     ) -> List[Dict[str, Any]]:
-        """创建测试消息"""
+        """Create test messages"""
         messages = []
         for i in range(count):
             messages.append(
@@ -74,7 +74,7 @@ class TestConvMemCellExtractor:
         return messages
 
     def create_raw_data_list(self, messages: List[Dict[str, Any]]) -> List[RawData]:
-        """将消息转换为RawData列表"""
+        """Convert messages to RawData list"""
         raw_data_list = []
         for i, msg in enumerate(messages):
             raw_data = RawData(
@@ -84,57 +84,57 @@ class TestConvMemCellExtractor:
         return raw_data_list
 
     def create_realistic_conversation(self) -> tuple[List[RawData], List[RawData]]:
-        """创建真实的对话场景"""
-        # 历史对话 - 项目讨论
+        """Create realistic conversation scenario"""
+        # Historical conversation - Project discussion
         history_messages = [
             {
                 "speaker_name": "Alice",
-                "content": "大家好，我们开始今天的项目会议",
+                "content": "Hello everyone, let's start today's project meeting",
                 "offset": 0,
             },
             {
                 "speaker_name": "Bob",
-                "content": "好的，我来汇报一下后端开发进度",
+                "content": "Okay, I'll report on the backend development progress",
                 "offset": 2,
             },
             {
                 "speaker_name": "Charlie",
-                "content": "前端这边也有一些更新要分享",
+                "content": "The frontend also has some updates to share",
                 "offset": 4,
             },
-            {"speaker_name": "Alice", "content": "很好，Bob你先说", "offset": 6},
+            {"speaker_name": "Alice", "content": "Great, Bob you go first", "offset": 6},
             {
                 "speaker_name": "Bob",
-                "content": "后端API已经完成了80%，数据库设计基本确定",
+                "content": "Backend API is 80% complete, database design is basically finalized",
                 "offset": 8,
             },
         ]
 
-        # 新对话 - 继续讨论
+        # New conversation - Continue discussion
         new_messages = [
             {
                 "speaker_name": "Charlie",
-                "content": "前端界面已经完成了主要页面的设计",
+                "content": "The frontend interface has completed the design of main pages",
                 "offset": 30,
             },
             {
                 "speaker_name": "Alice",
-                "content": "太好了，那我们什么时候可以开始联调？",
+                "content": "Great, when can we start integration testing?",
                 "offset": 32,
             },
             {
                 "speaker_name": "Bob",
-                "content": "我预计下周可以提供稳定的API",
+                "content": "I expect to provide stable APIs next week",
                 "offset": 34,
             },
             {
                 "speaker_name": "Charlie",
-                "content": "那正好，我下周也可以开始集成测试",
+                "content": "Perfect, I can also start integration testing next week",
                 "offset": 36,
             },
             {
                 "speaker_name": "Alice",
-                "content": "完美！那我们就这样安排",
+                "content": "Perfect! Let's arrange it this way",
                 "offset": 38,
             },
         ]
@@ -165,21 +165,21 @@ class TestConvMemCellExtractor:
 
     @pytest.mark.asyncio
     async def test_conv_boundary_detection_basic(self):
-        """测试基础对话边界检测"""
-        print("\n🧪 测试基础对话边界检测")
+        """Test basic conversation boundary detection"""
+        print("\n🧪 Test basic conversation boundary detection")
 
-        # 获取LLM Provider
+        # Get LLM Provider
         llm_provider = get_llm_provider()
         extractor = ConvMemCellExtractor(llm_provider)
 
-        # 创建测试数据
-        history_messages = self.create_test_messages(3, "Alice", 0, "历史消息")
-        new_messages = self.create_test_messages(2, "Bob", 30, "新消息")
+        # Create test data
+        history_messages = self.create_test_messages(3, "Alice", 0, "Historical message")
+        new_messages = self.create_test_messages(2, "Bob", 30, "New message")
 
         history_raw_data = self.create_raw_data_list(history_messages)
         new_raw_data = self.create_raw_data_list(new_messages)
 
-        # 创建请求
+        # Create request
         request = ConversationMemCellExtractRequest(
             history_raw_data_list=history_raw_data,
             new_raw_data_list=new_raw_data,
@@ -189,17 +189,17 @@ class TestConvMemCellExtractor:
         )
 
         print(
-            f"📋 请求数据: {len(history_raw_data)} 条历史 + {len(new_raw_data)} 条新消息"
+            f"📋 Request data: {len(history_raw_data)} historical + {len(new_raw_data)} new messages"
         )
 
-        # 执行测试
+        # Execute test
         result = await extractor.extract_memcell(request)
 
-        # 验证结果
-        assert result is not None, "边界检测结果不应该为None"
+        # Verify results
+        assert result is not None, "Boundary detection result should not be None"
         memcell, status_result = result
 
-        print(f"✅ 边界检测完成:")
+        print(f"✅ Boundary detection completed:")
         print(f"   - MemCell: {memcell is not None}")
         print(f"   - should_wait: {status_result.should_wait}")
 
@@ -208,7 +208,7 @@ class TestConvMemCellExtractor:
             assert len(memcell.user_id_list) > 0
             assert memcell.summary is not None
 
-            print(f"\n📄 MemCell详细信息:")
+            print(f"\n📄 MemCell details:")
             print(f"   - event_id: {memcell.event_id}")
             print(f"   - user_id_list: {memcell.user_id_list}")
             print(f"   - participants: {memcell.participants}")
@@ -216,34 +216,34 @@ class TestConvMemCellExtractor:
             print(f"   - timestamp: {memcell.timestamp}")
             print(f"   - summary: {memcell.summary}")
             print(
-                f"   - original_data条数: {len(memcell.original_data) if memcell.original_data else 0}"
+                f"   - original_data count: {len(memcell.original_data) if memcell.original_data else 0}"
             )
 
             if memcell.original_data:
-                print(f"\n💬 原始对话内容:")
-                for i, msg in enumerate(memcell.original_data[:3]):  # 只显示前3条
-                    speaker = msg.get('speaker_name', '未知')
+                print(f"\n💬 Original conversation content:")
+                for i, msg in enumerate(memcell.original_data[:3]):  # Show only first 3
+                    speaker = msg.get('speaker_name', 'Unknown')
                     content = msg.get('content', '')
                     timestamp = msg.get('timestamp', '')
                     print(f"     {i+1}. [{timestamp}] {speaker}: {content}")
                 if len(memcell.original_data) > 3:
-                    print(f"     ... 还有 {len(memcell.original_data) - 3} 条消息")
+                    print(f"     ... {len(memcell.original_data) - 3} more messages")
         else:
-            print(f"⚠️ 没有生成MemCell")
+            print(f"⚠️ No MemCell generated")
 
     @pytest.mark.asyncio
     async def test_realistic_conversation_scenario(self):
-        """测试真实对话场景"""
-        print("\n🧪 测试真实对话场景")
+        """Test realistic conversation scenario"""
+        print("\n🧪 Test realistic conversation scenario")
 
-        # 获取LLM Provider
+        # Get LLM Provider
         llm_provider = get_llm_provider()
         extractor = ConvMemCellExtractor(llm_provider)
 
-        # 创建真实对话数据
+        # Create realistic conversation data
         history_raw_data, new_raw_data = self.create_realistic_conversation()
 
-        # 创建请求
+        # Create request
         request = ConversationMemCellExtractRequest(
             history_raw_data_list=history_raw_data,
             new_raw_data_list=new_raw_data,
@@ -252,45 +252,45 @@ class TestConvMemCellExtractor:
             group_id="project_team",
         )
 
-        print(f"📋 真实对话场景:")
-        print(f"   - 历史消息: {len(history_raw_data)} 条")
-        print(f"   - 新消息: {len(new_raw_data)} 条")
-        print(f"   - 参与者: {request.participants}")
+        print(f"📋 Realistic conversation scenario:")
+        print(f"   - Historical messages: {len(history_raw_data)}")
+        print(f"   - New messages: {len(new_raw_data)}")
+        print(f"   - Participants: {request.participants}")
 
-        # 执行测试
+        # Execute test
         result = await extractor.extract_memcell(request)
 
-        # 分析结果
+        # Analyze results
         if result is None:
-            print("⚠️ 没有检测到对话边界（这可能是正常的）")
+            print("⚠️ No conversation boundary detected (this might be normal)")
         else:
             memcell, status_result = result
-            print(f"✅ 边界检测返回结果:")
+            print(f"✅ Boundary detection returned result:")
             print(f"   - MemCell: {memcell is not None}")
             print(f"   - should_wait: {status_result.should_wait}")
 
             if memcell:
-                print(f"\n📄 真实对话MemCell详细信息:")
+                print(f"\n📄 Realistic conversation MemCell details:")
                 print(f"   - event_id: {memcell.event_id}")
                 print(f"   - user_id_list: {memcell.user_id_list}")
-                print(f"   - 参与者: {memcell.participants}")
-                print(f"   - 群组: {memcell.group_id}")
+                print(f"   - participants: {memcell.participants}")
+                print(f"   - group: {memcell.group_id}")
                 print(f"   - timestamp: {memcell.timestamp}")
-                print(f"   - 摘要: {memcell.summary}")
+                print(f"   - summary: {memcell.summary}")
                 print(
-                    f"   - 原始数据条数: {len(memcell.original_data) if memcell.original_data else 0}"
+                    f"   - original data count: {len(memcell.original_data) if memcell.original_data else 0}"
                 )
 
-                # 显示完整的对话内容
+                # Display complete conversation content
                 if memcell.original_data:
-                    print(f"\n💬 完整对话记录:")
+                    print(f"\n💬 Complete conversation record:")
                     for i, msg in enumerate(memcell.original_data):
-                        speaker = msg.get('speaker_name', '未知')
+                        speaker = msg.get('speaker_name', 'Unknown')
                         content = msg.get('content', '')
                         timestamp = msg.get('timestamp', '')
                         print(f"     {i+1}. [{timestamp}] {speaker}: {content}")
 
-                # 验证基本字段
+                # Verify basic fields
                 assert memcell.event_id is not None
                 assert len(memcell.user_id_list) == 3
                 assert "alice" in memcell.user_id_list
@@ -298,32 +298,32 @@ class TestConvMemCellExtractor:
                 assert "charlie" in memcell.user_id_list
                 assert memcell.group_id == "project_team"
             else:
-                print("   - MemCell为None，可能对话还没有完整的边界")
+                print("   - MemCell is None, conversation may not have complete boundary")
 
-            print(f"\n📊 边界检测状态:")
+            print(f"\n📊 Boundary detection status:")
             print(f"   - should_wait: {status_result.should_wait}")
             if status_result.should_wait:
-                print("   - 含义: 需要等待更多消息")
+                print("   - Meaning: Need to wait for more messages")
             else:
-                print("   - 含义: 不需要等待，可以继续处理")
+                print("   - Meaning: No need to wait, can continue processing")
 
     @pytest.mark.asyncio
     async def test_insufficient_data_scenario(self):
-        """测试数据不足的场景"""
-        print("\n🧪 测试数据不足场景")
+        """Test insufficient data scenario"""
+        print("\n🧪 Test insufficient data scenario")
 
-        # 获取LLM Provider
+        # Get LLM Provider
         llm_provider = get_llm_provider()
         extractor = ConvMemCellExtractor(llm_provider)
 
-        # 创建很少的消息
-        history_messages = self.create_test_messages(1, "Alice", 0, "简短历史")
-        new_messages = self.create_test_messages(1, "Bob", 1, "简短新消息")
+        # Create very few messages
+        history_messages = self.create_test_messages(1, "Alice", 0, "Short history")
+        new_messages = self.create_test_messages(1, "Bob", 1, "Short new message")
 
         history_raw_data = self.create_raw_data_list(history_messages)
         new_raw_data = self.create_raw_data_list(new_messages)
 
-        # 创建请求
+        # Create request
         request = ConversationMemCellExtractRequest(
             history_raw_data_list=history_raw_data,
             new_raw_data_list=new_raw_data,
@@ -333,49 +333,49 @@ class TestConvMemCellExtractor:
         )
 
         print(
-            f"📋 数据不足场景: {len(history_raw_data)} 条历史 + {len(new_raw_data)} 条新消息"
+            f"📋 Insufficient data scenario: {len(history_raw_data)} historical + {len(new_raw_data)} new messages"
         )
 
-        # 执行测试
+        # Execute test
         result = await extractor.extract_memcell(request)
 
-        # 验证结果 - 可能返回None或should_wait=True
+        # Verify results - may return None or should_wait=True
         if result is None:
-            print("✅ 正确处理数据不足情况：返回None")
+            print("✅ Correctly handled insufficient data: returned None")
         else:
             memcell, status_result = result
-            print(f"✅ 状态判断: should_wait={status_result.should_wait}")
+            print(f"✅ Status judgment: should_wait={status_result.should_wait}")
 
             if memcell:
-                print(f"\n📄 数据不足场景MemCell信息:")
+                print(f"\n📄 Insufficient data scenario MemCell info:")
                 print(f"   - event_id: {memcell.event_id}")
                 print(f"   - summary: {memcell.summary}")
                 print(f"   - user_id_list: {memcell.user_id_list}")
                 print(
-                    f"   - original_data条数: {len(memcell.original_data) if memcell.original_data else 0}"
+                    f"   - original_data count: {len(memcell.original_data) if memcell.original_data else 0}"
                 )
             else:
                 print("   - MemCell: None")
 
             if status_result.should_wait:
-                print("✅ 正确识别需要等待更多数据")
+                print("✅ Correctly identified need to wait for more data")
             else:
-                print("ℹ️ 不需要等待更多数据")
+                print("ℹ️ No need to wait for more data")
 
     @pytest.mark.asyncio
     async def test_conversation_should_end_scenario(self):
-        """测试应该结束的完整对话场景"""
-        print("\n🧪 测试应该结束的完整对话场景")
+        """Test complete conversation scenario that should end"""
+        print("\n🧪 Test complete conversation scenario that should end")
 
-        # 获取LLM Provider
+        # Get LLM Provider
         llm_provider = get_llm_provider()
         extractor = ConvMemCellExtractor(llm_provider)
 
-        # 构造一个完整的会议对话，从开始到明确结束
+        # Construct a complete meeting conversation, from start to clear end
         complete_conversation = self.create_complete_meeting_conversation()
         history_raw_data, new_raw_data = complete_conversation
 
-        # 创建请求
+        # Create request
         request = ConversationMemCellExtractRequest(
             history_raw_data_list=history_raw_data,
             new_raw_data_list=new_raw_data,
@@ -384,175 +384,175 @@ class TestConvMemCellExtractor:
             group_id="complete_meeting",
         )
 
-        print(f"📋 完整会议对话场景:")
-        print(f"   - 历史消息: {len(history_raw_data)} 条")
-        print(f"   - 新消息: {len(new_raw_data)} 条")
-        print(f"   - 参与者: {request.participants}")
-        print(f"   - 总消息数: {len(history_raw_data) + len(new_raw_data)} 条")
+        print(f"📋 Complete meeting conversation scenario:")
+        print(f"   - Historical messages: {len(history_raw_data)}")
+        print(f"   - New messages: {len(new_raw_data)}")
+        print(f"   - Participants: {request.participants}")
+        print(f"   - Total messages: {len(history_raw_data) + len(new_raw_data)}")
 
-        # 显示对话内容预览
-        print(f"\n💬 对话内容预览:")
+        # Display conversation content preview
+        print(f"\n💬 Conversation content preview:")
         all_messages = []
         for data in history_raw_data + new_raw_data:
             all_messages.append(data.content)
 
         for i, msg in enumerate(all_messages[:3]):
-            speaker = msg.get('speaker_name', '未知')
+            speaker = msg.get('speaker_name', 'Unknown')
             content = msg.get('content', '')
-            print(f"   开始: {speaker}: {content}")
+            print(f"   Start: {speaker}: {content}")
 
-        print(f"   ... (中间 {len(all_messages) - 6} 条消息)")
+        print(f"   ... ({len(all_messages) - 6} messages in between)")
 
         for i, msg in enumerate(all_messages[-3:]):
-            speaker = msg.get('speaker_name', '未知')
+            speaker = msg.get('speaker_name', 'Unknown')
             content = msg.get('content', '')
-            print(f"   结束: {speaker}: {content}")
+            print(f"   End: {speaker}: {content}")
 
-        # 执行测试
-        print(f"\n🔄 开始边界检测...")
+        # Execute test
+        print(f"\n🔄 Starting boundary detection...")
         result = await extractor.extract_memcell(request)
 
-        # 分析结果
+        # Analyze results
         if result is None:
-            print("❌ 意外：完整对话没有检测到边界")
+            print("❌ Unexpected: No boundary detected in complete conversation")
         else:
             memcell, status_result = result
-            print(f"✅ 完整对话边界检测结果:")
+            print(f"✅ Complete conversation boundary detection result:")
             print(f"   - MemCell: {memcell is not None}")
             print(f"   - should_wait: {status_result.should_wait}")
 
             if memcell:
-                print(f"\n📄 完整对话MemCell详细信息:")
+                print(f"\n📄 Complete conversation MemCell details:")
                 print(f"   - event_id: {memcell.event_id}")
                 print(f"   - user_id_list: {memcell.user_id_list}")
-                print(f"   - 参与者: {memcell.participants}")
-                print(f"   - 群组: {memcell.group_id}")
+                print(f"   - participants: {memcell.participants}")
+                print(f"   - group: {memcell.group_id}")
                 print(f"   - timestamp: {memcell.timestamp}")
-                print(f"   - 摘要: {memcell.summary}")
+                print(f"   - summary: {memcell.summary}")
                 print(
-                    f"   - 原始数据条数: {len(memcell.original_data) if memcell.original_data else 0}"
+                    f"   - original data count: {len(memcell.original_data) if memcell.original_data else 0}"
                 )
 
-                # 显示完整的对话内容
+                # Display complete conversation content
                 if memcell.original_data:
-                    print(f"\n💬 MemCell中包含的对话记录:")
+                    print(f"\n💬 Conversation records included in MemCell:")
                     for i, msg in enumerate(memcell.original_data):
-                        speaker = msg.get('speaker_name', '未知')
+                        speaker = msg.get('speaker_name', 'Unknown')
                         content = msg.get('content', '')
                         timestamp = msg.get('timestamp', '')
                         print(f"     {i+1}. [{timestamp}] {speaker}: {content}")
 
-                # 验证这是一个完整的对话
+                # Verify this is a complete conversation
                 assert memcell.event_id is not None
                 assert len(memcell.user_id_list) == 3
                 assert memcell.group_id == "complete_meeting"
-                print(f"\n✅ 验证通过：这是一个完整的会议对话MemCell")
+                print(f"\n✅ Verification passed: This is a complete meeting conversation MemCell")
 
             else:
-                print("⚠️ MemCell为None，可能对话判断逻辑需要调整")
+                print("⚠️ MemCell is None, conversation judgment logic may need adjustment")
 
-            print(f"\n📊 边界检测状态分析:")
+            print(f"\n📊 Boundary detection status analysis:")
             print(f"   - should_wait: {status_result.should_wait}")
             if status_result.should_wait:
-                print("   - 含义: 需要等待更多消息（可能判断不够完整）")
+                print("   - Meaning: Need to wait for more messages (conversation may not be complete)")
             else:
-                print("   - 含义: 对话已完整，可以处理（符合预期）")
+                print("   - Meaning: Conversation is complete, can be processed (as expected)")
 
             if memcell and not status_result.should_wait:
-                print(f"\n🎉 成功：检测到完整对话边界！")
+                print(f"\n🎉 Success: Complete conversation boundary detected!")
             elif not memcell and not status_result.should_wait:
-                print(f"\n🤔 部分成功：判断对话完整但未生成MemCell")
+                print(f"\n🤔 Partial success: Conversation judged complete but no MemCell generated")
             else:
-                print(f"\n📝 需要优化：对话判断逻辑可能需要调整")
+                print(f"\n📝 Needs optimization: Conversation judgment logic may need adjustment")
 
     def create_complete_meeting_conversation(
         self,
     ) -> tuple[List[RawData], List[RawData]]:
-        """创建一个完整的会议对话，从开始到明确结束"""
-        base_time = datetime.now() - timedelta(hours=2)  # 2小时前开始
+        """Create a complete meeting conversation, from start to clear end"""
+        base_time = datetime.now() - timedelta(hours=2)  # Start 2 hours ago
 
-        # 第一阶段：会议开始和议题介绍 (历史消息)
+        # Phase 1: Meeting start and agenda introduction (historical messages)
         meeting_start = [
             {
                 "speaker_name": "Alice",
-                "content": "大家好，现在开始我们的项目评审会议。今天主要讨论三个议题：项目进度、技术方案确认、下一步计划。",
+                "content": "Hello everyone, now starting our project review meeting. Today we'll discuss three topics: project progress, technical solution confirmation, and next steps.",
                 "offset": 0,
             },
             {
                 "speaker_name": "Bob",
-                "content": "好的Alice，我已经准备好项目进度报告了。",
+                "content": "Okay Alice, I'm ready with the project progress report.",
                 "offset": 1,
             },
             {
                 "speaker_name": "Charlie",
-                "content": "技术方案文档我也已经更新完成。",
+                "content": "The technical solution document has also been updated.",
                 "offset": 2,
             },
             {
                 "speaker_name": "Alice",
-                "content": "很好，那我们按顺序来。Bob，请先汇报项目进度。",
+                "content": "Great, let's go in order. Bob, please report on project progress first.",
                 "offset": 3,
             },
             {
                 "speaker_name": "Bob",
-                "content": "好的。本周我们完成了用户登录模块的开发和测试，进度符合预期。数据库设计也已经完成，下周开始接口开发。",
+                "content": "Okay. This week we completed development and testing of the user login module, progress is on track. Database design is also complete, starting interface development next week.",
                 "offset": 5,
             },
             {
                 "speaker_name": "Alice",
-                "content": "不错，有遇到什么技术难题吗？",
+                "content": "Good, any technical challenges encountered?",
                 "offset": 6,
             },
             {
                 "speaker_name": "Bob",
-                "content": "主要是在用户权限管理这块，不过已经找到解决方案了。",
+                "content": "Mainly in user permission management, but we've found a solution.",
                 "offset": 7,
             },
         ]
 
-        # 第二阶段：技术讨论和决策 + 会议总结和结束 (新消息，时间间隔较长表示经过深入讨论)
+        # Phase 2: Technical discussion and decision + meeting summary and end (new messages, longer time interval indicates in-depth discussion)
         meeting_end = [
             {
                 "speaker_name": "Alice",
-                "content": "好的，现在Charlie来介绍技术方案的调整。",
+                "content": "Okay, now Charlie will present the technical solution adjustments.",
                 "offset": 45,
-            },  # 45分钟后，表示中间有深入讨论
+            },  # 45 minutes later, indicating in-depth discussion in between
             {
                 "speaker_name": "Charlie",
-                "content": "经过这段时间的分析，我建议我们采用微服务架构，这样可以更好地支持后续扩展。",
+                "content": "After analysis, I suggest we adopt a microservices architecture, which will better support future scalability.",
                 "offset": 46,
             },
             {
                 "speaker_name": "Bob",
-                "content": "我赞成Charlie的方案，这样确实更灵活。我们需要调整一下开发计划吗？",
+                "content": "I agree with Charlie's proposal, it is indeed more flexible. Do we need to adjust the development plan?",
                 "offset": 47,
             },
             {
                 "speaker_name": "Alice",
-                "content": "需要的。我们重新评估一下时间线。整体项目可能会延后一周，但质量会更好。",
+                "content": "Yes. We need to re-evaluate the timeline. The overall project might be delayed by one week, but quality will be better.",
                 "offset": 48,
             },
             {
                 "speaker_name": "Charlie",
-                "content": "我可以在下周提供详细的架构设计文档。",
+                "content": "I can provide detailed architecture design documents next week.",
                 "offset": 49,
             },
             {
                 "speaker_name": "Bob",
-                "content": "那我这边也会配合调整开发计划。",
+                "content": "I'll also adjust the development plan accordingly.",
                 "offset": 50,
             },
             {
                 "speaker_name": "Alice",
-                "content": "很好。那我们今天的三个议题都讨论完了。总结一下：项目进度正常，技术方案调整为微服务架构，时间线调整为延后一周。",
+                "content": "Good. We've finished discussing all three topics today. Summary: project progress is normal, technical solution adjusted to microservices architecture, timeline adjusted to one week delay.",
                 "offset": 52,
             },
-            {"speaker_name": "Alice", "content": "大家还有其他问题吗？", "offset": 53},
-            {"speaker_name": "Bob", "content": "我没有其他问题了。", "offset": 54},
-            {"speaker_name": "Charlie", "content": "我也没有。", "offset": 55},
+            {"speaker_name": "Alice", "content": "Any other questions?", "offset": 53},
+            {"speaker_name": "Bob", "content": "I have no other questions.", "offset": 54},
+            {"speaker_name": "Charlie", "content": "Neither do I.", "offset": 55},
             {
                 "speaker_name": "Alice",
-                "content": "好的，那今天的会议就到这里。谢谢大家的参与，我会整理会议纪要发给大家。散会！",
+                "content": "Okay, that's all for today's meeting. Thank you all for participating. I'll compile the meeting minutes and send them to everyone. Meeting adjourned!",
                 "offset": 56,
             },
         ]
@@ -577,30 +577,30 @@ class TestConvMemCellExtractor:
         history_raw_data = create_raw_data_from_msgs(meeting_start, "meeting_start")
         new_raw_data = create_raw_data_from_msgs(meeting_end, "meeting_end")
 
-        print(f"🏗️ 构造完整会议对话:")
-        print(f"   - 会议开始阶段: {len(meeting_start)} 条消息")
-        print(f"   - 会议结束阶段: {len(meeting_end)} 条消息")
+        print(f"🏗️ Constructing complete meeting conversation:")
+        print(f"   - Meeting start phase: {len(meeting_start)} messages")
+        print(f"   - Meeting end phase: {len(meeting_end)} messages")
         print(
-            f"   - 时间跨度: {meeting_start[0]['offset']} 到 {meeting_end[-1]['offset']} 分钟"
+            f"   - Time span: {meeting_start[0]['offset']} to {meeting_end[-1]['offset']} minutes"
         )
-        print(f"   - 特点: 明确的开始、讨论、决策、总结、结束")
+        print(f"   - Characteristics: Clear start, discussion, decision, summary, end")
 
         return history_raw_data, new_raw_data
 
     @pytest.mark.asyncio
     async def test_data_processing_internal(self):
-        """测试内部数据处理逻辑"""
-        print("\n🧪 测试内部数据处理")
+        """Test internal data processing logic"""
+        print("\n🧪 Test internal data processing")
 
-        # 获取LLM Provider
+        # Get LLM Provider
         llm_provider = get_llm_provider()
         extractor = ConvMemCellExtractor(llm_provider)
 
-        # 创建测试数据
+        # Create test data
         test_message = {
             "speaker_id": "user_alice",
             "speaker_name": "Alice",
-            "content": "这是一条测试消息",
+            "content": "This is a test message",
             "timestamp": self.base_time.isoformat(),
         }
 
@@ -608,14 +608,14 @@ class TestConvMemCellExtractor:
             content=test_message, data_id="test_data", metadata={"test": True}
         )
 
-        # 测试内部数据处理方法
+        # Test internal data processing method
         processed_data = extractor._data_process(raw_data)
 
-        print(f"📋 数据处理测试:")
-        print(f"   - 原始数据: {test_message}")
-        print(f"   - 处理后: {processed_data}")
+        print(f"📋 Data processing test:")
+        print(f"   - Original data: {test_message}")
+        print(f"   - Processed: {processed_data}")
 
-        # 验证处理结果
+        # Verify processing result
         assert processed_data is not None
         assert isinstance(processed_data, dict)
         assert "speaker_name" in processed_data
@@ -623,14 +623,14 @@ class TestConvMemCellExtractor:
 
 
 async def run_all_tests():
-    """运行所有测试"""
-    print("🚀 开始运行ConvMemCellExtractor测试")
+    """Run all tests"""
+    print("🚀 Starting ConvMemCellExtractor tests")
     print("=" * 60)
 
     test_instance = TestConvMemCellExtractor()
 
     try:
-        # 运行测试方法
+        # Run test methods
         test_instance.setup_method()
         await test_instance.test_conv_boundary_detection_basic()
 
@@ -647,10 +647,10 @@ async def run_all_tests():
         await test_instance.test_data_processing_internal()
 
         print("\n" + "=" * 60)
-        print("🎉 所有测试完成！")
+        print("🎉 All tests completed!")
 
     except Exception as e:
-        logger.error(f"❌ 测试执行失败: {e}")
+        logger.error(f"❌ Test execution failed: {e}")
         import traceback
 
         traceback.print_exc()
@@ -658,6 +658,6 @@ async def run_all_tests():
 
 
 if __name__ == "__main__":
-    # 当直接运行此脚本时执行
-    # 注意：通过 bootstrap.py 运行时，环境已经初始化完成
+    # When running this script directly
+    # Note: When running through bootstrap.py, environment is already initialized
     asyncio.run(run_all_tests())

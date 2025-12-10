@@ -207,7 +207,8 @@ src/memory_layer/memory_extractor/profile_memory_extractor keep llm merge.py
 AGENTS.mk
 docs/api_docs/profile_extraction_fields.md
 .claude/
-.cursor/
+.cursor/*
+!.cursor/rules/
 
 #tmp_data
 demo/memcell_outputs/
@@ -216,3 +217,7 @@ evaluation/locomo_evaluation/results/
 evaluation/locomo_evaluation/results_ref/
 tmp/
 evaluation/locomo_evaluation/results_ref/demo/results/
+
+# i18n translation progress
+.translation_progress.json
+.review_progress.json
