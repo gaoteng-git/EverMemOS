@@ -1,12 +1,12 @@
 """
-Redis分布式锁测试
+Redis Distributed Lock Test
 
-测试场景包括：
-1. 基本的锁获取和释放
-2. 锁的可重入性
-3. 超时机制
-4. 并发竞争
-5. 装饰器使用
+Test scenarios include:
+1. Basic lock acquisition and release
+2. Lock reentrancy
+3. Timeout mechanism
+4. Concurrent competition
+5. Decorator usage
 """
 
 import asyncio
@@ -14,122 +14,122 @@ from core.lock.redis_distributed_lock import with_distributed_lock, distributed_
 
 
 async def test_basic_lock_operations(redis_distributed_lock_manager):
-    """测试基本的锁操作"""
+    """Test basic lock operations"""
     resource = "test_resource"
     lock = redis_distributed_lock_manager.get_lock(resource)
 
-    # 测试获取锁
+    # Test acquiring lock
     async with lock.acquire() as acquired:
-        assert acquired, "应该成功获取锁"
-        assert await lock.is_locked(), "资源应该处于锁定状态"
-        assert await lock.is_owned_by_current_coroutine(), "锁应该被当前协程持有"
+        assert acquired, "Should successfully acquire the lock"
+        assert await lock.is_locked(), "Resource should be in locked state"
+        assert await lock.is_owned_by_current_coroutine(), "The lock should be held by the current coroutine"
 
-    # 测试锁释放
-    assert not await lock.is_locked(), "锁应该已被释放"
-    assert not await lock.is_owned_by_current_coroutine(), "锁不应该被当前协程持有"
+    # Test lock release
+    assert not await lock.is_locked(), "The lock should have been released"
+    assert not await lock.is_owned_by_current_coroutine(), "The lock should not be held by the current coroutine"
 
 
 async def test_lock_reentrant(redis_distributed_lock_manager):
-    """测试锁的可重入性"""
+    """Test lock reentrancy"""
     resource = "test_reentrant"
     lock = redis_distributed_lock_manager.get_lock(resource)
 
     async with lock.acquire() as acquired:
-        assert acquired, "第一次应该成功获取锁"
+        assert acquired, "First acquisition should succeed"
         count1 = await lock.get_reentry_count()
-        assert count1 == 1, "第一次获取锁，重入计数应该为1"
+        assert count1 == 1, "After first acquisition, reentry count should be 1"
 
-        # 重入获取锁
+        # Re-enter to acquire the lock
         async with lock.acquire() as reacquired:
-            assert reacquired, "第二次应该成功获取锁（重入）"
+            assert reacquired, "Second acquisition should succeed (reentrant)"
             count2 = await lock.get_reentry_count()
-            assert count2 == 2, "第二次获取锁，重入计数应该为2"
+            assert count2 == 2, "After second acquisition, reentry count should be 2"
 
-        # 释放一次后，锁应该还在
+        # After one release, the lock should still exist
         count3 = await lock.get_reentry_count()
-        assert count3 == 1, "释放一次后，重入计数应该为1"
-        assert await lock.is_locked(), "释放一次后，锁应该还在"
+        assert count3 == 1, "After one release, reentry count should be 1"
+        assert await lock.is_locked(), "After one release, the lock should still exist"
 
-    # 完全释放后，锁应该消失
-    assert not await lock.is_locked(), "完全释放后，锁应该消失"
-    assert await lock.get_reentry_count() == 0, "完全释放后，重入计数应该为0"
+    # After full release, the lock should disappear
+    assert not await lock.is_locked(), "After full release, the lock should disappear"
+    assert await lock.get_reentry_count() == 0, "After full release, reentry count should be 0"
 
 
 async def test_lock_expiration(redis_distributed_lock_manager):
-    """测试锁的过期机制"""
+    """Test lock expiration mechanism"""
     resource = "test_expiration"
 
-    # 测试场景1：基本过期
+    # Test case 1: Basic expiration
     lock1 = redis_distributed_lock_manager.get_lock(resource)
-    async with lock1.acquire(timeout=1) as acquired:  # 1秒过期
-        assert acquired, "应该成功获取锁"
-        assert await lock1.is_locked(), "资源应该处于锁定状态"
-        assert await lock1.is_owned_by_current_coroutine(), "锁应该被当前协程持有"
+    async with lock1.acquire(timeout=1) as acquired:  # Expire in 1 second
+        assert acquired, "Should successfully acquire the lock"
+        assert await lock1.is_locked(), "Resource should be in locked state"
+        assert await lock1.is_owned_by_current_coroutine(), "The lock should be held by the current coroutine"
 
-        # 等待不到过期时间，锁应该还在
+        # Wait less than expiration time, lock should still exist
         await asyncio.sleep(0.5)
-        assert await lock1.is_locked(), "未到过期时间，锁应该还在"
+        assert await lock1.is_locked(), "Before expiration, the lock should still exist"
 
-        # 等待过期
+        # Wait until expiration
         await asyncio.sleep(1)
-        assert not await lock1.is_locked(), "锁应该已经过期释放"
+        assert not await lock1.is_locked(), "The lock should have expired and been released"
 
-    # 测试场景2：过期后其他协程可以获取锁
+    # Test case 2: Another coroutine can acquire the lock after expiration
     async def try_acquire_expired_lock():
         lock2 = redis_distributed_lock_manager.get_lock(resource)
-        async with lock2.acquire(timeout=5) as acquired:  # 设置足够长的过期时间
-            assert acquired, "在原锁过期后，新的协程应该能获取锁"
-            assert await lock2.is_locked(), "新获取的锁应该处于锁定状态"
+        async with lock2.acquire(timeout=5) as acquired:  # Set a long enough expiration time
+            assert acquired, "After the original lock expires, a new coroutine should be able to acquire the lock"
+            assert await lock2.is_locked(), "The newly acquired lock should be in locked state"
             assert (
                 await lock2.is_owned_by_current_coroutine()
-            ), "新的锁应该被当前协程持有"
+            ), "The new lock should be held by the current coroutine"
             return True
         return False
 
     success = await try_acquire_expired_lock()
-    assert success, "应该能在原锁过期后获取新锁"
+    assert success, "Should be able to acquire a new lock after the original lock expires"
 
-    # 测试场景3：不同过期时间
-    test_times = [0.5, 1, 2]  # 测试不同的过期时间
+    # Test case 3: Different expiration times
+    test_times = [0.5, 1, 2]  # Test different expiration times
     for expire_time in test_times:
         lock = redis_distributed_lock_manager.get_lock(f"{resource}_{expire_time}")
         async with lock.acquire(timeout=expire_time) as acquired:
-            assert acquired, f"应该成功获取锁（过期时间：{expire_time}秒）"
+            assert acquired, f"Should successfully acquire the lock (expiration time: {expire_time} seconds)"
 
-            # 等待一半时间，锁应该还在
+            # Wait half the time, lock should still exist
             await asyncio.sleep(expire_time / 2)
             assert (
                 await lock.is_locked()
-            ), f"过期时间{expire_time}秒，{expire_time/2}秒后锁应该还在"
+            ), f"For expiration time {expire_time} seconds, the lock should still exist after {expire_time/2} seconds"
 
-            # 等待剩余时间+一点余量，锁应该过期
+            # Wait the remaining time plus a margin, lock should have expired
             await asyncio.sleep(expire_time / 2 + 0.1)
             assert (
                 not await lock.is_locked()
-            ), f"过期时间{expire_time}秒，{expire_time+0.1}秒后锁应该已过期"
+            ), f"For expiration time {expire_time} seconds, the lock should have expired after {expire_time+0.1} seconds"
 
-    # 测试场景4：重入时更新过期时间
+    # Test case 4: Update expiration time during re-entry
     lock3 = redis_distributed_lock_manager.get_lock("test_reentry_expiration")
-    async with lock3.acquire(timeout=1) as acquired1:  # 1秒过期
-        assert acquired1, "第一次应该成功获取锁"
+    async with lock3.acquire(timeout=1) as acquired1:  # Expire in 1 second
+        assert acquired1, "First acquisition should succeed"
 
-        # 等待0.8秒（接近过期）
+        # Wait 0.8 seconds (close to expiration)
         await asyncio.sleep(0.8)
-        assert await lock3.is_locked(), "接近过期时锁应该还在"
+        assert await lock3.is_locked(), "The lock should still exist when close to expiration"
 
-        # 重入并设置新的过期时间
-        async with lock3.acquire(timeout=2) as acquired2:  # 2秒过期
-            assert acquired2, "应该能重入获取锁"
-            assert await lock3.get_reentry_count() == 2, "重入计数应该为2"
+        # Re-enter and set a new expiration time
+        async with lock3.acquire(timeout=2) as acquired2:  # Expire in 2 seconds
+            assert acquired2, "Should be able to re-enter and acquire the lock"
+            assert await lock3.get_reentry_count() == 2, "Reentry count should be 2"
 
-            # 等待1.2秒（超过原来的1秒过期时间）
+            # Wait 1.2 seconds (exceeding the original 1-second expiration)
             await asyncio.sleep(1.2)
-            assert await lock3.is_locked(), "重入后设置了新的过期时间，锁应该还在"
-            assert await lock3.get_reentry_count() == 2, "重入计数应该保持为2"
+            assert await lock3.is_locked(), "After re-entry with a new expiration time, the lock should still exist"
+            assert await lock3.get_reentry_count() == 2, "Reentry count should remain 2"
 
 
 async def test_concurrent_lock_competition(redis_distributed_lock_manager):
-    """测试并发竞争场景"""
+    """Test concurrent competition scenario"""
     resource = "test_concurrent"
     results = []
 
@@ -138,15 +138,15 @@ async def test_concurrent_lock_competition(redis_distributed_lock_manager):
         async with lock.acquire(blocking_timeout=1) as acquired:
             if acquired:
                 results.append(task_id)
-                await asyncio.sleep(0.1)  # 模拟工作负载
+                await asyncio.sleep(0.1)  # Simulate workload
 
-    # 创建多个并发任务
+    # Create multiple concurrent tasks
     tasks = [compete_for_lock(i) for i in range(5)]
     await asyncio.gather(*tasks)
 
-    # 验证结果
-    assert len(results) > 0, "至少有一个任务应该获取到锁"
-    assert len(results) == len(set(results)), "每个任务ID应该只出现一次"
+    # Verify results
+    assert len(results) > 0, "At least one task should acquire the lock"
+    assert len(results) == len(set(results)), "Each task ID should appear only once"
 
 
 @with_distributed_lock("test_decorator")
@@ -160,201 +160,201 @@ async def decorated_function_with_format(value):
 
 
 async def test_lock_decorator(_redis_distributed_lock_manager):
-    """测试装饰器功能"""
-    # 测试基本装饰器
+    """Test decorator functionality"""
+    # Test basic decorator
     result1 = await decorated_function(21)
-    assert result1 == 42, "装饰器不应该影响函数返回值"
+    assert result1 == 42, "Decorator should not affect function return value"
 
-    # 测试带格式化字符串的装饰器
+    # Test decorator with formatted string
     result2 = await decorated_function_with_format(21)
-    assert result2 == 42, "带格式化字符串的装饰器不应该影响函数返回值"
+    assert result2 == 42, "Decorator with formatted string should not affect function return value"
 
 
 async def test_force_unlock(redis_distributed_lock_manager):
-    """测试强制解锁功能"""
+    """Test force unlock functionality"""
     resource = "test_force_unlock"
     lock = redis_distributed_lock_manager.get_lock(resource)
 
     async with lock.acquire() as acquired:
-        assert acquired, "应该成功获取锁"
+        assert acquired, "Should successfully acquire the lock"
 
-        # 强制解锁
+        # Force unlock
         success = await redis_distributed_lock_manager.force_unlock(resource)
-        assert success, "强制解锁应该成功"
-        assert not await lock.is_locked(), "强制解锁后锁应该被释放"
+        assert success, "Force unlock should succeed"
+        assert not await lock.is_locked(), "After force unlock, the lock should be released"
 
 
 async def test_blocking_timeout_and_reentry(redis_distributed_lock_manager):
-    """测试阻塞超时和可重入性（使用asyncio任务）"""
+    """Test blocking timeout and reentrancy (using asyncio tasks)"""
     resource = "test_blocking"
 
-    # 测试场景1：同一任务的可重入
+    # Test case 1: Reentrancy within the same task
     async def reentry_test():
         lock = redis_distributed_lock_manager.get_lock(resource)
         async with lock.acquire() as acquired1:
-            assert acquired1, "第一次获取锁应该成功"
-            assert await lock.get_reentry_count() == 1, "第一次获取后重入计数应该为1"
+            assert acquired1, "First lock acquisition should succeed"
+            assert await lock.get_reentry_count() == 1, "Reentry count should be 1 after first acquisition"
 
-            # 同一任务重入获取
+            # Re-enter within the same task
             async with lock.acquire() as acquired2:
-                assert acquired2, "同一任务重入应该成功"
-                assert await lock.get_reentry_count() == 2, "重入后计数应该为2"
+                assert acquired2, "Reentrancy within the same task should succeed"
+                assert await lock.get_reentry_count() == 2, "Reentry count should be 2 after re-entry"
 
-                # 再次重入
+                # Re-enter again
                 async with lock.acquire() as acquired3:
-                    assert acquired3, "同一任务第三次重入应该成功"
+                    assert acquired3, "Third re-entry within the same task should succeed"
                     assert (
                         await lock.get_reentry_count() == 3
-                    ), "第三次重入后计数应该为3"
-                    await asyncio.sleep(0.1)  # 确保任务切换
+                    ), "Reentry count should be 3 after third re-entry"
+                    await asyncio.sleep(0.1)  # Ensure task switching
 
-    # 创建并运行任务
+    # Create and run task
     task1 = asyncio.create_task(reentry_test())
     await task1
 
-    # 测试场景2：不同任务间的阻塞和重入
+    # Test case 2: Blocking and reentrancy between different tasks
     async def blocking_task():
         lock = redis_distributed_lock_manager.get_lock(resource)
         async with lock.acquire() as acquired:
-            assert acquired, "第一个任务应该能获取锁"
-            assert await lock.get_reentry_count() == 1, "第一个任务的重入计数应该为1"
-            await asyncio.sleep(1)  # 持有锁一段时间
+            assert acquired, "First task should be able to acquire the lock"
+            assert await lock.get_reentry_count() == 1, "Reentry count for first task should be 1"
+            await asyncio.sleep(1)  # Hold the lock for a while
 
     async def competing_task():
         lock = redis_distributed_lock_manager.get_lock(resource)
         async with lock.acquire(blocking_timeout=0.5) as acquired:
-            assert not acquired, "第二个任务不应该能获取到锁"
-            assert await lock.get_reentry_count() == 0, "获取失败时重入计数应该为0"
+            assert not acquired, "Second task should not be able to acquire the lock"
+            assert await lock.get_reentry_count() == 0, "Reentry count should be 0 when acquisition fails"
 
-    # 创建两个竞争的任务
+    # Create two competing tasks
     task2 = asyncio.create_task(blocking_task())
-    await asyncio.sleep(0.1)  # 确保第一个任务先获取锁
+    await asyncio.sleep(0.1)  # Ensure first task acquires the lock first
     task3 = asyncio.create_task(competing_task())
 
-    # 等待任务完成
+    # Wait for tasks to complete
     await asyncio.gather(task2, task3)
 
-    # 测试场景3：任务嵌套时的可重入性
+    # Test case 3: Reentrancy during nested tasks
     async def parent_task():
         lock = redis_distributed_lock_manager.get_lock(resource)
         async with lock.acquire() as acquired:
-            assert acquired, "父任务应该能获取锁"
-            assert await lock.get_reentry_count() == 1, "父任务重入计数应该为1"
+            assert acquired, "Parent task should be able to acquire the lock"
+            assert await lock.get_reentry_count() == 1, "Reentry count for parent task should be 1"
 
-            # 创建子任务
+            # Create child task
             child = asyncio.create_task(child_task())
-            await asyncio.sleep(0.1)  # 确保子任务有机会运行
+            await asyncio.sleep(0.1)  # Ensure child task has a chance to run
 
-            # 父任务重入
+            # Parent task re-enters
             async with lock.acquire() as reentry:
-                assert reentry, "父任务重入应该成功"
-                assert await lock.get_reentry_count() == 2, "父任务重入后计数应该为2"
-                await asyncio.sleep(0.1)  # 再次给子任务机会
+                assert reentry, "Parent task re-entry should succeed"
+                assert await lock.get_reentry_count() == 2, "Reentry count should be 2 after parent re-entry"
+                await asyncio.sleep(0.1)  # Give child task another chance
 
-            await child  # 等待子任务完成
+            await child  # Wait for child task to complete
 
     async def child_task():
         lock = redis_distributed_lock_manager.get_lock(resource)
         async with lock.acquire(blocking_timeout=0.5) as acquired:
-            assert not acquired, "子任务不应该能获取到父任务持有的锁"
-            assert await lock.get_reentry_count() == 0, "子任务获取失败时计数应该为0"
+            assert not acquired, "Child task should not be able to acquire the lock held by parent task"
+            assert await lock.get_reentry_count() == 0, "Reentry count should be 0 when child task fails to acquire"
 
-    # 运行父子任务测试
+    # Run parent-child task test
     await parent_task()
 
-    # 测试场景4：锁释放后新任务的获取
+    # Test case 4: New task acquiring lock after release
     async def final_task():
         lock = redis_distributed_lock_manager.get_lock(resource)
         async with lock.acquire(blocking_timeout=0.5) as acquired:
-            assert acquired, "锁释放后新任务应该能获取到锁"
-            assert await lock.get_reentry_count() == 1, "新任务获取锁后计数应该为1"
+            assert acquired, "New task should be able to acquire the lock after it is released"
+            assert await lock.get_reentry_count() == 1, "Reentry count should be 1 after new task acquires the lock"
 
-    # 确保锁已释放
+    # Ensure lock is released
     assert not await redis_distributed_lock_manager.get_lock(
         resource
-    ).is_locked(), "所有任务完成后锁应该被释放"
+    ).is_locked(), "The lock should be released after all tasks complete"
 
-    # 运行最终测试
+    # Run final test
     final = asyncio.create_task(final_task())
     await final
 
 
 async def run_all_tests():
-    """运行所有测试"""
+    """Run all tests"""
     from core.di.utils import get_bean_by_type
     from core.lock.redis_distributed_lock import RedisDistributedLockManager
 
-    print("开始运行Redis分布式锁测试...")
+    print("Starting Redis distributed lock tests...")
 
-    # 获取锁管理器实例
+    # Get lock manager instance
     lock_manager = get_bean_by_type(RedisDistributedLockManager)
 
-    # 定义所有测试函数
+    # Define all test functions
     tests = [
         test_basic_lock_operations,
         test_lock_reentrant,
-        test_lock_expiration,  # 新的过期测试
+        test_lock_expiration,  # New expiration test
         test_concurrent_lock_competition,
         test_lock_decorator,
         test_force_unlock,
-        test_blocking_timeout_and_reentry,  # 更新后的阻塞和可重入测试
+        test_blocking_timeout_and_reentry,  # Updated blocking and reentrancy test
         test_convenient_context_manager,
         test_context_manager_with_timeout,
         test_context_manager_concurrent,
     ]
 
-    # 运行所有测试
+    # Run all tests
     for test_func in tests:
-        print(f"\n运行测试: {test_func.__name__}")
+        print(f"\nRunning test: {test_func.__name__}")
         print("-" * 50)
         try:
             await test_func(lock_manager)
-            print(f"✅ {test_func.__name__} 测试通过")
+            print(f"✅ {test_func.__name__} passed")
         except AssertionError as e:
-            print(f"❌ {test_func.__name__} 测试失败: {str(e)}")
+            print(f"❌ {test_func.__name__} failed: {str(e)}")
         except (ConnectionError, TimeoutError, OSError) as e:
-            print(f"❌ {test_func.__name__} 测试出错: {str(e)}")
+            print(f"❌ {test_func.__name__} error: {str(e)}")
 
-    print("\n测试完成!")
+    print("\nTests completed!")
 
 
 async def test_convenient_context_manager(_redis_distributed_lock_manager):
-    """测试便捷的上下文管理器函数"""
+    """Test convenient context manager function"""
     resource = "test_context_manager"
 
-    # 测试基本使用
+    # Test basic usage
     async with distributed_lock(resource) as acquired:
-        assert acquired, "应该成功获取锁"
+        assert acquired, "Should successfully acquire the lock"
 
-        # 测试可重入性
+        # Test reentrancy
         async with distributed_lock(resource) as reacquired:
-            assert reacquired, "应该支持可重入"
+            assert reacquired, "Should support reentrancy"
 
-    # 测试不同资源的锁
+    # Test locks for different resources
     async with distributed_lock("resource1") as acquired1:
-        assert acquired1, "应该成功获取resource1的锁"
+        assert acquired1, "Should successfully acquire lock for resource1"
 
         async with distributed_lock("resource2") as acquired2:
-            assert acquired2, "应该成功获取resource2的锁"
+            assert acquired2, "Should successfully acquire lock for resource2"
 
-    print("✅ 便捷上下文管理器测试通过")
+    print("✅ Convenient context manager test passed")
 
 
 async def test_context_manager_with_timeout(_redis_distributed_lock_manager):
-    """测试上下文管理器的超时功能"""
+    """Test context manager timeout functionality"""
     resource = "test_timeout_context"
 
-    # 测试自定义超时参数
+    # Test custom timeout parameters
     async with distributed_lock(
         resource, timeout=30.0, blocking_timeout=5.0
     ) as acquired:
-        assert acquired, "应该成功获取锁"
+        assert acquired, "Should successfully acquire the lock"
 
-    print("✅ 上下文管理器超时测试通过")
+    print("✅ Context manager timeout test passed")
 
 
 async def test_context_manager_concurrent(_redis_distributed_lock_manager):
-    """测试上下文管理器的并发情况"""
+    """Test context manager concurrency"""
     resource = "test_concurrent_context"
     results = []
 
@@ -362,16 +362,16 @@ async def test_context_manager_concurrent(_redis_distributed_lock_manager):
         async with distributed_lock(resource, blocking_timeout=0.2) as acquired:
             if acquired:
                 results.append(f"worker_{worker_id}")
-                # 持有锁足够长的时间，确保其他worker超时
+                # Hold the lock long enough to ensure other workers time out
                 await asyncio.sleep(0.5)
 
-    # 真正并发执行多个worker
+    # Truly run multiple workers concurrently
     tasks = [worker(i) for i in range(3)]
     await asyncio.gather(*tasks)
 
-    # 由于锁的存在和短暂的blocking_timeout，应该只有一个worker成功
-    assert len(results) == 1, f"应该只有一个worker成功，但得到: {results}"
-    print(f"✅ 上下文管理器并发测试通过，成功的worker: {results[0]}")
+    # Due to the lock and short blocking_timeout, only one worker should succeed
+    assert len(results) == 1, f"Only one worker should succeed, but got: {results}"
+    print(f"✅ Context manager concurrency test passed, successful worker: {results[0]}")
 
 
 if __name__ == "__main__":

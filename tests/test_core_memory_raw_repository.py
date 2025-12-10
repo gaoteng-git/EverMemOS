@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-测试 CoreMemoryRawRepository 的版本管理功能
+Test version management functionality of CoreMemoryRawRepository
 
-测试内容包括:
-1. 基于user_id的增删改查操作（支持版本管理）
-2. 版本管理相关功能测试
-3. ensure_latest 方法测试
-4. 批量查询的 only_latest 功能测试
+Test contents include:
+1. CRUD operations based on user_id (with version management support)
+2. Version management related features
+3. ensure_latest method test
+4. only_latest functionality test for batch queries
 """
 
 import asyncio
@@ -22,245 +22,245 @@ logger = get_logger(__name__)
 
 
 async def test_basic_crud_operations():
-    """测试基本的增删改查操作（带版本管理）"""
-    logger.info("开始测试基本的增删改查操作...")
+    """Test basic CRUD operations (with version management)"""
+    logger.info("Starting test for basic CRUD operations...")
 
     repo = get_bean_by_type(CoreMemoryRawRepository)
     user_id = "test_user_001"
 
     try:
-        # 先清理可能存在的测试数据
+        # First clean up any existing test data
         await repo.delete_by_user_id(user_id)
-        logger.info("✅ 清理已存在的测试数据")
+        logger.info("✅ Cleaned up existing test data")
 
-        # 测试创建新记录（必须提供version）
+        # Test creating a new record (version must be provided)
         user_data = {
             "version": "v1",
-            "user_name": "张三",
-            "gender": "男",
-            "position": "高级工程师",
-            "department": "技术部",
+            "user_name": "Zhang San",
+            "gender": "Male",
+            "position": "Senior Engineer",
+            "department": "Technology Department",
         }
 
         result = await repo.upsert_by_user_id(user_id, user_data)
         assert result is not None
         assert result.user_id == user_id
-        assert result.user_name == "张三"
+        assert result.user_name == "Zhang San"
         assert result.version == "v1"
         assert result.is_latest == True
-        logger.info("✅ 测试创建新记录成功（version=v1, is_latest=True）")
+        logger.info("✅ Successfully created new record (version=v1, is_latest=True)")
 
-        # 测试根据user_id查询（应该返回最新版本）
+        # Test querying by user_id (should return the latest version)
         queried = await repo.get_by_user_id(user_id)
         assert queried is not None
         assert queried.user_id == user_id
         assert queried.version == "v1"
         assert queried.is_latest == True
-        logger.info("✅ 测试根据user_id查询成功")
+        logger.info("✅ Successfully queried by user_id")
 
-        # 测试更新记录（不改变version）
-        update_data = {"position": "资深工程师", "department": "研发部"}
+        # Test updating record (without changing version)
+        update_data = {"position": "Senior Engineer", "department": "R&D Department"}
 
         updated = await repo.update_by_user_id(user_id, update_data)
         assert updated is not None
-        assert updated.position == "资深工程师"
-        assert updated.department == "研发部"
-        assert updated.version == "v1"  # 版本未变
-        assert updated.user_name == "张三"  # 未更新的字段应保持原值
-        logger.info("✅ 测试更新记录成功（版本未变）")
+        assert updated.position == "Senior Engineer"
+        assert updated.department == "R&D Department"
+        assert updated.version == "v1"  # Version unchanged
+        assert updated.user_name == "Zhang San"  # Unupdated fields should retain original values
+        logger.info("✅ Successfully updated record (version unchanged)")
 
-        # 测试删除特定版本
+        # Test deleting a specific version
         deleted = await repo.delete_by_user_id(user_id, version="v1")
         assert deleted is True
-        logger.info("✅ 测试删除特定版本成功")
+        logger.info("✅ Successfully deleted specific version")
 
-        # 验证删除
+        # Verify deletion
         final_check = await repo.get_by_user_id(user_id)
-        assert final_check is None, "记录应该已被删除"
-        logger.info("✅ 验证删除成功")
+        assert final_check is None, "Record should have been deleted"
+        logger.info("✅ Verified deletion success")
 
     except Exception as e:
-        logger.error("❌ 测试基本增删改查操作失败: %s", e)
+        logger.error("❌ Basic CRUD operations test failed: %s", e)
         raise
 
-    logger.info("✅ 基本增删改查操作测试完成")
+    logger.info("✅ Basic CRUD operations test completed")
 
 
 async def test_version_management():
-    """测试版本管理功能"""
-    logger.info("开始测试版本管理功能...")
+    """Test version management functionality"""
+    logger.info("Starting test for version management functionality...")
 
     repo = get_bean_by_type(CoreMemoryRawRepository)
     user_id = "test_user_version_002"
 
     try:
-        # 先清理可能存在的测试数据
+        # First clean up any existing test data
         await repo.delete_by_user_id(user_id)
-        logger.info("✅ 清理已存在的测试数据")
+        logger.info("✅ Cleaned up existing test data")
 
-        # 创建第一个版本
-        v1_data = {"version": "202501", "user_name": "李四v1", "position": "工程师"}
+        # Create first version
+        v1_data = {"version": "202501", "user_name": "Li Si v1", "position": "Engineer"}
 
         v1_result = await repo.upsert_by_user_id(user_id, v1_data)
         assert v1_result is not None
         assert v1_result.version == "202501"
         assert v1_result.is_latest == True
-        logger.info("✅ 创建版本 202501 成功，is_latest=True")
+        logger.info("✅ Successfully created version 202501, is_latest=True")
 
-        # 创建第二个版本
-        v2_data = {"version": "202502", "user_name": "李四v2", "position": "高级工程师"}
+        # Create second version
+        v2_data = {"version": "202502", "user_name": "Li Si v2", "position": "Senior Engineer"}
 
         v2_result = await repo.upsert_by_user_id(user_id, v2_data)
         assert v2_result is not None
         assert v2_result.version == "202502"
         assert v2_result.is_latest == True
-        logger.info("✅ 创建版本 202502 成功，is_latest=True")
+        logger.info("✅ Successfully created version 202502, is_latest=True")
 
-        # 创建第三个版本
-        v3_data = {"version": "202503", "user_name": "李四v3", "position": "资深工程师"}
+        # Create third version
+        v3_data = {"version": "202503", "user_name": "Li Si v3", "position": "Senior Engineer"}
 
         v3_result = await repo.upsert_by_user_id(user_id, v3_data)
         assert v3_result is not None
         assert v3_result.version == "202503"
         assert v3_result.is_latest == True
-        logger.info("✅ 创建版本 202503 成功，is_latest=True")
+        logger.info("✅ Successfully created version 202503, is_latest=True")
 
-        # 测试获取最新版本（不指定version_range）
+        # Test getting latest version (without specifying version_range)
         latest = await repo.get_by_user_id(user_id)
         assert latest is not None
         assert latest.version == "202503"
         assert latest.is_latest == True
-        logger.info("✅ 获取最新版本成功: version=202503")
+        logger.info("✅ Successfully retrieved latest version: version=202503")
 
-        # 测试版本范围查询（左闭右开）
+        # Test version range query (left-closed, right-open)
         v2_by_range = await repo.get_by_user_id(
             user_id, version_range=("202502", "202503")
         )
         assert v2_by_range is not None
         assert v2_by_range.version == "202502"
-        logger.info("✅ 版本范围查询 [202502, 202503) 成功，返回 version=202502")
+        logger.info("✅ Version range query [202502, 202503) succeeded, returned version=202502")
 
-        # 测试更新特定版本
-        update_v2 = {"position": "更新后的高级工程师"}
+        # Test updating a specific version
+        update_v2 = {"position": "Updated Senior Engineer"}
 
         updated_v2 = await repo.update_by_user_id(user_id, update_v2, version="202502")
         assert updated_v2 is not None
         assert updated_v2.version == "202502"
-        assert updated_v2.position == "更新后的高级工程师"
-        logger.info("✅ 更新特定版本 202502 成功")
+        assert updated_v2.position == "Updated Senior Engineer"
+        logger.info("✅ Successfully updated specific version 202502")
 
-        # 测试删除中间版本
+        # Test deleting a middle version
         await repo.delete_by_user_id(user_id, version="202502")
-        logger.info("✅ 删除版本 202502 成功")
+        logger.info("✅ Successfully deleted version 202502")
 
-        # 验证删除后最新版本仍然正确
+        # Verify latest version remains correct after deletion
         latest_after_delete = await repo.get_by_user_id(user_id)
         assert latest_after_delete is not None
         assert latest_after_delete.version == "202503"
         assert latest_after_delete.is_latest == True
-        logger.info("✅ 删除中间版本后，最新版本仍正确")
+        logger.info("✅ After deleting middle version, latest version is still correct")
 
-        # 清理所有版本
+        # Clean up all versions
         await repo.delete_by_user_id(user_id)
-        logger.info("✅ 清理测试数据成功")
+        logger.info("✅ Successfully cleaned up test data")
 
     except Exception as e:
-        logger.error("❌ 测试版本管理功能失败: %s", e)
+        logger.error("❌ Version management functionality test failed: %s", e)
         raise
 
-    logger.info("✅ 版本管理功能测试完成")
+    logger.info("✅ Version management functionality test completed")
 
 
 async def test_ensure_latest():
-    """测试 ensure_latest 方法"""
-    logger.info("开始测试 ensure_latest 方法...")
+    """Test ensure_latest method"""
+    logger.info("Starting test for ensure_latest method...")
 
     repo = get_bean_by_type(CoreMemoryRawRepository)
     user_id = "test_user_ensure_003"
 
     try:
-        # 先清理可能存在的测试数据
+        # First clean up any existing test data
         await repo.delete_by_user_id(user_id)
-        logger.info("✅ 清理已存在的测试数据")
+        logger.info("✅ Cleaned up existing test data")
 
-        # 创建多个版本
+        # Create multiple versions
         versions = ["202501", "202502", "202503", "202504"]
         for version in versions:
             data = {
                 "version": version,
-                "user_name": f"王五{version}",
-                "position": f"版本{version}",
+                "user_name": f"Wang Wu {version}",
+                "position": f"Version {version}",
             }
             await repo.upsert_by_user_id(user_id, data)
 
-        logger.info("✅ 创建了 4 个版本")
+        logger.info("✅ Created 4 versions")
 
-        # 手动调用 ensure_latest
+        # Manually call ensure_latest
         result = await repo.ensure_latest(user_id)
         assert result is True
-        logger.info("✅ ensure_latest 执行成功")
+        logger.info("✅ ensure_latest executed successfully")
 
-        # 验证最新版本
+        # Verify latest version
         latest = await repo.get_by_user_id(user_id)
         assert latest is not None
         assert latest.version == "202504"
         assert latest.is_latest == True
-        logger.info("✅ 验证最新版本正确: version=202504, is_latest=True")
+        logger.info("✅ Verified latest version is correct: version=202504, is_latest=True")
 
-        # 验证旧版本的 is_latest 都是 False
+        # Verify is_latest is False for old versions
         for old_version in ["202501", "202502", "202503"]:
             old_doc = await repo.get_by_user_id(
                 user_id, version_range=(old_version, str(int(old_version) + 1))
             )
             assert old_doc is not None
             assert old_doc.is_latest == False
-            logger.info("✅ 验证旧版本 %s 的 is_latest=False", old_version)
+            logger.info("✅ Verified old version %s has is_latest=False", old_version)
 
-        # 测试幂等性：再次调用 ensure_latest
+        # Test idempotency: call ensure_latest again
         result2 = await repo.ensure_latest(user_id)
         assert result2 is True
-        logger.info("✅ ensure_latest 幂等性验证成功")
+        logger.info("✅ ensure_latest idempotency verification succeeded")
 
-        # 清理测试数据
+        # Clean up test data
         await repo.delete_by_user_id(user_id)
-        logger.info("✅ 清理测试数据成功")
+        logger.info("✅ Cleaned up test data successfully")
 
     except Exception as e:
-        logger.error("❌ 测试 ensure_latest 方法失败: %s", e)
+        logger.error("❌ ensure_latest method test failed: %s", e)
         raise
 
-    logger.info("✅ ensure_latest 方法测试完成")
+    logger.info("✅ ensure_latest method test completed")
 
 
 async def test_batch_query_with_only_latest():
-    """测试批量查询的 only_latest 功能"""
-    logger.info("开始测试批量查询的 only_latest 功能...")
+    """Test only_latest functionality in batch query"""
+    logger.info("Starting test for only_latest functionality in batch query...")
 
     repo = get_bean_by_type(CoreMemoryRawRepository)
     base_user_id = "test_batch_user"
 
     try:
-        # 创建多个用户，每个用户有多个版本
+        # Create multiple users, each with multiple versions
         user_ids = [f"{base_user_id}_{i}" for i in range(1, 4)]
 
-        # 先清理
+        # First clean up
         for uid in user_ids:
             await repo.delete_by_user_id(uid)
-        logger.info("✅ 清理已存在的测试数据")
+        logger.info("✅ Cleaned up existing test data")
 
-        # 为每个用户创建多个版本
+        # Create multiple versions for each user
         for uid in user_ids:
             for version in ["202501", "202502", "202503"]:
                 data = {
                     "version": version,
                     "user_name": f"{uid}_{version}",
-                    "position": f"用户{uid}版本{version}",
+                    "position": f"User {uid} Version {version}",
                 }
                 await repo.upsert_by_user_id(uid, data)
 
-        logger.info("✅ 创建了 3 个用户，每个用户 3 个版本")
+        logger.info("✅ Created 3 users, each with 3 versions")
 
-        # 测试 only_latest=True（默认）
+        # Test only_latest=True (default)
         latest_results = await repo.find_by_user_ids(user_ids, only_latest=True)
         assert len(latest_results) == 3
 
@@ -268,48 +268,48 @@ async def test_batch_query_with_only_latest():
             assert result.version == "202503"
             assert result.is_latest == True
 
-        logger.info("✅ 批量查询 only_latest=True 成功，返回 3 个最新版本")
+        logger.info("✅ Batch query with only_latest=True succeeded, returned 3 latest versions")
 
-        # 测试 only_latest=False（返回所有版本）
+        # Test only_latest=False (return all versions)
         all_results = await repo.find_by_user_ids(user_ids, only_latest=False)
-        assert len(all_results) == 9  # 3个用户 * 3个版本
-        logger.info("✅ 批量查询 only_latest=False 成功，返回 9 个版本")
+        assert len(all_results) == 9  # 3 users * 3 versions
+        logger.info("✅ Batch query with only_latest=False succeeded, returned 9 versions")
 
-        # 清理测试数据
+        # Clean up test data
         for uid in user_ids:
             await repo.delete_by_user_id(uid)
-        logger.info("✅ 清理测试数据成功")
+        logger.info("✅ Cleaned up test data successfully")
 
     except Exception as e:
-        logger.error("❌ 测试批量查询 only_latest 功能失败: %s", e)
+        logger.error("❌ Batch query only_latest functionality test failed: %s", e)
         raise
 
-    logger.info("✅ 批量查询 only_latest 功能测试完成")
+    logger.info("✅ Batch query only_latest functionality test completed")
 
 
 async def test_profile_fields():
-    """测试 profile 相关字段"""
-    logger.info("开始测试 profile 相关字段...")
+    """Test profile related fields"""
+    logger.info("Starting test for profile related fields...")
 
     repo = get_bean_by_type(CoreMemoryRawRepository)
     user_id = "test_user_profile_005"
 
     try:
-        # 先清理
+        # First clean up
         await repo.delete_by_user_id(user_id)
 
-        # 创建包含 profile 字段的记录
+        # Create record with profile fields
         user_data = {
             "version": "v1",
-            "user_name": "测试用户",
+            "user_name": "Test User",
             "hard_skills": [
-                {"value": "Python", "level": "高级", "evidences": ["conv_001"]}
+                {"value": "Python", "level": "Advanced", "evidences": ["conv_001"]}
             ],
             "soft_skills": [
-                {"value": "沟通能力", "level": "优秀", "evidences": ["conv_002"]}
+                {"value": "Communication", "level": "Excellent", "evidences": ["conv_002"]}
             ],
-            "personality": [{"value": "内向但善于沟通", "evidences": ["conv_003"]}],
-            "interests": [{"value": "编程", "evidences": ["conv_004"]}],
+            "personality": [{"value": "Introverted but communicative", "evidences": ["conv_003"]}],
+            "interests": [{"value": "Programming", "evidences": ["conv_004"]}],
         }
 
         result = await repo.upsert_by_user_id(user_id, user_data)
@@ -317,69 +317,69 @@ async def test_profile_fields():
         assert result.hard_skills is not None
         assert len(result.hard_skills) == 1
         assert result.hard_skills[0]["value"] == "Python"
-        logger.info("✅ 创建包含 profile 字段的记录成功")
+        logger.info("✅ Successfully created record with profile fields")
 
-        # 测试 get_profile 方法
+        # Test get_profile method
         profile = repo.get_profile(result)
         assert profile is not None
         assert "hard_skills" in profile
         assert "soft_skills" in profile
         assert "personality" in profile
         assert "interests" in profile
-        logger.info("✅ get_profile 方法测试成功")
+        logger.info("✅ get_profile method test succeeded")
 
-        # 测试 get_base 方法
+        # Test get_base method
         base = repo.get_base(result)
         assert base is not None
         assert "user_name" in base
-        logger.info("✅ get_base 方法测试成功")
+        logger.info("✅ get_base method test succeeded")
 
-        # 清理
+        # Clean up
         await repo.delete_by_user_id(user_id)
-        logger.info("✅ 清理测试数据成功")
+        logger.info("✅ Cleaned up test data successfully")
 
     except Exception as e:
-        logger.error("❌ 测试 profile 字段失败: %s", e)
+        logger.error("❌ Profile fields test failed: %s", e)
         raise
 
-    logger.info("✅ profile 字段测试完成")
+    logger.info("✅ Profile fields test completed")
 
 
 async def test_create_without_version_should_fail():
-    """测试创建时不提供 version 应该失败"""
-    logger.info("开始测试创建时不提供 version 应该失败...")
+    """Test creating without providing version should fail"""
+    logger.info("Starting test for creating without version should fail...")
 
     repo = get_bean_by_type(CoreMemoryRawRepository)
     user_id = "test_no_version_006"
 
     try:
-        # 先清理
+        # First clean up
         await repo.delete_by_user_id(user_id)
 
-        # 尝试创建不带 version 的记录
-        data_without_version = {"user_name": "无版本用户", "position": "这应该失败"}
+        # Attempt to create record without version
+        data_without_version = {"user_name": "User without version", "position": "This should fail"}
 
         try:
             await repo.upsert_by_user_id(user_id, data_without_version)
-            assert False, "创建不带version的记录应该抛出异常"
+            assert False, "Creating record without version should raise an exception"
         except ValueError as e:
-            logger.info("✅ 正确抛出 ValueError: %s", str(e))
-            assert "必须提供version字段" in str(e)
+            logger.info("✅ Correctly raised ValueError: %s", str(e))
+            assert "Version field must be provided" in str(e)
 
-        logger.info("✅ 创建时不提供 version 正确失败")
+        logger.info("✅ Creating without version correctly failed")
 
     except AssertionError:
         raise
     except Exception as e:
-        logger.error("❌ 测试创建不带version失败: %s", e)
+        logger.error("❌ Test for creating without version failed: %s", e)
         raise
 
-    logger.info("✅ 创建不带version测试完成")
+    logger.info("✅ Test for creating without version completed")
 
 
 async def run_all_tests():
-    """运行所有测试"""
-    logger.info("🚀 开始运行 CoreMemory 所有测试...")
+    """Run all tests"""
+    logger.info("🚀 Starting all CoreMemory tests...")
 
     try:
         await test_basic_crud_operations()
@@ -388,9 +388,9 @@ async def run_all_tests():
         await test_batch_query_with_only_latest()
         await test_profile_fields()
         await test_create_without_version_should_fail()
-        logger.info("✅ 所有测试完成")
+        logger.info("✅ All tests completed")
     except Exception as e:
-        logger.error("❌ 测试过程中出现错误: %s", e)
+        logger.error("❌ Error occurred during testing: %s", e)
         raise
 
 

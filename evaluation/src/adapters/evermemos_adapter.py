@@ -74,7 +74,7 @@ class EverMemOSAdapter(BaseAdapter):
             max_tokens=llm_config.get("max_tokens", 32768),
         )
 
-        # 初始化 Event Log Extractor
+        # Initialize Event Log Extractor
         self.event_log_extractor = EventLogExtractor(
             llm_provider=self.llm_provider,
         )

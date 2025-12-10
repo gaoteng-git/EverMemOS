@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-测试 ConversationStatusRawRepository 的功能
+Test the functionality of ConversationStatusRawRepository
 
-测试内容包括:
-1. 基于group_id的查询和更新操作
-2. 统计方法
+Test contents include:
+1. Query and update operations based on group_id
+2. Statistical methods
 """
 
 import asyncio
@@ -23,20 +23,20 @@ logger = get_logger(__name__)
 
 
 def compare_datetime(dt1: datetime, dt2: datetime) -> bool:
-    """比较两个datetime对象，只比较到秒级精度"""
+    """Compare two datetime objects, only up to second-level precision"""
     return dt1.replace(microsecond=0) == dt2.replace(microsecond=0)
 
 
 async def test_group_operations():
-    """测试群组相关操作"""
-    logger.info("开始测试群组相关操作...")
+    """Test group-related operations"""
+    logger.info("Starting test for group-related operations...")
 
     repo = get_bean_by_type(ConversationStatusRawRepository)
     group_id = "test_group_001"
     current_time = get_now_with_timezone()
 
     try:
-        # 测试 upsert (创建新记录)
+        # Test upsert (create new record)
         update_data = {
             "old_msg_start_time": current_time,
             "new_msg_start_time": current_time,
@@ -46,17 +46,17 @@ async def test_group_operations():
         result = await repo.upsert_by_group_id(group_id, update_data)
         assert result is not None
         assert result.group_id == group_id
-        logger.info("✅ 测试upsert创建新记录成功")
+        logger.info("✅ Test upsert to create new record succeeded")
 
-        # 测试根据group_id查询
+        # Test querying by group_id
         queried = await repo.get_by_group_id(group_id)
         assert queried is not None
         assert queried.group_id == group_id
         assert compare_datetime(queried.old_msg_start_time, current_time)
         assert compare_datetime(queried.new_msg_start_time, current_time)
-        logger.info("✅ 测试根据group_id查询成功")
+        logger.info("✅ Test querying by group_id succeeded")
 
-        # 测试 upsert (更新现有记录)
+        # Test upsert (update existing record)
         new_time = get_now_with_timezone()
         update_data = {"old_msg_start_time": new_time, "new_msg_start_time": new_time}
 
@@ -66,43 +66,43 @@ async def test_group_operations():
         assert compare_datetime(updated.new_msg_start_time, new_time)
         assert compare_datetime(
             updated.last_memcell_time, current_time
-        )  # 未更新的字段应保持原值
-        logger.info("✅ 测试upsert更新现有记录成功")
+        )  # Fields not updated should retain original values
+        logger.info("✅ Test upsert to update existing record succeeded")
 
-        # 再次查询验证更新
+        # Query again to verify update
         queried_again = await repo.get_by_group_id(group_id)
         assert queried_again is not None
         assert compare_datetime(queried_again.old_msg_start_time, new_time)
         assert compare_datetime(queried_again.new_msg_start_time, new_time)
         assert compare_datetime(queried_again.last_memcell_time, current_time)
-        logger.info("✅ 验证更新结果成功")
+        logger.info("✅ Verified update result successfully")
 
-        # 清理测试数据
+        # Clean up test data
         await queried_again.delete()
-        logger.info("✅ 清理测试数据成功")
+        logger.info("✅ Cleaned up test data successfully")
 
-        # 验证删除
+        # Verify deletion
         final_check = await repo.get_by_group_id(group_id)
-        assert final_check is None, "记录应该已被删除"
-        logger.info("✅ 验证删除成功")
+        assert final_check is None, "Record should have been deleted"
+        logger.info("✅ Verified deletion successfully")
 
     except Exception as e:
-        logger.error("❌ 测试群组相关操作失败: %s", e)
+        logger.error("❌ Test for group-related operations failed: %s", e)
         raise
 
-    logger.info("✅ 群组相关操作测试完成")
+    logger.info("✅ Group-related operations test completed")
 
 
 async def test_statistics():
-    """测试统计方法"""
-    logger.info("开始测试统计方法...")
+    """Test statistical methods"""
+    logger.info("Starting test for statistical methods...")
 
     repo = get_bean_by_type(ConversationStatusRawRepository)
     base_group_id = "test_group_stats"
     current_time = get_now_with_timezone()
 
     try:
-        # 创建多条测试记录
+        # Create multiple test records
         test_records = []
         for i in range(3):
             group_id = f"{base_group_id}_{i}"
@@ -115,83 +115,83 @@ async def test_statistics():
                 },
             )
             test_records.append(result)
-        logger.info("✅ 创建测试记录成功")
+        logger.info("✅ Created test records successfully")
 
-        # 测试群组记录计数
+        # Test group record count
         count = await repo.count_by_group_id(
             f"{base_group_id}_0"
-        )  # 测试第一个群组的计数
-        assert count == 1, "应该有1条记录，实际有%d条" % count
-        logger.info("✅ 测试群组记录计数成功")
+        )  # Test count for the first group
+        assert count == 1, "Should have 1 record, actually has %d records" % count
+        logger.info("✅ Test group record count succeeded")
 
-        # 测试总记录计数
+        # Test total record count
         total = await repo.count_all()
-        assert total >= 3, "总记录数应该至少为3，实际为%d" % total
-        logger.info("✅ 测试总记录计数成功")
+        assert total >= 3, "Total record count should be at least 3, actually is %d" % total
+        logger.info("✅ Test total record count succeeded")
 
-        # 清理测试数据
+        # Clean up test data
         for record in test_records:
             await record.delete()
-        logger.info("✅ 清理测试数据成功")
+        logger.info("✅ Cleaned up test data successfully")
 
     except Exception as e:
-        logger.error("❌ 测试统计方法失败: %s", e)
+        logger.error("❌ Test for statistical methods failed: %s", e)
         raise
 
-    logger.info("✅ 统计方法测试完成")
+    logger.info("✅ Statistical methods test completed")
 
 
 async def test_timezone_handling():
-    """测试不同时区的datetime处理"""
-    logger.info("开始测试时区处理...")
+    """Test datetime handling in different time zones"""
+    logger.info("Starting test for time zone handling...")
 
     repo = get_bean_by_type(ConversationStatusRawRepository)
     group_id = "test_timezone_001"
 
     try:
-        # 创建UTC时间
+        # Create UTC time
         utc_time = datetime.now(ZoneInfo("UTC"))
-        # 创建东京时间
+        # Create Tokyo time
         tokyo_time = datetime.now(ZoneInfo("Asia/Tokyo"))
 
         shanghai_time = datetime.now()
 
-        # 使用两个不同时区的时间创建记录
+        # Create record using times from different time zones
         update_data = {
             "old_msg_start_time": utc_time,
             "new_msg_start_time": tokyo_time,
-            "last_memcell_time": shanghai_time,  # 使用默认的上海时区
+            "last_memcell_time": shanghai_time,  # Use default Shanghai time zone
         }
 
-        # 记录原始时间的ISO格式，用于比较
-        logger.info("原始UTC时间: %s", to_iso_format(utc_time))
-        logger.info("原始东京时间: %s", to_iso_format(tokyo_time))
-        logger.info("原始上海时间: %s", to_iso_format(shanghai_time))
+        # Record original time in ISO format for comparison
+        logger.info("Original UTC time: %s", to_iso_format(utc_time))
+        logger.info("Original Tokyo time: %s", to_iso_format(tokyo_time))
+        logger.info("Original Shanghai time: %s", to_iso_format(shanghai_time))
 
-        # 插入数据库
+        # Insert into database
         result = await repo.upsert_by_group_id(group_id, update_data)
         assert result is not None
-        logger.info("✅ 插入不同时区的时间记录成功")
+        logger.info("✅ Inserted record with different time zones successfully")
 
-        # 从数据库获取并验证
+        # Retrieve from database and verify
         queried = await repo.get_by_group_id(group_id)
         assert queried is not None
 
-        # 输出获取的时间信息
-        logger.info("从数据库获取的时间:")
+        # Output retrieved time information
+        logger.info("Times retrieved from database:")
         logger.info(
-            "old_msg_start_time (原UTC): %s", to_iso_format(queried.old_msg_start_time)
+            "old_msg_start_time (original UTC): %s", to_iso_format(queried.old_msg_start_time)
         )
         logger.info(
-            "new_msg_start_time (原Tokyo): %s",
+            "new_msg_start_time (original Tokyo): %s",
             to_iso_format(queried.new_msg_start_time),
         )
         logger.info(
-            "last_memcell_time (原Shanghai): %s",
+            "last_memcell_time (original Shanghai): %s",
             to_iso_format(queried.last_memcell_time),
         )
 
-        # 验证时间是否正确（转换到同一时区后应该相等）
+        # Verify times are correct (should be equal when converted to the same time zone)
         assert queried.old_msg_start_time.astimezone(ZoneInfo("UTC")).replace(
             microsecond=0
         ) == utc_time.replace(microsecond=0)
@@ -201,30 +201,30 @@ async def test_timezone_handling():
         assert queried.last_memcell_time.replace(tzinfo=None).replace(
             microsecond=0
         ) == shanghai_time.replace(microsecond=0)
-        logger.info("✅ 时区验证成功")
+        logger.info("✅ Time zone validation succeeded")
 
-        # 清理测试数据
+        # Clean up test data
         # await queried.delete()
-        logger.info("✅ 清理测试数据成功")
+        logger.info("✅ Cleaned up test data successfully")
 
     except Exception as e:
-        logger.error("❌ 测试时区处理失败: %s", e)
+        logger.error("❌ Test for time zone handling failed: %s", e)
         raise
 
-    logger.info("✅ 时区处理测试完成")
+    logger.info("✅ Time zone handling test completed")
 
 
 async def run_all_tests():
-    """运行所有测试"""
-    logger.info("🚀 开始运行所有测试...")
+    """Run all tests"""
+    logger.info("🚀 Starting to run all tests...")
 
     try:
         await test_group_operations()
         await test_statistics()
         await test_timezone_handling()
-        logger.info("✅ 所有测试完成")
+        logger.info("✅ All tests completed")
     except Exception as e:
-        logger.error("❌ 测试过程中出现错误: %s", e)
+        logger.error("❌ Error occurred during testing: %s", e)
         raise
 
 

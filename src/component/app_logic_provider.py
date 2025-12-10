@@ -5,79 +5,162 @@ from fastapi import Request
 
 from core.di.decorators import component
 from core.observation.logger import get_logger
+from core.context.context import get_current_app_info, get_current_request
 
 logger = get_logger(__name__)
+
+# Default blocking wait timeout (seconds)
+DEFAULT_BLOCKING_TIMEOUT = 5.0
 
 
 class AppLogicProvider(ABC):
     """
-    应用逻辑提供者接口
+    Application logic provider interface
 
-    负责从请求中提取应用级别的上下文信息及处理应用逻辑。
-    提供请求生命周期的钩子方法：
-    - on_request_begin(): 请求开始时调用
-    - on_request_complete(): 请求结束时调用（可选实现）
+    Responsible for extracting application-level context information from requests and handling application logic.
+    Provides hooks for the request lifecycle:
+    - should_process_request(): Determines whether the request needs processing (used for filtering)
+    - setup_app_context(): Extracts and sets application context (called first by middleware)
+    - on_request_begin(): Called when the request begins (business logic, e.g., event dispatching)
+    - on_request_complete(): Called when the request ends (optional implementation)
+
+    Helper methods (retrieve from context):
+    - get_current_request_id(): Get the current request's request_id
+    - get_current_request(): Get the current request object
+    - get_current_app_info(): Get current application information
     """
 
-    @abstractmethod
-    async def on_request_begin(self, request: Request) -> Dict[str, Any]:
+    def should_process_request(self, request: Request) -> bool:
         """
-        请求开始时的回调方法
+        Determine whether the request needs business logic processing
 
-        处理请求并提供应用级别的上下文数据，例如：
-        - 提取 request_id
-        - 设置租户上下文
-        - 投递请求开始事件
+        Used to filter requests and decide whether to execute:
+        - on_request_begin() callback
+        - on_request_complete() callback
+
+        Note: setup_app_context() is not affected by this method and is called on every request.
+
+        Subclasses can override this method to implement custom filtering logic,
+        for example, only processing requests under /api/ routes.
 
         Args:
-            request: FastAPI请求对象
+            request: FastAPI request object
 
         Returns:
-            Dict[str, Any]: 包含所有上下文数据的字典（app_info）
+            bool: True means process, False means skip
+        """
+        # Default: process all requests
+        return True
+
+    @abstractmethod
+    def setup_app_context(self, request: Request) -> Dict[str, Any]:
+        """
+        Extract and set application context
+
+        Extract all context-related data from the request, for example:
+        - Record request start time
+        - Extract request_id, hash_key
+        - Set tenant context
+
+        This method is called first by middleware, before on_request_begin.
+
+        Args:
+            request: FastAPI request object
+
+        Returns:
+            Dict[str, Any]: app_info dictionary containing context data
         """
         raise NotImplementedError
 
-    async def on_request_complete(
-        self,
-        request: Request,
-        app_info: Dict[str, Any],
-        http_code: int,
-        error_message: Optional[str] = None,
-    ) -> None:
+    async def on_request_begin(self, request: Request) -> None:
         """
-        请求完成时的回调方法（可选实现）
+        Callback method when request begins
 
-        子类可以重写此方法来处理请求完成后的逻辑，
-        例如：记录请求日志、投递事件等。
+        Used to handle business logic at the start of a request, for example:
+        - Dispatching request start event
+
+        Note: Context data has already been set by setup_app_context(),
+        and can be retrieved via self.get_current_app_info().
 
         Args:
-            request: FastAPI 请求对象
-            app_info: 应用信息字典，包含 on_request_begin() 返回的数据
-            http_code: HTTP 响应状态码
-            error_message: 错误信息（可选）
+            request: FastAPI request object
         """
-        # 默认实现为空，子类可选择性重写
-        _ = (request, app_info, http_code, error_message)  # 避免未使用参数警告
+        # Default implementation is empty; subclasses may optionally override
+        _ = request  # Avoid unused parameter warning
+
+    async def on_request_complete(
+        self, request: Request, http_code: int, error_message: Optional[str] = None
+    ) -> None:
+        """
+        Callback method when request completes (optional implementation)
+
+        Subclasses can override this method to handle post-request logic,
+        for example: logging request details, dispatching events, etc.
+
+        Note: Current app_info set in setup_app_context() or on_request_begin() can be retrieved via self.get_current_app_info().
+
+        Args:
+            request: FastAPI request object
+            http_code: HTTP response status code
+            error_message: Error message (optional)
+        """
+        # Default implementation is empty; subclasses may optionally override
+        _ = (request, http_code, error_message)  # Avoid unused parameter warning
+
+    def get_current_request_id(self) -> str:
+        """
+        Get the current request's request_id
+
+        Retrieve app_info from context, then extract request_id.
+
+        Returns:
+            str: Current request's request_id, returns "unknown" if not set
+        """
+        app_info = get_current_app_info()
+        if app_info:
+            return app_info.get("request_id", "unknown")
+        return "unknown"
+
+    def get_current_request(self) -> Optional[Request]:
+        """
+        Get the current request object
+
+        Retrieve request from context.
+
+        Returns:
+            Optional[Request]: Current request object, returns None if not set
+        """
+        return get_current_request()
+
+    def get_current_app_info(self) -> Optional[Dict[str, Any]]:
+        """
+        Get current application information
+
+        Retrieve app_info from context.
+
+        Returns:
+            Optional[Dict[str, Any]]: Current application information, returns None if not set
+        """
+        return get_current_app_info()
 
 
 @component(name="app_logic_provider")
 class AppLogicProviderImpl(AppLogicProvider):
-    """应用逻辑提供者实现，负责从请求中提取应用级别的上下文信息"""
+    """Application logic provider implementation, responsible for extracting application-level context information from requests"""
 
-    async def on_request_begin(self, request: Request) -> Dict[str, Any]:
+    def setup_app_context(self, request: Request) -> Dict[str, Any]:
         """
-        请求开始时的回调方法
+        Extract and set application context
 
         Args:
-            request: FastAPI请求对象
+            request: FastAPI request object
 
         Returns:
-            Dict[str, Any]: 包含所有上下文数据的字典，包括request_id
+            Dict[str, Any]: app_info dictionary containing context data
         """
-        # 创建新的app_info字典
-        app_info = {}
+        app_info: Dict[str, Any] = {}
 
-        # 从请求头中获取request_id，优先X-Request-Id，兼容小写
+        # Get request_id from request headers, prioritize X-Request-Id, fallback to lowercase
         request_id = request.headers.get('X-Request-Id') or request.headers.get(
             'x-request-id'
         )

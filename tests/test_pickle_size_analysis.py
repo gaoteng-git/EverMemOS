@@ -1,13 +1,13 @@
 """
-Pickle 序列化大小分析测试
+Pickle Serialization Size Analysis Test
 
-测试各种类型和大小的对象在 Pickle 序列化后的二进制大小
-包括：
-1. 基础数据类型大小分析
-2. 复杂对象大小分析
-3. 大型数据结构大小分析
-4. 函数和类对象大小分析
-5. 嵌套结构大小分析
+Test the binary size of various types and sizes of objects after Pickle serialization
+Including:
+1. Basic data type size analysis
+2. Complex object size analysis
+3. Large data structure size analysis
+4. Function and class object size analysis
+5. Nested structure size analysis
 """
 
 import asyncio
@@ -24,7 +24,7 @@ logger = get_logger(__name__)
 
 
 def format_size(size_bytes: int) -> str:
-    """格式化字节大小为可读格式"""
+    """Format byte size into human-readable format"""
     if size_bytes < 1024:
         return f"{size_bytes} B"
     elif size_bytes < 1024 * 1024:
@@ -34,7 +34,7 @@ def format_size(size_bytes: int) -> str:
 
 
 class ComplexTestObject:
-    """复杂测试对象"""
+    """Complex test object"""
 
     def __init__(self, name: str, data_size: int):
         self.name = name
@@ -52,7 +52,7 @@ class ComplexTestObject:
                 ],
             },
         }
-        # 使用不能JSON序列化的数据类型
+        # Use data types that cannot be JSON serialized
         self.complex_types = {
             "set_data": {1, 2, 3, 4, 5},
             "bytes_data": b"binary_data_example",
@@ -73,11 +73,11 @@ class ComplexTestObject:
 
 
 class LargeDataContainer:
-    """大型数据容器"""
+    """Large data container"""
 
     def __init__(self, size_mb: float):
-        # 创建指定大小的数据
-        target_size = int(size_mb * 1024 * 1024 / 8)  # 假设每个数字8字节
+        # Create data of specified size
+        target_size = int(size_mb * 1024 * 1024 / 8)  # Assume each number is 8 bytes
         self.large_list = list(range(target_size))
         self.large_dict = {
             f"key_{i}": f"value_{i}_{'x' * 100}" for i in range(target_size // 100)
@@ -90,37 +90,37 @@ class LargeDataContainer:
 
 
 async def test_basic_types_size():
-    """测试基础数据类型的序列化大小"""
-    logger.info("开始测试基础数据类型序列化大小...")
+    """Test serialization size of basic data types"""
+    logger.info("Starting test for basic data type serialization size...")
 
     test_data = {
-        "空字符串": "",
-        "短字符串": "hello",
-        "中等字符串": "x" * 100,
-        "长字符串": "x" * 1000,
-        "超长字符串": "x" * 10000,
-        "小整数": 42,
-        "大整数": 123456789012345,
-        "浮点数": 3.14159265359,
-        "布尔值True": True,
-        "布尔值False": False,
+        "Empty string": "",
+        "Short string": "hello",
+        "Medium string": "x" * 100,
+        "Long string": "x" * 1000,
+        "Very long string": "x" * 10000,
+        "Small integer": 42,
+        "Large integer": 123456789012345,
+        "Float": 3.14159265359,
+        "Boolean True": True,
+        "Boolean False": False,
         "None": None,
-        "空列表": [],
-        "小列表": [1, 2, 3],
-        "中等列表": list(range(100)),
-        "大列表": list(range(1000)),
-        "空字典": {},
-        "小字典": {"a": 1, "b": 2, "c": 3},
-        "中等字典": {f"key_{i}": i for i in range(100)},
-        "大字典": {f"key_{i}": f"value_{i}" for i in range(1000)},
+        "Empty list": [],
+        "Small list": [1, 2, 3],
+        "Medium list": list(range(100)),
+        "Large list": list(range(1000)),
+        "Empty dict": {},
+        "Small dict": {"a": 1, "b": 2, "c": 3},
+        "Medium dict": {f"key_{i}": i for i in range(100)},
+        "Large dict": {f"key_{i}": f"value_{i}" for i in range(1000)},
     }
 
     logger.info("=" * 60)
-    logger.info("基础数据类型 Pickle 序列化大小分析")
+    logger.info("Basic Data Type Pickle Serialization Size Analysis")
     logger.info("=" * 60)
 
     for name, data in test_data.items():
-        # JSON序列化大小（如果可能）
+        # JSON serialization size (if possible)
         json_size = "N/A"
         try:
             import json
@@ -128,13 +128,13 @@ async def test_basic_types_size():
             json_data = json.dumps(data, ensure_ascii=False)
             json_size = format_size(len(json_data.encode('utf-8')))
         except (TypeError, ValueError):
-            json_size = "无法JSON序列化"
+            json_size = "Cannot be JSON serialized"
 
-        # Pickle序列化大小
+        # Pickle serialization size
         pickle_data = pickle.dumps(data)
         pickle_size = format_size(len(pickle_data))
 
-        # 使用RedisDataProcessor处理
+        # Process using RedisDataProcessor
         processed_data = RedisDataProcessor.serialize_data(data)
         if isinstance(processed_data, bytes):
             processed_size = format_size(len(processed_data))
@@ -144,7 +144,7 @@ async def test_basic_types_size():
             serialization_type = "JSON"
 
         logger.info(
-            "%-15s | JSON: %-12s | Pickle: %-12s | 处理器: %-12s (%s)",
+            "%-15s | JSON: %-12s | Pickle: %-12s | Processor: %-12s (%s)",
             name,
             json_size,
             pickle_size,
@@ -152,85 +152,85 @@ async def test_basic_types_size():
             serialization_type,
         )
 
-    logger.info("✅ 基础数据类型大小分析完成")
+    logger.info("✅ Basic data type size analysis completed")
 
 
 async def test_complex_objects_size():
-    """测试复杂对象的序列化大小"""
-    logger.info("开始测试复杂对象序列化大小...")
+    """Test serialization size of complex objects"""
+    logger.info("Starting test for complex object serialization size...")
 
     test_objects = [
-        ("小型复杂对象", ComplexTestObject("small", 10)),
-        ("中型复杂对象", ComplexTestObject("medium", 100)),
-        ("大型复杂对象", ComplexTestObject("large", 1000)),
-        ("超大复杂对象", ComplexTestObject("xlarge", 10000)),
+        ("Small complex object", ComplexTestObject("small", 10)),
+        ("Medium complex object", ComplexTestObject("medium", 100)),
+        ("Large complex object", ComplexTestObject("large", 1000)),
+        ("Extra large complex object", ComplexTestObject("xlarge", 10000)),
     ]
 
     logger.info("=" * 60)
-    logger.info("复杂对象 Pickle 序列化大小分析")
+    logger.info("Complex Object Pickle Serialization Size Analysis")
     logger.info("=" * 60)
 
     for name, obj in test_objects:
-        # Pickle序列化
+        # Pickle serialization
         pickle_data = pickle.dumps(obj)
         pickle_size = format_size(len(pickle_data))
 
-        # 使用RedisDataProcessor处理
+        # Process using RedisDataProcessor
         processed_data = RedisDataProcessor.serialize_data(obj)
         processed_size = format_size(len(processed_data))
 
-        # 对象内存大小估算
+        # Estimate object memory usage
         obj_memory = format_size(
             sys.getsizeof(obj) + sys.getsizeof(obj.data) + sys.getsizeof(obj.metadata)
         )
 
         logger.info(
-            "%-15s | 内存: %-12s | Pickle: %-12s | 处理器: %-12s",
+            "%-15s | Memory: %-12s | Pickle: %-12s | Processor: %-12s",
             name,
             obj_memory,
             pickle_size,
             processed_size,
         )
 
-    logger.info("✅ 复杂对象大小分析完成")
+    logger.info("✅ Complex object size analysis completed")
 
 
 async def test_large_data_structures():
-    """测试大型数据结构的序列化大小"""
-    logger.info("开始测试大型数据结构序列化大小...")
+    """Test serialization size of large data structures"""
+    logger.info("Starting test for large data structure serialization size...")
 
     logger.info("=" * 60)
-    logger.info("大型数据结构 Pickle 序列化大小分析")
+    logger.info("Large Data Structure Pickle Serialization Size Analysis")
     logger.info("=" * 60)
 
-    # 测试不同大小的数据结构
+    # Test data structures of different sizes
     sizes = [0.1, 0.5, 1.0, 2.0, 5.0]  # MB
 
     for size_mb in sizes:
-        logger.info(f"测试 {size_mb} MB 数据容器...")
+        logger.info(f"Testing {size_mb} MB data container...")
 
         try:
-            # 创建大型数据容器
+            # Create large data container
             container = LargeDataContainer(size_mb)
 
-            # Pickle序列化
+            # Pickle serialization
             start_time = time.time()
             pickle_data = pickle.dumps(container)
             pickle_time = time.time() - start_time
             pickle_size = format_size(len(pickle_data))
 
-            # 使用RedisDataProcessor处理
+            # Process using RedisDataProcessor
             start_time = time.time()
             processed_data = RedisDataProcessor.serialize_data(container)
             process_time = time.time() - start_time
             processed_size = format_size(len(processed_data))
 
-            # 压缩率计算
+            # Compression ratio calculation
             original_estimate = size_mb * 1024 * 1024
             compression_ratio = len(pickle_data) / original_estimate
 
             logger.info(
-                "%-8s MB | Pickle: %-12s (%.2fs) | 处理器: %-12s (%.2fs) | 压缩率: %.2f",
+                "%-8s MB | Pickle: %-12s (%.2fs) | Processor: %-12s (%.2fs) | Compression ratio: %.2f",
                 f"{size_mb:.1f}",
                 pickle_size,
                 pickle_time,
@@ -240,23 +240,23 @@ async def test_large_data_structures():
             )
 
         except MemoryError:
-            logger.warning("%-8s MB | 内存不足，跳过测试", f"{size_mb:.1f}")
+            logger.warning("%-8s MB | Insufficient memory, skipping test", f"{size_mb:.1f}")
         except Exception as e:
-            logger.error("%-8s MB | 测试失败: %s", f"{size_mb:.1f}", str(e))
+            logger.error("%-8s MB | Test failed: %s", f"{size_mb:.1f}", str(e))
 
-    logger.info("✅ 大型数据结构大小分析完成")
+    logger.info("✅ Large data structure size analysis completed")
 
 
 async def test_function_and_class_objects():
-    """测试函数和类对象的序列化大小"""
-    logger.info("开始测试函数和类对象序列化大小...")
+    """Test serialization size of function and class objects"""
+    logger.info("Starting test for function and class object serialization size...")
 
-    # 各种函数和类对象
+    # Various functions and class objects
     def simple_function(x):
         return x * 2
 
     def complex_function(x, y, z=10):
-        """复杂函数with文档字符串"""
+        """Complex function with docstring"""
         result = x + y + z
         for i in range(100):
             result += i
@@ -270,7 +270,7 @@ async def test_function_and_class_objects():
             return self.value * 2
 
     class ComplexClass:
-        """复杂类with多个方法"""
+        """Complex class with multiple methods"""
 
         class_var = "shared_data"
 
@@ -294,12 +294,12 @@ async def test_function_and_class_objects():
             return cls.class_var
 
     test_objects = [
-        ("简单函数", simple_function),
-        ("复杂函数", complex_function),
-        ("简单类实例", SimpleClass(42)),
-        ("复杂类实例", ComplexClass("test", list(range(100)))),
+        ("Simple function", simple_function),
+        ("Complex function", complex_function),
+        ("Simple class instance", SimpleClass(42)),
+        ("Complex class instance", ComplexClass("test", list(range(100)))),
         (
-            "包含set的字典",
+            "Dictionary containing set",
             {
                 "set_data": {1, 2, 3, 4, 5},
                 "bytes_data": b"function_test_binary",
@@ -307,7 +307,7 @@ async def test_function_and_class_objects():
             },
         ),
         (
-            "混合对象",
+            "Mixed object",
             {
                 "functions": [simple_function, complex_function],
                 "objects": [SimpleClass(i) for i in range(10)],
@@ -322,24 +322,24 @@ async def test_function_and_class_objects():
     ]
 
     logger.info("=" * 60)
-    logger.info("函数和类对象 Pickle 序列化大小分析")
+    logger.info("Function and Class Object Pickle Serialization Size Analysis")
     logger.info("=" * 60)
 
     for name, obj in test_objects:
         try:
-            # Pickle序列化
+            # Pickle serialization
             pickle_data = pickle.dumps(obj)
             pickle_size = format_size(len(pickle_data))
 
-            # 使用RedisDataProcessor处理
+            # Process using RedisDataProcessor
             processed_data = RedisDataProcessor.serialize_data(obj)
             processed_size = format_size(len(processed_data))
 
-            # 对象内存大小
+            # Object memory usage
             obj_memory = format_size(sys.getsizeof(obj))
 
             logger.info(
-                "%-15s | 内存: %-12s | Pickle: %-12s | 处理器: %-12s",
+                "%-15s | Memory: %-12s | Pickle: %-12s | Processor: %-12s",
                 name,
                 obj_memory,
                 pickle_size,
@@ -347,39 +347,39 @@ async def test_function_and_class_objects():
             )
 
         except Exception as e:
-            logger.error("%-15s | 序列化失败: %s", name, str(e))
+            logger.error("%-15s | Serialization failed: %s", name, str(e))
 
-    logger.info("✅ 函数和类对象大小分析完成")
+    logger.info("✅ Function and class object size analysis completed")
 
 
 async def test_nested_structures():
-    """测试嵌套结构的序列化大小"""
-    logger.info("开始测试嵌套结构序列化大小...")
+    """Test serialization size of nested structures"""
+    logger.info("Starting test for nested structure serialization size...")
 
-    # 创建不同深度的嵌套结构
+    # Create nested structures of different depths
     def create_nested_dict(depth: int, width: int = 3):
-        """创建指定深度和宽度的嵌套字典"""
+        """Create nested dictionary with specified depth and width"""
         if depth == 0:
             return f"leaf_value_{width}"
 
         return {f"key_{i}": create_nested_dict(depth - 1, width) for i in range(width)}
 
     def create_nested_list(depth: int, width: int = 3):
-        """创建指定深度和宽度的嵌套列表"""
+        """Create nested list with specified depth and width"""
         if depth == 0:
             return f"leaf_{width}"
 
         return [create_nested_list(depth - 1, width) for _ in range(width)]
 
     test_structures = [
-        ("嵌套字典-深度2", create_nested_dict(2, 3)),
-        ("嵌套字典-深度3", create_nested_dict(3, 3)),
-        ("嵌套字典-深度4", create_nested_dict(4, 2)),
-        ("嵌套列表-深度2", create_nested_list(2, 3)),
-        ("嵌套列表-深度3", create_nested_list(3, 3)),
-        ("嵌套列表-深度4", create_nested_list(4, 2)),
+        ("Nested dict - depth 2", create_nested_dict(2, 3)),
+        ("Nested dict - depth 3", create_nested_dict(3, 3)),
+        ("Nested dict - depth 4", create_nested_dict(4, 2)),
+        ("Nested list - depth 2", create_nested_list(2, 3)),
+        ("Nested list - depth 3", create_nested_list(3, 3)),
+        ("Nested list - depth 4", create_nested_list(4, 2)),
         (
-            "混合嵌套",
+            "Mixed nesting",
             {
                 "dict_part": create_nested_dict(3, 2),
                 "list_part": create_nested_list(3, 2),
@@ -394,25 +394,25 @@ async def test_nested_structures():
     ]
 
     logger.info("=" * 60)
-    logger.info("嵌套结构 Pickle 序列化大小分析")
+    logger.info("Nested Structure Pickle Serialization Size Analysis")
     logger.info("=" * 60)
 
     for name, structure in test_structures:
         try:
-            # Pickle序列化
+            # Pickle serialization
             start_time = time.time()
             pickle_data = pickle.dumps(structure)
             pickle_time = time.time() - start_time
             pickle_size = format_size(len(pickle_data))
 
-            # 使用RedisDataProcessor处理
+            # Process using RedisDataProcessor
             start_time = time.time()
             processed_data = RedisDataProcessor.serialize_data(structure)
             process_time = time.time() - start_time
             processed_size = format_size(len(processed_data))
 
             logger.info(
-                "%-20s | Pickle: %-12s (%.3fs) | 处理器: %-12s (%.3fs)",
+                "%-20s | Pickle: %-12s (%.3fs) | Processor: %-12s (%.3fs)",
                 name,
                 pickle_size,
                 pickle_time,
@@ -421,14 +421,14 @@ async def test_nested_structures():
             )
 
         except Exception as e:
-            logger.error("%-20s | 序列化失败: %s", name, str(e))
+            logger.error("%-20s | Serialization failed: %s", name, str(e))
 
-    logger.info("✅ 嵌套结构大小分析完成")
+    logger.info("✅ Nested structure size analysis completed")
 
 
 async def test_redis_storage_efficiency():
-    """测试Redis存储效率"""
-    logger.info("开始测试Redis存储效率...")
+    """Test Redis storage efficiency"""
+    logger.info("Starting test for Redis storage efficiency...")
 
     factory = get_bean("redis_length_cache_factory")
     cache = await factory.create_cache_manager(max_length=1000, expire_minutes=10)
@@ -436,20 +436,20 @@ async def test_redis_storage_efficiency():
     test_key = "pickle_size_test"
     await cache.clear_queue(test_key)
 
-    # 测试数据
+    # Test data
     test_data = [
-        ("小JSON对象", {"name": "test", "value": 123}),
-        ("大JSON对象", {"data": list(range(1000)), "metadata": {"type": "large"}}),
-        ("小Pickle对象", ComplexTestObject("small", 10)),
-        ("大Pickle对象", ComplexTestObject("large", 1000)),
+        ("Small JSON object", {"name": "test", "value": 123}),
+        ("Large JSON object", {"data": list(range(1000)), "metadata": {"type": "large"}}),
+        ("Small Pickle object", ComplexTestObject("small", 10)),
+        ("Large Pickle object", ComplexTestObject("large", 1000)),
     ]
 
     logger.info("=" * 60)
-    logger.info("Redis 存储效率分析")
+    logger.info("Redis Storage Efficiency Analysis")
     logger.info("=" * 60)
 
     for name, data in test_data:
-        # 序列化大小
+        # Serialization size
         processed_data = RedisDataProcessor.process_data_for_storage(data)
         storage_size = (
             len(processed_data)
@@ -457,19 +457,19 @@ async def test_redis_storage_efficiency():
             else len(processed_data.encode('utf-8'))
         )
 
-        # 存储到Redis
+        # Store to Redis
         start_time = time.time()
         success = await cache.append(test_key, data)
         store_time = time.time() - start_time
 
-        # 从Redis读取
+        # Read from Redis
         start_time = time.time()
         retrieved_data = await cache.get_by_timestamp_range(test_key, limit=1)
         read_time = time.time() - start_time
 
         if success and retrieved_data:
             logger.info(
-                "%-15s | 存储: %-12s | 写入: %.3fs | 读取: %.3fs | 状态: ✅",
+                "%-15s | Storage: %-12s | Write: %.3fs | Read: %.3fs | Status: ✅",
                 name,
                 format_size(storage_size),
                 store_time,
@@ -477,19 +477,19 @@ async def test_redis_storage_efficiency():
             )
         else:
             logger.error(
-                "%-15s | 存储: %-12s | 状态: ❌", name, format_size(storage_size)
+                "%-15s | Storage: %-12s | Status: ❌", name, format_size(storage_size)
             )
 
-        # 清理单个测试数据
+        # Clean up individual test data
         await cache.clear_queue(test_key)
 
-    logger.info("✅ Redis存储效率分析完成")
+    logger.info("✅ Redis storage efficiency analysis completed")
 
 
 async def main():
-    """主测试函数"""
+    """Main test function"""
     logger.info("=" * 60)
-    logger.info("Pickle 序列化大小分析测试开始")
+    logger.info("Pickle Serialization Size Analysis Test Started")
     logger.info("=" * 60)
 
     try:
@@ -501,11 +501,11 @@ async def main():
         await test_redis_storage_efficiency()
 
         logger.info("=" * 60)
-        logger.info("✅ 所有Pickle大小分析测试通过")
+        logger.info("✅ All Pickle size analysis tests passed")
         logger.info("=" * 60)
 
     except Exception as e:
-        logger.error("❌ 测试过程中发生错误: %s", str(e))
+        logger.error("❌ Error occurred during test: %s", str(e))
         raise
 
 
