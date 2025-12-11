@@ -47,9 +47,10 @@ import subprocess
 from fnmatch import fnmatch
 from pathlib import Path
 from typing import Optional
-from datetime import datetime
 from dataclasses import dataclass
 from enum import Enum
+
+from common_utils.datetime_utils import get_now_with_timezone
 
 # ==============================================================================
 # Path Configuration (no project dependencies needed)
@@ -314,7 +315,7 @@ def print_header(title: str):
     """Print a section header."""
     print("=" * 70)
     print(title)
-    print(f"Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"Started at: {get_now_with_timezone().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 70)
     print()
 
@@ -324,7 +325,7 @@ def print_summary_header():
     print()
     print("=" * 70)
     print("Summary")
-    print(f"Finished at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"Finished at: {get_now_with_timezone().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 70)
 
 
