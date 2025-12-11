@@ -25,8 +25,8 @@ class ChatSession:
         config: ChatModeConfig,
         llm_config: LLMConfig,
         scenario_type: ScenarioType,
-        retrieval_mode: str,  # "rrf" / "embedding" / "bm25"
-        data_source: str,  # "episode" / "event_log"
+        retrieval_mode: str,  # "keyword" / "vector" / "hybrid" / "rrf" / "agentic"
+        data_source: str,     # "episode" / "event_log"
         texts: I18nTexts,
     ):
         """Initialize conversation session
@@ -36,7 +36,7 @@ class ChatSession:
             config: Chat mode configuration
             llm_config: LLM configuration
             scenario_type: Scenario type
-            retrieval_mode: Retrieval mode (rrf/embedding/bm25)
+            retrieval_mode: Retrieval mode (keyword/vector/hybrid/rrf/agentic)
             data_source: Data source (episode/event_log)
             texts: I18nTexts object
         """
@@ -57,13 +57,8 @@ class ChatSession:
 
         # API Configuration
         self.api_base_url = config.api_base_url
-        self.retrieve_lightweight_url = (
-            f"{self.api_base_url}/api/v3/agentic/retrieve_lightweight"
-        )
-        self.retrieve_agentic_url = (
-            f"{self.api_base_url}/api/v3/agentic/retrieve_agentic"
-        )
-
+        self.retrieve_url = f"{self.api_base_url}/api/v1/memories/search"
+        
         # Last Retrieval Metadata
         self.last_retrieval_metadata: Optional[Dict[str, Any]] = None
 
@@ -242,9 +237,16 @@ class ChatSession:
             result = await self._call_retrieve_lightweight_api(query)
 
         # Extract results and metadata
-        memories = result.get("memories", [])
+        # memories is grouped: [{"group_id": [Memory, ...]}, ...]
+        raw_memories = result.get("memories", [])
         metadata = result.get("metadata", {})
-
+        
+        # Flatten grouped memories to flat list
+        memories = []
+        for group_dict in raw_memories:
+            for group_id, mem_list in group_dict.items():
+                memories.extend(mem_list)
+        
         # Save metadata (for UI display)
         self.last_retrieval_metadata = metadata
 
@@ -259,22 +261,19 @@ class ChatSession:
         Returns:
             Retrieval result dictionary
         """
-        # 🔥 Critical: Decide whether to pass user_id based on scenario type
-        # - Group chat scenario: Don't pass user_id, retrieve group-level memories
-        # - Assistant scenario: Can pass user_id to retrieve specific user memories
         payload = {
             "query": query,
             "group_id": self.group_id,  # Pass group ID for filtering
             "top_k": self.config.top_k_memories,
-            "data_source": self.data_source,  # episode / event_log
-            "retrieval_mode": self.retrieval_mode,  # rrf / embedding / bm25
+            "memory_types": self.data_source,  # episodic_memory / event_log / foresight
+            "retrieve_method": self.retrieval_mode,  # keyword / vector / hybrid / rrf / agentic
         }
         # Group chat scenario: Don't pass user_id, retrieve group-level shared memories
         # Assistant scenario: Can pass user_id for personal memories (currently not passing, using group memories)
 
         # Debug logs (shown only in dev environment)
         # print(f"\n[DEBUG] Lightweight Retrieval Request:")
-        # print(f"  - API URL: {self.retrieve_lightweight_url}")
+        # print(f"  - API URL: {self.retrieve_url}")
         # print(f"  - query: {query}")
         # print(f"  - user_id: user_001")
         # print(f"  - retrieval_mode: {self.retrieval_mode}")
@@ -283,11 +282,9 @@ class ChatSession:
         # print(f"  - top_k: {self.config.top_k_memories}")
 
         try:
-            # 🔥 Consistent with test_v3_retrieve_http.py: verify=False, timeout=30.0
+            # 🔥 Use GET with params for /api/v1/memories/search
             async with httpx.AsyncClient(timeout=30.0, verify=False) as client:
-                response = await client.post(
-                    self.retrieve_lightweight_url, json=payload
-                )
+                response = await client.get(self.retrieve_url, params=payload)
                 response.raise_for_status()
                 api_response = response.json()
 
@@ -326,20 +323,18 @@ class ChatSession:
         Returns:
             Retrieval result dictionary
         """
-        # 🔥 Critical: Decide whether to pass user_id based on scenario type
-        # - Group chat scenario: Don't pass user_id, retrieve group-level memories
-        # - Assistant scenario: Can pass user_id to retrieve specific user memories
         payload = {
             "query": query,
             "group_id": self.group_id,  # Pass group ID for filtering
             "top_k": self.config.top_k_memories,
-            "time_range_days": self.config.time_range_days,  # Use configured time range
+            "memory_types": self.data_source,  # episodic_memory / event_log / foresight
+            "retrieve_method": "agentic",  # Force agentic mode
         }
         # Group chat scenario: Don't pass user_id, retrieve group-level shared memories
 
         # Debug logs (shown only in dev environment)
         # print(f"\n[DEBUG] Agentic Retrieval Request:")
-        # print(f"  - API URL: {self.retrieve_agentic_url}")
+        # print(f"  - API URL: {self.retrieve_url}")
         # print(f"  - query: {query}")
         # print(f"  - user_id: user_001")
         # print(f"  - top_k: {self.config.top_k_memories}")
@@ -352,7 +347,7 @@ class ChatSession:
             # 🔥 Agentic retrieval takes longer: increased to 180s (3 mins)
             # Because it involves LLM calls, sufficiency judgment, multi-round retrieval etc.
             async with httpx.AsyncClient(timeout=180.0, verify=False) as client:
-                response = await client.post(self.retrieve_agentic_url, json=payload)
+                response = await client.get(self.retrieve_url, params=payload)
                 response.raise_for_status()
                 api_response = response.json()
 
