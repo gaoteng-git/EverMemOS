@@ -567,7 +567,7 @@ Retrieve relevant memories based on query text using keyword, vector, or hybrid 
 | user_id | string | No | - | User ID (at least one of user_id or group_id is required) |
 | group_id | string | No | - | Group ID (at least one of user_id or group_id is required) |
 | query | string | No | - | Query text |
-| retrieve_method | string | No | "keyword" | Retrieval method, options: `keyword`, `vector`, `hybrid` |
+| retrieve_method | string | No | "keyword" | Retrieval method, options: `keyword`, `vector`, `hybrid`, `rrf`, `agentic` |
 | top_k | integer | No | 10 | Maximum number of results to return |
 | start_time | string | No | - | Time range start (ISO 8601 format) |
 | end_time | string | No | - | Time range end (ISO 8601 format) |
@@ -579,7 +579,9 @@ Retrieve relevant memories based on query text using keyword, vector, or hybrid 
 **Retrieval Method Descriptions**:
 - `keyword`: BM25 keyword-based retrieval, suitable for exact matching, fast (default)
 - `vector`: Semantic vector similarity retrieval, suitable for fuzzy queries and semantic similarity
-- `hybrid`: Hybrid retrieval strategy combining keyword and vector advantages (recommended)
+- `hybrid`: Hybrid retrieval strategy combining keyword and vector + Rerank (recommended)
+- `rrf`: RRF fusion retrieval, keyword + vector + RRF ranking fusion, no Rerank needed
+- `agentic`: LLM-guided multi-round intelligent retrieval, suitable for complex query scenarios
 
 #### Response Format
 

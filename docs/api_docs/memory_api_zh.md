@@ -567,7 +567,7 @@ asyncio.run(fetch_memories())
 | user_id | string | 否 | - | 用户ID（user_id 和 group_id 至少提供一个） |
 | group_id | string | 否 | - | 群组ID（user_id 和 group_id 至少提供一个） |
 | query | string | 否 | - | 查询文本 |
-| retrieve_method | string | 否 | "keyword" | 检索方法，可选值：`keyword`、`vector`、`hybrid` |
+| retrieve_method | string | 否 | "keyword" | 检索方法，可选值：`keyword`、`vector`、`hybrid`、`rrf`、`agentic` |
 | top_k | integer | 否 | 10 | 返回的最大结果数 |
 | start_time | string | 否 | - | 时间范围起点（ISO 8601格式） |
 | end_time | string | 否 | - | 时间范围终点（ISO 8601格式） |
@@ -579,7 +579,9 @@ asyncio.run(fetch_memories())
 **检索方法说明**：
 - `keyword`: 基于关键词的 BM25 检索，适合精确匹配，速度快（默认方法）
 - `vector`: 基于语义向量的相似度检索，适合模糊查询和语义相似查询
-- `hybrid`: 混合检索策略，结合关键词和向量检索的优势（推荐）
+- `hybrid`: 混合检索策略，结合关键词和向量检索 + Rerank（推荐）
+- `rrf`: RRF 融合检索，关键词 + 向量 + RRF 排序融合，无需 Rerank
+- `agentic`: LLM 引导的多轮智能检索，适合复杂查询场景
 
 #### 响应格式
 
