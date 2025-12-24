@@ -20,30 +20,38 @@ class RetrieveMethod(str, Enum):
     KEYWORD = "keyword"
     VECTOR = "vector"
     HYBRID = "hybrid"
-    RRF = "rrf"          # keyword + vector + RRF fusion
+    RRF = "rrf"  # keyword + vector + RRF fusion
     AGENTIC = "agentic"  # LLM-guided multi-round retrieval
 
 
 class MemoryType(str, Enum):
-    """Enumeration of memory types"""
+    """Enumeration of memory types
 
-    BASE_MEMORY = "base_memory"
-    PROFILE = "profile"
-    PREFERENCE = "preference"
+    Currently implemented types:
+    - PROFILE: User profile
+    - EPISODIC_MEMORY: Episodic memory
+    - FORESIGHT: Prospective memory
+    - EVENT_LOG: Event log (atomic facts)
 
-    # core is multiple, referring to the three above
-    MULTIPLE = "multiple"  # Multi-type query
-    CORE = "core"  # Core memory
+    Not yet implemented or deprecated:
+    - BASE_MEMORY, PREFERENCE, MULTIPLE, CORE, ENTITY, RELATION, BEHAVIOR_HISTORY, GROUP_PROFILE
+    """
 
-    EPISODIC_MEMORY = "episodic_memory"
+    # ===== Implemented =====
+    PROFILE = "profile"  # User profile
+    EPISODIC_MEMORY = "episodic_memory"  # Episodic memory
     FORESIGHT = "foresight"  # Prospective memory
-    ENTITY = "entity"
-    RELATION = "relation"
-    BEHAVIOR_HISTORY = "behavior_history"
-
     EVENT_LOG = "event_log"  # Event log (atomic facts)
 
-    GROUP_PROFILE = "group_profile"  # Group profile
+    # ===== Not yet implemented or deprecated =====
+    BASE_MEMORY = "base_memory"  # [Not implemented]
+    PREFERENCE = "preference"  # [Not implemented]
+    MULTIPLE = "multiple"  # [Deprecated] Multi-type query
+    CORE = "core"  # [Not implemented] Core memory
+    ENTITY = "entity"  # [Not implemented]
+    RELATION = "relation"  # [Not implemented]
+    BEHAVIOR_HISTORY = "behavior_history"  # [Not implemented]
+    GROUP_PROFILE = "group_profile"  # [Not implemented] Group profile
 
 
 @dataclass

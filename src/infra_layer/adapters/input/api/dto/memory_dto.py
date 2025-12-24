@@ -74,8 +74,12 @@ class FetchMemoriesParams(BaseModel):
 
     user_id: str = Field(..., description="User ID", examples=["user_123"])
     memory_type: Optional[str] = Field(
-        default="multiple",
-        description="Memory type: profile (user profile), episode_memory (episodic memory), foresight (prospective memory), event_log (event log), multiple (multiple types, default)",
+        default="episodic_memory",
+        description="""Memory type, enum values from MemoryType:
+- profile: user profile
+- episodic_memory: episodic memory (default)
+- foresight: prospective memory
+- event_log: event log (atomic facts)""",
         examples=["profile"],
     )
     limit: Optional[int] = Field(
@@ -93,7 +97,9 @@ class FetchMemoriesParams(BaseModel):
     )
     sort_order: Optional[str] = Field(
         default="desc",
-        description="Sort direction: asc (ascending) or desc (descending)",
+        description="""Sort direction, enum values:
+- asc: ascending order
+- desc: descending order (default)""",
         examples=["desc"],
     )
     version_range: Optional[List[Optional[str]]] = Field(
@@ -138,7 +144,12 @@ class SearchMemoriesRequest(BaseModel):
     )
     retrieve_method: Optional[str] = Field(
         default="keyword",
-        description="Retrieval method: keyword (keyword, default), vector (vector), hybrid (hybrid), rrf (RRF fusion), agentic (intelligent retrieval)",
+        description="""Retrieval method, enum values from RetrieveMethod:
+- keyword: keyword retrieval (BM25, default)
+- vector: vector semantic retrieval
+- hybrid: hybrid retrieval (keyword + vector)
+- rrf: RRF fusion retrieval (keyword + vector + RRF ranking fusion)
+- agentic: LLM-guided multi-round intelligent retrieval""",
         examples=["keyword"],
     )
     top_k: Optional[int] = Field(
@@ -150,8 +161,12 @@ class SearchMemoriesRequest(BaseModel):
     )
     memory_types: Optional[List[str]] = Field(
         default=None,
-        description="List of memory types to retrieve: episode_memory, foresight, event_log (profile not supported)",
-        examples=[["episode_memory"]],
+        description="""List of memory types to retrieve, enum values from MemoryType:
+- episodic_memory: episodic memory
+- foresight: prospective memory
+- event_log: event log (atomic facts)
+Note: profile type is not supported in search interface""",
+        examples=[["episodic_memory"]],
     )
     start_time: Optional[str] = Field(
         default=None,
@@ -212,7 +227,13 @@ class ConversationMetaCreateRequest(BaseModel):
     """
 
     version: str = Field(..., description="Metadata version number", examples=["1.0"])
-    scene: str = Field(..., description="Scene identifier", examples=["group_chat"])
+    scene: str = Field(
+        ...,
+        description="""Scene identifier, enum values from ScenarioType:
+- group_chat: work/group chat scenario, suitable for group conversations such as multi-person collaboration and project discussions
+- assistant: companion/assistant scenario, suitable for one-on-one AI assistant conversations""",
+        examples=["group_chat"],
+    )
     scene_desc: Dict[str, Any] = Field(
         ...,
         description="Scene description object, can include fields like bot_ids",
