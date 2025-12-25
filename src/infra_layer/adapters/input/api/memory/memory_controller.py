@@ -165,7 +165,7 @@ class MemoryController(BaseController):
     @timeout_to_background()
     async def memorize_single_message(
         self,
-        fastapi_request: FastAPIRequest,
+        request: FastAPIRequest,
         request_body: MemorizeMessageRequest = None,  # OpenAPI documentation only
     ) -> Dict[str, Any]:
         """
@@ -174,7 +174,7 @@ class MemoryController(BaseController):
         Receive simple direct single message format, convert and store via group_chat_converter
 
         Args:
-            fastapi_request: FastAPI request object
+            request: FastAPI request object
             request_body: Message request body (used for OpenAPI documentation only)
 
         Returns:
@@ -186,7 +186,7 @@ class MemoryController(BaseController):
         del request_body  # Used for OpenAPI documentation only
         try:
             # 1. Get JSON body from request (simple direct format)
-            message_data = await fastapi_request.json()
+            message_data = await request.json()
             logger.info("Received memorize request (single message)")
 
             # 2. Convert directly to MemorizeRequest (unified single-step conversion)
