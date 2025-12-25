@@ -178,13 +178,13 @@ class ProfileManager:
         """Get extraction statistics."""
         return dict(self._stats)
 
-    def _memcell_to_episode(self, memcell: Any) -> Dict[str, Any]:
-        """Convert MemCell to episode dict for LLM.
+    def _extract_context_from_memcell(self, memcell: Any) -> Dict[str, Any]:
+        """Extract context from MemCell for LLM.
 
         Supports both MemCell objects and dict representations.
 
         Returns:
-            Episode dict with id, created_at, summary, original_data
+            Context dict with id, created_at, summary, original_data
         """
         if isinstance(memcell, dict):
             # Dict format (from JSON)
@@ -268,8 +268,10 @@ class ProfileManager:
         cluster_memcells = memcells[:-1] if len(memcells) > 1 else []
 
         # Convert memcells to episode dicts for LLM
-        new_episode = self._memcell_to_episode(new_memcell)
-        cluster_episodes = [self._memcell_to_episode(mc) for mc in cluster_memcells]
+        new_context = self._extract_context_from_memcell(new_memcell)
+        cluster_contexts = [
+            self._extract_context_from_memcell(mc) for mc in cluster_memcells
+        ]
 
         # Convert old_profiles list to dict by user_id
         old_profiles_dict: Dict[str, ProfileMemoryLife] = {}
@@ -303,8 +305,8 @@ class ProfileManager:
 
             # Build request
             request = ProfileMemoryLifeExtractRequest(
-                new_episode=new_episode,
-                cluster_episodes=cluster_episodes,
+                new_episode=new_context,
+                cluster_episodes=cluster_contexts,
                 old_profile=old_profile,
                 user_id=user_id,
                 group_id=group_id or self.group_id,
