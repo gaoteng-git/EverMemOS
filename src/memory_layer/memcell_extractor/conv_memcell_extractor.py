@@ -13,9 +13,7 @@ import json, re
 import asyncio
 from core.di.utils import get_bean, get_bean_by_type
 from core.component.llm.tokenizer.tokenizer_factory import TokenizerFactory
-from common_utils.datetime_utils import (
-    from_iso_format as dt_from_iso_format,
-)
+from common_utils.datetime_utils import from_iso_format as dt_from_iso_format
 from memory_layer.llm.llm_provider import LLMProvider
 from api_specs.memory_types import RawDataType
 
@@ -205,8 +203,7 @@ class ConvMemCellExtractor(MemCellExtractor):
                 else:
                     lines.append(f"{speaker_name}: {content}")
             else:
-                print(msg)
-                print(
+                logger.debug(
                     f"[ConversationEpisodeBuilder] Warning: message {i} has no content"
                 )
         return "\n".join(lines)
@@ -294,7 +291,7 @@ class ConvMemCellExtractor(MemCellExtractor):
         )
         time_gap_info = self._calculate_time_gap(conversation_history, new_messages)
 
-        print(
+        logger.debug(
             f"[ConversationEpisodeBuilder] Detect boundary – history tokens: {len(history_text)} new tokens: {len(new_text)} time gap: {time_gap_info}"
         )
 
@@ -306,7 +303,7 @@ class ConvMemCellExtractor(MemCellExtractor):
         for i in range(5):
             try:
                 resp = await self.llm_provider.generate(prompt)
-                print(
+                logger.debug(
                     f"[ConversationEpisodeBuilder] Boundary response length: {len(resp)} chars"
                 )
 
