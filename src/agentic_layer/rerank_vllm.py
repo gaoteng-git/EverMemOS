@@ -22,7 +22,7 @@ class VllmRerankConfig:
 
     api_key: str = "EMPTY"
     base_url: str = "http://localhost:12000/v1/rerank"
-    model: str = "Qwen/Qwen3-Reranker-4B"
+    model: str = "Qwen/Qwen3-Reranker-4B"  # skip-sensitive-check
     timeout: int = 30
     max_retries: int = 3
     batch_size: int = 10
@@ -147,10 +147,20 @@ class VllmRerankService(RerankServiceInterface):
                     logger.error(f"Unexpected error in vLLM rerank request: {e}")
                     raise RerankError(f"Unexpected rerank error: {e}")
 
-    async def _make_rerank_request(
-        self, query: str, documents: List[str], instruction: str = None
+    async def rerank_documents(
+        self, query: str, documents: List[str], instruction: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Make rerank request (with batching support) - same interface as DeepInfra"""
+        """
+        Rerank raw documents (low-level API)
+
+        Args:
+            query: Query text
+            documents: List of document strings to rerank
+            instruction: Optional reranking instruction
+
+        Returns:
+            Dict with 'results' key containing list of {index, score, rank}
+        """
         if not documents:
             return {"results": []}
 

@@ -1006,7 +1006,7 @@ async def reranker_search(
             try:
                 # Add timeout protection
                 batch_results = await asyncio.wait_for(
-                    reranker._make_rerank_request(
+                    reranker.rerank_documents(
                         query, batch_texts, instruction=reranker_instruction
                     ),
                     timeout=timeout,
