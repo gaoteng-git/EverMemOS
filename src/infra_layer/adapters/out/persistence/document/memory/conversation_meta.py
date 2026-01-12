@@ -95,7 +95,7 @@ class ConversationMeta(DocumentBase, AuditBase):
                 "scene_desc": {"bot_ids": ["aaa", "bbb", "ccc"]},
                 "name": "User health consultation conversation",
                 "description": "Conversation records between user and AI assistant regarding Beijing travel, health management, sports rehabilitation, etc.",
-                "group_id": "chat_user_001_assistant",
+                "group_id": "example_group_id",  #
                 "conversation_created_at": "2025-08-26T00:00:00Z",
                 "default_timezone": "UTC",
                 "user_details": {
@@ -128,6 +128,7 @@ class ConversationMeta(DocumentBase, AuditBase):
                 ],
             }
         },
+        extra="allow",
     )
 
     class Settings:

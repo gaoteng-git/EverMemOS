@@ -74,6 +74,7 @@ class EventLogRecord(DocumentBase, AuditBase):
                 "extend": {"location": "Chengdu"},
             }
         },
+        extra="allow",
     )
 
     @property
