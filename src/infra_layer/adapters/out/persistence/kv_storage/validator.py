@@ -7,9 +7,15 @@ and logging inconsistencies for debugging and monitoring.
 
 import json
 from typing import Tuple, Optional, Any, Dict
+from datetime import datetime, timedelta
 from core.observation.logger import get_logger
 
 logger = get_logger(__name__)
+
+# Time fields that may have microsecond precision differences
+TIMESTAMP_FIELDS = {'timestamp', 'created_at', 'updated_at'}
+# Maximum allowed time difference (1 second tolerance for time fields)
+MAX_TIME_DIFF = timedelta(seconds=1)
 
 
 def compare_memcell_data(
@@ -48,11 +54,45 @@ def compare_memcell_data(
 
         # Find and report differences
         diff_desc = _find_differences(mongo_dict, kv_dict)
-        return (False, diff_desc)
+        if diff_desc:
+            # Has actual differences
+            return (False, diff_desc)
+        else:
+            # All differences are within tolerance (e.g., timestamp precision)
+            return (True, None)
 
     except Exception as e:
         logger.error(f"Failed to compare memcell data: {e}", exc_info=True)
         return (False, f"Comparison error: {str(e)}")
+
+
+def _is_timestamp_field(key: str) -> bool:
+    """Check if a field name is a timestamp field."""
+    return key in TIMESTAMP_FIELDS
+
+
+def _compare_timestamps(val1: str, val2: str) -> bool:
+    """
+    Compare two timestamp strings with tolerance for microsecond precision differences.
+
+    Args:
+        val1: First timestamp string (MongoDB)
+        val2: Second timestamp string (KV-Storage)
+
+    Returns:
+        True if timestamps are within tolerance, False otherwise
+    """
+    try:
+        # Parse ISO format timestamps
+        dt1 = datetime.fromisoformat(val1.replace('Z', '+00:00'))
+        dt2 = datetime.fromisoformat(val2.replace('Z', '+00:00'))
+
+        # Check if difference is within tolerance
+        diff = abs(dt1 - dt2)
+        return diff <= MAX_TIME_DIFF
+    except (ValueError, AttributeError):
+        # If parsing fails, fall back to string comparison
+        return False
 
 
 def _find_differences(dict1: Dict[str, Any], dict2: Dict[str, Any], path: str = "") -> str:
@@ -108,6 +148,12 @@ def _find_differences(dict1: Dict[str, Any], dict2: Dict[str, Any], path: str = 
                     f"List content mismatch at {current_path}"
                 )
         elif val1 != val2:
+            # Special handling for timestamp fields
+            if _is_timestamp_field(key) and isinstance(val1, str) and isinstance(val2, str):
+                if _compare_timestamps(val1, val2):
+                    # Timestamps are within tolerance, skip this difference
+                    continue
+
             # Direct value comparison
             # Truncate long values for readability
             val1_str = str(val1)[:100]
