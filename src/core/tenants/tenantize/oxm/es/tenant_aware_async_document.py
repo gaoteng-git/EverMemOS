@@ -407,7 +407,7 @@ def TenantAwareAliasDoc(
             }
 
         class Meta:
-            dynamic = MetaField("strict")
+            dynamic = MetaField("true")
 
         @classmethod
         def get_original_index_name(cls) -> str:
