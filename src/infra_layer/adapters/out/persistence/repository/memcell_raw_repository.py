@@ -13,11 +13,17 @@ from beanie.operators import And, GTE, LT, Eq, RegEx, Or
 from pymongo.asynchronous.client_session import AsyncClientSession
 from core.observation.logger import get_logger
 from core.di.decorators import repository
+from core.di.ioc_container import get_bean_by_type
 from core.oxm.mongo.base_repository import BaseRepository
 
 from infra_layer.adapters.out.persistence.document.memory.memcell import (
     MemCell,
     DataTypeEnum,
+)
+from infra_layer.adapters.out.persistence.kv_storage import (
+    MemCellKVStorage,
+    compare_memcell_data,
+    log_inconsistency,
 )
 
 logger = get_logger(__name__)
@@ -37,8 +43,88 @@ class MemCellRawRepository(BaseRepository[MemCell]):
     """
 
     def __init__(self):
-        """Initialize repository"""
+        """Initialize repository with optional KV-Storage support"""
         super().__init__(MemCell)
+
+        # Inject KV-Storage with graceful degradation
+        self._kv_storage: Optional[MemCellKVStorage] = None
+        try:
+            self._kv_storage = get_bean_by_type(MemCellKVStorage)
+            logger.info("✅ MemCell KV-Storage initialized successfully")
+        except Exception as e:
+            logger.warning(
+                f"⚠️  MemCell KV-Storage not available: {e}. "
+                "Repository will operate in MongoDB-only mode."
+            )
+
+    def _get_kv_storage(self) -> Optional[MemCellKVStorage]:
+        """
+        Get KV-Storage instance with availability check.
+
+        Returns:
+            KV-Storage instance if available, None otherwise
+        """
+        if self._kv_storage is None:
+            logger.debug("KV-Storage not available, skipping KV operations")
+        return self._kv_storage
+
+    async def _batch_get_from_kv(self, results: List[MemCell]) -> Dict[str, str]:
+        """
+        Batch get MemCell data from KV-Storage.
+
+        Args:
+            results: List of MemCell instances from MongoDB
+
+        Returns:
+            Dictionary mapping event_id to JSON string from KV-Storage.
+            Returns empty dict if KV-Storage unavailable or on error.
+        """
+        if not results:
+            return {}
+
+        kv_storage = self._get_kv_storage()
+        if not kv_storage:
+            return {}
+
+        try:
+            # Extract event IDs and batch get from KV-Storage
+            kv_keys = [str(mc.id) for mc in results]
+            kv_data_dict = await kv_storage.batch_get(keys=kv_keys)
+            return kv_data_dict
+        except Exception as kv_error:
+            logger.warning(f"⚠️  KV batch get failed: {kv_error}", exc_info=True)
+            return {}
+
+    async def _compare_results_with_kv(
+        self, results: List[MemCell], kv_data_dict: Dict[str, str]
+    ) -> None:
+        """
+        Compare MongoDB results with KV-Storage data and log inconsistencies.
+
+        Args:
+            results: List of MemCell instances from MongoDB
+            kv_data_dict: Dictionary of KV-Storage data (event_id -> JSON string)
+        """
+        if not results or not kv_data_dict:
+            return
+
+        for result in results:
+            event_id = str(result.id)
+            if event_id in kv_data_dict:
+                # Serialize MongoDB data for comparison
+                mongo_json = result.model_dump_json(by_alias=True, exclude_none=False)
+                kv_json = kv_data_dict[event_id]
+
+                # Compare for consistency
+                is_consistent, diff_desc = compare_memcell_data(mongo_json, kv_json)
+
+                if not is_consistent:
+                    logger.error(f"❌ Data inconsistency for {event_id}: {diff_desc}")
+                    log_inconsistency(event_id, {"difference": diff_desc})
+                else:
+                    logger.debug(f"✅ KV-Storage validation passed: {event_id}")
+            else:
+                logger.warning(f"⚠️  KV-Storage data missing: {event_id}")
 
     async def get_by_event_id(self, event_id: str) -> Optional[MemCell]:
         """
@@ -51,6 +137,7 @@ class MemCellRawRepository(BaseRepository[MemCell]):
             MemCell instance or None
         """
         try:
+            # 1. Read from MongoDB (primary, authoritative source)
             result = await self.model.find_one({"_id": ObjectId(event_id)})
             if result:
                 logger.debug(
@@ -58,6 +145,40 @@ class MemCellRawRepository(BaseRepository[MemCell]):
                 )
             else:
                 logger.debug("⚠️  MemCell not found: event_id=%s", event_id)
+                return None
+
+            # 2. Validate against KV-Storage (for consistency checking)
+            if result:
+                kv_storage = self._get_kv_storage()
+                if kv_storage:
+                    try:
+                        kv_json = await kv_storage.get(key=event_id)
+
+                        if kv_json:
+                            # Serialize MongoDB data for comparison
+                            mongo_json = result.model_dump_json(by_alias=True, exclude_none=False)
+
+                            # Compare for consistency
+                            is_consistent, diff_desc = compare_memcell_data(mongo_json, kv_json)
+
+                            if not is_consistent:
+                                logger.error(
+                                    f"❌ Data inconsistency detected for event_id={event_id}\n"
+                                    f"Difference: {diff_desc}"
+                                )
+                                # Log detailed inconsistency for monitoring
+                                log_inconsistency(event_id, {"difference": diff_desc})
+                            else:
+                                logger.debug(f"✅ KV-Storage validation passed: {event_id}")
+                        else:
+                            logger.warning(f"⚠️  KV-Storage data missing: {event_id}")
+                    except Exception as kv_error:
+                        logger.warning(
+                            f"⚠️  KV-Storage validation failed for {event_id}: {kv_error}",
+                            exc_info=True
+                        )
+
+            # 3. Return MongoDB result (authoritative)
             return result
         except Exception as e:
             logger.error("❌ Failed to retrieve MemCell by event_id: %s", e)
@@ -98,7 +219,7 @@ class MemCellRawRepository(BaseRepository[MemCell]):
                 logger.debug("⚠️  No valid event_ids, returning empty dictionary")
                 return {}
 
-            # Build query
+            # 1. Build query and batch read from MongoDB
             query = self.model.find({"_id": {"$in": object_ids}})
 
             # Apply field projection
@@ -119,6 +240,12 @@ class MemCellRawRepository(BaseRepository[MemCell]):
                 "yes" if projection_model else "no",
             )
 
+            # 2. Batch validate against KV-Storage (for consistency checking)
+            if results:
+                kv_data_dict = await self._batch_get_from_kv(results)
+                await self._compare_results_with_kv(results, kv_data_dict)
+
+            # 3. Return MongoDB result (authoritative)
             return result_dict
 
         except Exception as e:
@@ -129,11 +256,40 @@ class MemCellRawRepository(BaseRepository[MemCell]):
         self, memcell: MemCell, session: Optional[AsyncClientSession] = None
     ) -> Optional[MemCell]:
         """
-        Append MemCell
+        Append MemCell to MongoDB and KV-Storage.
+
+        This method performs dual writes:
+        1. Insert into MongoDB (primary storage)
+        2. Write to KV-Storage (for validation and backup)
+
+        KV-Storage failures do not affect the main workflow.
         """
         try:
+            # 1. Write to MongoDB (primary operation)
             await memcell.insert(session=session)
             print(f"✅ Successfully appended MemCell: {memcell.event_id}")
+
+            # 2. Write to KV-Storage (secondary operation)
+            kv_storage = self._get_kv_storage()
+            if kv_storage:
+                try:
+                    # Serialize MemCell to JSON using model_dump_json()
+                    json_value = memcell.model_dump_json(by_alias=True, exclude_none=False)
+                    success = await kv_storage.put(
+                        key=str(memcell.id),  # Use MongoDB _id as key
+                        value=json_value
+                    )
+                    if success:
+                        logger.debug(f"✅ KV-Storage write success: {memcell.event_id}")
+                    else:
+                        logger.warning(f"⚠️  KV-Storage write returned False: {memcell.event_id}")
+                except Exception as kv_error:
+                    # KV-Storage write failure does not affect main flow
+                    logger.warning(
+                        f"⚠️  KV-Storage write failed for {memcell.event_id}: {kv_error}",
+                        exc_info=True
+                    )
+
             return memcell
         except Exception as e:
             logger.error("❌ Failed to append MemCell: %s", e)
@@ -146,7 +302,11 @@ class MemCellRawRepository(BaseRepository[MemCell]):
         session: Optional[AsyncClientSession] = None,
     ) -> Optional[MemCell]:
         """
-        Update MemCell by event_id
+        Update MemCell by event_id in MongoDB and KV-Storage.
+
+        This method performs dual writes:
+        1. Update in MongoDB (primary storage)
+        2. Update in KV-Storage (for validation and backup)
 
         Args:
             event_id: Event ID
@@ -159,6 +319,7 @@ class MemCellRawRepository(BaseRepository[MemCell]):
         try:
             memcell = await self.get_by_event_id(event_id)
             if memcell:
+                # 1. Update MongoDB (primary operation)
                 for key, value in update_data.items():
                     if hasattr(memcell, key):
                         setattr(memcell, key, value)
@@ -166,6 +327,27 @@ class MemCellRawRepository(BaseRepository[MemCell]):
                 logger.debug(
                     "✅ Successfully updated MemCell by event_id: %s", event_id
                 )
+
+                # 2. Update KV-Storage (secondary operation)
+                kv_storage = self._get_kv_storage()
+                if kv_storage:
+                    try:
+                        # Serialize updated MemCell to JSON
+                        json_value = memcell.model_dump_json(by_alias=True, exclude_none=False)
+                        success = await kv_storage.put(
+                            key=event_id,
+                            value=json_value
+                        )
+                        if success:
+                            logger.debug(f"✅ KV-Storage update success: {event_id}")
+                        else:
+                            logger.warning(f"⚠️  KV-Storage update returned False: {event_id}")
+                    except Exception as kv_error:
+                        logger.warning(
+                            f"⚠️  KV-Storage update failed for {event_id}: {kv_error}",
+                            exc_info=True
+                        )
+
                 return memcell
             return None
         except Exception as e:
@@ -192,10 +374,27 @@ class MemCellRawRepository(BaseRepository[MemCell]):
         try:
             memcell = await self.get_by_event_id(event_id)
             if memcell:
+                # 1. Delete from MongoDB (primary operation)
                 await memcell.delete(deleted_by=deleted_by, session=session)
                 logger.debug(
                     "✅ Successfully soft deleted MemCell by event_id: %s", event_id
                 )
+
+                # 2. Delete from KV-Storage (secondary operation)
+                kv_storage = self._get_kv_storage()
+                if kv_storage:
+                    try:
+                        success = await kv_storage.delete(key=event_id)
+                        if success:
+                            logger.debug(f"✅ KV-Storage delete success: {event_id}")
+                        else:
+                            logger.warning(f"⚠️  KV-Storage delete returned False: {event_id}")
+                    except Exception as kv_error:
+                        logger.warning(
+                            f"⚠️  KV-Storage delete failed for {event_id}: {kv_error}",
+                            exc_info=True
+                        )
+
                 return True
             return False
         except Exception as e:
@@ -220,10 +419,27 @@ class MemCellRawRepository(BaseRepository[MemCell]):
         try:
             memcell = await self.model.hard_find_one({"_id": ObjectId(event_id)})
             if memcell:
+                # 1. Delete from MongoDB (primary operation)
                 await memcell.hard_delete(session=session)
                 logger.debug(
                     "✅ Successfully hard deleted MemCell by event_id: %s", event_id
                 )
+
+                # 2. Delete from KV-Storage (secondary operation)
+                kv_storage = self._get_kv_storage()
+                if kv_storage:
+                    try:
+                        success = await kv_storage.delete(key=event_id)
+                        if success:
+                            logger.debug(f"✅ KV-Storage delete success: {event_id}")
+                        else:
+                            logger.warning(f"⚠️  KV-Storage delete returned False: {event_id}")
+                    except Exception as kv_error:
+                        logger.warning(
+                            f"⚠️  KV-Storage delete failed for {event_id}: {kv_error}",
+                            exc_info=True
+                        )
+
                 return True
             return False
         except Exception as e:
@@ -272,6 +488,11 @@ class MemCellRawRepository(BaseRepository[MemCell]):
                 user_id,
                 len(results),
             )
+
+            # Validate against KV-Storage
+            kv_data_dict = await self._batch_get_from_kv(results)
+            await self._compare_results_with_kv(results, kv_data_dict)
+
             return results
         except Exception as e:
             logger.error("❌ Failed to query MemCell by user ID: %s", e)
@@ -330,6 +551,11 @@ class MemCellRawRepository(BaseRepository[MemCell]):
                 end_time,
                 len(results),
             )
+
+            # Validate against KV-Storage
+            kv_data_dict = await self._batch_get_from_kv(results)
+            await self._compare_results_with_kv(results, kv_data_dict)
+
             return results
         except Exception as e:
             logger.error("❌ Failed to query MemCell by user and time range: %s", e)
@@ -373,6 +599,11 @@ class MemCellRawRepository(BaseRepository[MemCell]):
                 group_id,
                 len(results),
             )
+
+            # Validate against KV-Storage
+            kv_data_dict = await self._batch_get_from_kv(results)
+            await self._compare_results_with_kv(results, kv_data_dict)
+
             return results
         except Exception as e:
             logger.error("❌ Failed to query MemCell by group ID: %s", e)
@@ -421,6 +652,11 @@ class MemCellRawRepository(BaseRepository[MemCell]):
                 end_time,
                 len(results),
             )
+
+            # Validate against KV-Storage
+            kv_data_dict = await self._batch_get_from_kv(results)
+            await self._compare_results_with_kv(results, kv_data_dict)
+
             return results
         except Exception as e:
             logger.error("❌ Failed to query MemCell by time range: %s", e)
@@ -470,6 +706,11 @@ class MemCellRawRepository(BaseRepository[MemCell]):
                 'all' if match_all else 'any',
                 len(results),
             )
+
+            # Validate against KV-Storage
+            kv_data_dict = await self._batch_get_from_kv(results)
+            await self._compare_results_with_kv(results, kv_data_dict)
+
             return results
         except Exception as e:
             logger.error("❌ Failed to query MemCell by participants: %s", e)
@@ -514,6 +755,11 @@ class MemCellRawRepository(BaseRepository[MemCell]):
                 'all' if match_all else 'any',
                 len(results),
             )
+
+            # Validate against KV-Storage
+            kv_data_dict = await self._batch_get_from_kv(results)
+            await self._compare_results_with_kv(results, kv_data_dict)
+
             return results
         except Exception as e:
             logger.error("❌ Failed to query MemCell by keywords: %s", e)
@@ -569,6 +815,18 @@ class MemCellRawRepository(BaseRepository[MemCell]):
             Number of hard deleted records
         """
         try:
+            # 1. Query all event_ids to be deleted (for KV-Storage batch delete)
+            event_ids = []
+            kv_storage = self._get_kv_storage()
+            if kv_storage:
+                try:
+                    memcells = await self.model.find({"user_id": user_id}).to_list()
+                    event_ids = [str(mc.id) for mc in memcells]
+                    logger.debug(f"Found {len(event_ids)} MemCells to delete for user: {user_id}")
+                except Exception as query_error:
+                    logger.warning(f"Failed to query event_ids for KV batch delete: {query_error}")
+
+            # 2. Delete from MongoDB (primary operation)
             result = await self.model.hard_delete_many(
                 {"user_id": user_id}, session=session
             )
@@ -578,6 +836,18 @@ class MemCellRawRepository(BaseRepository[MemCell]):
                 user_id,
                 count,
             )
+
+            # 3. Batch delete from KV-Storage (secondary operation)
+            if kv_storage and event_ids:
+                try:
+                    deleted_count = await kv_storage.batch_delete(keys=event_ids)
+                    logger.info(f"✅ KV-Storage batch delete success: {deleted_count} records")
+                except Exception as kv_error:
+                    logger.warning(
+                        f"⚠️  KV-Storage batch delete failed for user {user_id}: {kv_error}",
+                        exc_info=True
+                    )
+
             return count
         except Exception as e:
             logger.error("❌ Failed to hard delete all MemCell of user: %s", e)
@@ -651,6 +921,18 @@ class MemCellRawRepository(BaseRepository[MemCell]):
             if user_id:
                 filter_dict["user_id"] = user_id
 
+            # 1. Query all event_ids to be deleted (for KV-Storage batch delete)
+            event_ids = []
+            kv_storage = self._get_kv_storage()
+            if kv_storage:
+                try:
+                    memcells = await self.model.find(And(*conditions)).to_list()
+                    event_ids = [str(mc.id) for mc in memcells]
+                    logger.debug(f"Found {len(event_ids)} MemCells to delete in time range")
+                except Exception as query_error:
+                    logger.warning(f"Failed to query event_ids for KV batch delete: {query_error}")
+
+            # 2. Delete from MongoDB (primary operation)
             result = await self.model.hard_delete_many(filter_dict, session=session)
             count = result.deleted_count if result else 0
             logger.info(
@@ -758,6 +1040,18 @@ class MemCellRawRepository(BaseRepository[MemCell]):
                 user_id or 'all',
                 count,
             )
+
+            # 3. Batch delete from KV-Storage (secondary operation)
+            if kv_storage and event_ids:
+                try:
+                    deleted_count = await kv_storage.batch_delete(keys=event_ids)
+                    logger.info(f"✅ KV-Storage batch delete success: {deleted_count} records")
+                except Exception as kv_error:
+                    logger.warning(
+                        f"⚠️  KV-Storage batch delete failed for time range: {kv_error}",
+                        exc_info=True
+                    )
+
             return count
         except Exception as e:
             logger.error("❌ Failed to restore MemCell within time range: %s", e)
@@ -846,6 +1140,11 @@ class MemCellRawRepository(BaseRepository[MemCell]):
                 user_id,
                 len(results),
             )
+
+            # Validate against KV-Storage
+            kv_data_dict = await self._batch_get_from_kv(results)
+            await self._compare_results_with_kv(results, kv_data_dict)
+
             return results
         except Exception as e:
             logger.error("❌ Failed to retrieve latest user MemCell: %s", e)
