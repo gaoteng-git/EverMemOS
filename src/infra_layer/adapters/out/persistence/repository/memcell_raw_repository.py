@@ -2,28 +2,40 @@
 MemCell Native CRUD Repository
 
 Native data access layer for MemCell based on Beanie ODM, providing complete CRUD operations.
+Supports dual-storage architecture with configurable storage modes:
+- FULL mode: MongoDB stores all fields, KV-Storage validation enabled
+- LITE mode: MongoDB stores only indexed fields, full data in KV-Storage
+
 Does not depend on domain layer interfaces, directly operates on MemCell document models.
 """
 
 from datetime import datetime
-from typing import List, Optional, Dict, Any, Type
+from typing import List, Optional, Dict, Any, Type, Union
 from bson import ObjectId
 from pydantic import BaseModel
 from beanie.operators import And, GTE, LT, Eq, RegEx, Or
 from pymongo.asynchronous.client_session import AsyncClientSession
 from core.observation.logger import get_logger
 from core.di.decorators import repository
-from core.di.ioc_container import get_bean_by_type
+from core.di import get_bean_by_type
 from core.oxm.mongo.base_repository import BaseRepository
 
 from infra_layer.adapters.out.persistence.document.memory.memcell import (
     MemCell,
     DataTypeEnum,
 )
+from infra_layer.adapters.out.persistence.document.memory.memcell_lite import (
+    MemCellLite,
+)
 from infra_layer.adapters.out.persistence.kv_storage import (
     MemCellKVStorage,
     compare_memcell_data,
     log_inconsistency,
+)
+from infra_layer.adapters.out.persistence.kv_storage.storage_config import (
+    is_full_storage_mode,
+    should_validate_kv_consistency,
+    get_storage_config,
 )
 
 logger = get_logger(__name__)
@@ -40,11 +52,21 @@ class MemCellRawRepository(BaseRepository[MemCell]):
     - Batch operations
     - Statistics and aggregation queries
     - Transaction management (inherited from BaseRepository)
+
+    Supports dual-storage modes:
+    - FULL: MongoDB stores all fields, KV validation enabled
+    - LITE: MongoDB stores only indexed fields, full data in KV-Storage
     """
 
     def __init__(self):
-        """Initialize repository with optional KV-Storage support"""
+        """Initialize repository with KV-Storage support and storage mode detection"""
+        # Initialize with MemCell model (full) by default
+        # Actual model used for queries determined by storage mode
         super().__init__(MemCell)
+
+        # Storage configuration
+        self._storage_config = get_storage_config()
+        logger.info(f"📦 MemCell Storage Mode: {self._storage_config}")
 
         # Inject KV-Storage with graceful degradation
         self._kv_storage: Optional[MemCellKVStorage] = None
@@ -57,6 +79,19 @@ class MemCellRawRepository(BaseRepository[MemCell]):
                 "Repository will operate in MongoDB-only mode."
             )
 
+    def _get_mongo_model(self) -> Union[Type[MemCell], Type[MemCellLite]]:
+        """
+        Get appropriate MongoDB model based on storage mode
+
+        Returns:
+            MemCell: Full model (FULL mode)
+            MemCellLite: Lite model with only indexed fields (LITE mode)
+        """
+        if is_full_storage_mode():
+            return MemCell
+        else:
+            return MemCellLite
+
     def _get_kv_storage(self) -> Optional[MemCellKVStorage]:
         """
         Get KV-Storage instance with availability check.
@@ -67,6 +102,119 @@ class MemCellRawRepository(BaseRepository[MemCell]):
         if self._kv_storage is None:
             logger.debug("KV-Storage not available, skipping KV operations")
         return self._kv_storage
+
+    def _memcell_to_lite(self, memcell: MemCell) -> MemCellLite:
+        """
+        Convert full MemCell to MemCellLite (only indexed fields)
+
+        Args:
+            memcell: Full MemCell instance
+
+        Returns:
+            MemCellLite instance with only indexed/query fields
+        """
+        return MemCellLite(
+            id=memcell.id,
+            user_id=memcell.user_id,
+            timestamp=memcell.timestamp,
+            group_id=memcell.group_id,
+            participants=memcell.participants,
+            type=memcell.type,
+            keywords=memcell.keywords,
+            created_at=memcell.created_at,
+            updated_at=memcell.updated_at,
+        )
+
+    async def _reconstruct_from_kv(
+        self, mongo_doc: Union[MemCell, MemCellLite], event_id: str
+    ) -> Optional[MemCell]:
+        """
+        Reconstruct full MemCell from KV-Storage data
+
+        Args:
+            mongo_doc: MongoDB document (lite or full)
+            event_id: Event ID for KV-Storage lookup
+
+        Returns:
+            Full MemCell instance from KV-Storage, or None if not found
+        """
+        kv_storage = self._get_kv_storage()
+        if not kv_storage:
+            logger.warning(f"KV-Storage unavailable, cannot reconstruct MemCell: {event_id}")
+            # Fallback: if mongo_doc is already full MemCell, return it
+            if isinstance(mongo_doc, MemCell):
+                return mongo_doc
+            return None
+
+        try:
+            kv_json = await kv_storage.get(key=event_id)
+            if not kv_json:
+                logger.warning(f"MemCell not found in KV-Storage: {event_id}")
+                return None
+
+            # Deserialize full MemCell from KV-Storage
+            full_memcell = MemCell.model_validate_json(kv_json)
+            logger.debug(f"✅ Reconstructed full MemCell from KV-Storage: {event_id}")
+            return full_memcell
+
+        except Exception as e:
+            logger.error(f"Failed to reconstruct MemCell from KV-Storage: {event_id}, error: {e}")
+            return None
+
+    async def _process_query_results(
+        self, results: List[Union[MemCell, MemCellLite]]
+    ) -> List[MemCell]:
+        """
+        Process query results - ALWAYS reconstruct from KV-Storage
+
+        MongoDB is only used for querying and getting _id list.
+        Actual data MUST be read from KV-Storage regardless of storage mode.
+
+        Args:
+            results: List of MongoDB query results (lite or full, only for _id)
+
+        Returns:
+            List of full MemCell instances from KV-Storage
+        """
+        if not results:
+            return []
+
+        # Get KV-Storage instance
+        kv_storage = self._get_kv_storage()
+        if not kv_storage:
+            logger.error("❌ KV-Storage unavailable, cannot reconstruct MemCells")
+            return []
+
+        # Extract event IDs from MongoDB results
+        kv_keys = [str(r.id) for r in results]
+
+        # Batch get from KV-Storage (this is the source of truth)
+        kv_data_dict = await kv_storage.batch_get(keys=kv_keys)
+
+        # Reconstruct full MemCells from KV-Storage
+        full_memcells = []
+        for result in results:
+            event_id = str(result.id)
+            kv_json = kv_data_dict.get(event_id)
+            if kv_json:
+                try:
+                    full_memcell = MemCell.model_validate_json(kv_json)
+                    full_memcells.append(full_memcell)
+                except Exception as e:
+                    logger.error(f"❌ Failed to deserialize MemCell from KV: {event_id}, error: {e}")
+            else:
+                logger.warning(f"⚠️  MemCell not found in KV-Storage: {event_id}")
+
+        logger.debug(
+            f"✅ Reconstructed {len(full_memcells)}/{len(results)} MemCells from KV-Storage "
+            f"(mode: {'FULL' if is_full_storage_mode() else 'LITE'})"
+        )
+
+        # Optional: Validate consistency in FULL mode
+        if is_full_storage_mode() and should_validate_kv_consistency():
+            await self._compare_results_with_kv(results, kv_data_dict)
+
+        return full_memcells
 
     async def _batch_get_from_kv(self, results: List[MemCell]) -> Dict[str, str]:
         """
@@ -100,11 +248,17 @@ class MemCellRawRepository(BaseRepository[MemCell]):
     ) -> None:
         """
         Compare MongoDB results with KV-Storage data and log inconsistencies.
+        Only performs validation in FULL storage mode.
 
         Args:
             results: List of MemCell instances from MongoDB
             kv_data_dict: Dictionary of KV-Storage data (event_id -> JSON string)
         """
+        # Skip validation in LITE mode
+        if not should_validate_kv_consistency():
+            logger.debug("KV-Storage validation skipped (LITE mode)")
+            return
+
         if not results or not kv_data_dict:
             return
 
@@ -128,76 +282,93 @@ class MemCellRawRepository(BaseRepository[MemCell]):
 
     async def get_by_event_id(self, event_id: str) -> Optional[MemCell]:
         """
-        Get MemCell by event_id
+        Get MemCell by event_id - ALWAYS returns data from KV-Storage
+
+        MongoDB is only used for querying to verify record exists.
+        Actual data MUST be read from KV-Storage regardless of storage mode.
 
         Args:
             event_id: Event ID
 
         Returns:
-            MemCell instance or None
+            Full MemCell instance from KV-Storage, or None
         """
         try:
-            # 1. Read from MongoDB (primary, authoritative source)
-            result = await self.model.find_one({"_id": ObjectId(event_id)})
-            if result:
-                logger.debug(
-                    "✅ Successfully retrieved MemCell by event_id: %s", event_id
-                )
-            else:
-                logger.debug("⚠️  MemCell not found: event_id=%s", event_id)
+            # Get appropriate model based on storage mode
+            mongo_model = self._get_mongo_model()
+
+            # 1. Query MongoDB (only to verify record exists and get _id)
+            result = await mongo_model.find_one({"_id": ObjectId(event_id)})
+            if not result:
+                logger.debug("⚠️  MemCell not found in MongoDB: event_id=%s", event_id)
                 return None
 
-            # 2. Validate against KV-Storage (for consistency checking)
-            if result:
-                kv_storage = self._get_kv_storage()
-                if kv_storage:
+            logger.debug("✅ MemCell found in MongoDB: %s", event_id)
+
+            # 2. Get KV-Storage instance
+            kv_storage = self._get_kv_storage()
+            if not kv_storage:
+                logger.error("❌ KV-Storage unavailable, cannot retrieve MemCell: %s", event_id)
+                return None
+
+            # 3. Read from KV-Storage (source of truth)
+            try:
+                kv_json = await kv_storage.get(key=event_id)
+                if not kv_json:
+                    logger.error(f"❌ MemCell not found in KV-Storage: {event_id}")
+                    return None
+
+                # Deserialize full MemCell from KV-Storage
+                full_memcell = MemCell.model_validate_json(kv_json)
+                logger.debug(
+                    f"✅ Retrieved MemCell from KV-Storage: {event_id} "
+                    f"(mode: {'FULL' if is_full_storage_mode() else 'LITE'})"
+                )
+
+                # Optional: Validate consistency in FULL mode
+                if is_full_storage_mode() and should_validate_kv_consistency():
                     try:
-                        kv_json = await kv_storage.get(key=event_id)
+                        mongo_json = result.model_dump_json(by_alias=True, exclude_none=False)
+                        is_consistent, diff_desc = compare_memcell_data(mongo_json, kv_json)
 
-                        if kv_json:
-                            # Serialize MongoDB data for comparison
-                            mongo_json = result.model_dump_json(by_alias=True, exclude_none=False)
-
-                            # Compare for consistency
-                            is_consistent, diff_desc = compare_memcell_data(mongo_json, kv_json)
-
-                            if not is_consistent:
-                                logger.error(
-                                    f"❌ Data inconsistency detected for event_id={event_id}\n"
-                                    f"Difference: {diff_desc}"
-                                )
-                                # Log detailed inconsistency for monitoring
-                                log_inconsistency(event_id, {"difference": diff_desc})
-                            else:
-                                logger.debug(f"✅ KV-Storage validation passed: {event_id}")
+                        if not is_consistent:
+                            logger.error(
+                                f"❌ Data inconsistency detected for event_id={event_id}\n"
+                                f"Difference: {diff_desc}"
+                            )
+                            log_inconsistency(event_id, {"difference": diff_desc})
                         else:
-                            logger.warning(f"⚠️  KV-Storage data missing: {event_id}")
-                    except Exception as kv_error:
+                            logger.debug(f"✅ KV-Storage validation passed: {event_id}")
+                    except Exception as val_error:
                         logger.warning(
-                            f"⚠️  KV-Storage validation failed for {event_id}: {kv_error}",
-                            exc_info=True
+                            f"⚠️  KV-Storage validation failed for {event_id}: {val_error}"
                         )
 
-            # 3. Return MongoDB result (authoritative)
-            return result
+                return full_memcell
+
+            except Exception as kv_error:
+                logger.error(f"❌ Failed to read from KV-Storage: {event_id}, error: {kv_error}")
+                return None
+
         except Exception as e:
             logger.error("❌ Failed to retrieve MemCell by event_id: %s", e)
             return None
 
     async def get_by_event_ids(
         self, event_ids: List[str], projection_model: Optional[Type[BaseModel]] = None
-    ) -> Dict[str, Any]:
+    ) -> Dict[str, MemCell]:
         """
-        Batch get MemCell by event_id list
+        Batch get MemCell by event_id list - ALWAYS returns data from KV-Storage
+
+        MongoDB is only used for querying to verify records exist.
+        Actual data MUST be read from KV-Storage regardless of storage mode.
 
         Args:
             event_ids: List of event IDs
-            projection_model: Pydantic projection model class, used to specify returned fields
-                             For example: pass a Pydantic model containing only specific fields
-                             None means return complete MemCell objects
+            projection_model: Deprecated, ignored (always returns full MemCell from KV-Storage)
 
         Returns:
-            Dict[event_id, MemCell | ProjectionModel]: Mapping dictionary from event_id to MemCell (or projection model)
+            Dict[event_id, MemCell]: Mapping dictionary from event_id to full MemCell
             Unfound event_ids will not appear in the dictionary
         """
         try:
@@ -207,7 +378,7 @@ class MemCellRawRepository(BaseRepository[MemCell]):
 
             # Convert event_id list to ObjectId list
             object_ids = []
-            valid_event_ids = []  # Store valid original event_id strings
+            valid_event_ids = []
             for event_id in event_ids:
                 try:
                     object_ids.append(ObjectId(event_id))
@@ -219,33 +390,50 @@ class MemCellRawRepository(BaseRepository[MemCell]):
                 logger.debug("⚠️  No valid event_ids, returning empty dictionary")
                 return {}
 
-            # 1. Build query and batch read from MongoDB
-            query = self.model.find({"_id": {"$in": object_ids}})
+            # Get appropriate model based on storage mode
+            mongo_model = self._get_mongo_model()
 
-            # Apply field projection
-            # Use Beanie's .project() method, passing projection_model parameter
-            if projection_model:
-                query = query.project(projection_model=projection_model)
-
-            # Batch query
+            # 1. Query MongoDB (only to verify records exist and get _id list)
+            query = mongo_model.find({"_id": {"$in": object_ids}})
             results = await query.to_list()
+            logger.debug(f"✅ MongoDB query completed, found {len(results)} records")
 
-            # Create mapping dictionary from event_id to MemCell (or projection model)
-            result_dict = {str(result.id): result for result in results}
+            if not results:
+                return {}
+
+            # 2. Get KV-Storage instance
+            kv_storage = self._get_kv_storage()
+            if not kv_storage:
+                logger.error("❌ KV-Storage unavailable, cannot retrieve MemCells")
+                return {}
+
+            # 3. Batch get from KV-Storage (source of truth)
+            kv_keys = [str(r.id) for r in results]
+            kv_data_dict = await kv_storage.batch_get(keys=kv_keys)
+
+            # 4. Reconstruct full MemCells from KV-Storage
+            result_dict = {}
+            for result in results:
+                event_id = str(result.id)
+                kv_json = kv_data_dict.get(event_id)
+                if kv_json:
+                    try:
+                        full_memcell = MemCell.model_validate_json(kv_json)
+                        result_dict[event_id] = full_memcell
+                    except Exception as e:
+                        logger.error(f"❌ Failed to deserialize MemCell from KV: {event_id}, error: {e}")
+                else:
+                    logger.warning(f"⚠️  MemCell not found in KV-Storage: {event_id}")
 
             logger.debug(
-                "✅ Successfully batch retrieved MemCell by event_ids: requested %d, found %d, projection: %s",
-                len(event_ids),
-                len(result_dict),
-                "yes" if projection_model else "no",
+                f"✅ Batch retrieved {len(result_dict)}/{len(results)} MemCells from KV-Storage "
+                f"(mode: {'FULL' if is_full_storage_mode() else 'LITE'})"
             )
 
-            # 2. Batch validate against KV-Storage (for consistency checking)
-            if results:
-                kv_data_dict = await self._batch_get_from_kv(results)
+            # Optional: Validate consistency in FULL mode
+            if is_full_storage_mode() and should_validate_kv_consistency():
                 await self._compare_results_with_kv(results, kv_data_dict)
 
-            # 3. Return MongoDB result (authoritative)
             return result_dict
 
         except Exception as e:
@@ -256,37 +444,50 @@ class MemCellRawRepository(BaseRepository[MemCell]):
         self, memcell: MemCell, session: Optional[AsyncClientSession] = None
     ) -> Optional[MemCell]:
         """
-        Append MemCell to MongoDB and KV-Storage.
+        Append MemCell to MongoDB and KV-Storage
 
-        This method performs dual writes:
-        1. Insert into MongoDB (primary storage)
-        2. Write to KV-Storage (for validation and backup)
+        In LITE mode: writes MemCellLite to MongoDB, full MemCell to KV-Storage
+        In FULL mode: writes full MemCell to both MongoDB and KV-Storage
 
-        KV-Storage failures do not affect the main workflow.
+        Args:
+            memcell: Full MemCell instance to append
+            session: Optional MongoDB session for transaction support
+
+        Returns:
+            Full MemCell instance with ID populated, or None on failure
         """
         try:
-            # 1. Write to MongoDB (primary operation)
-            await memcell.insert(session=session)
-            print(f"✅ Successfully appended MemCell: {memcell.event_id}")
+            # 1. Write to MongoDB
+            if is_full_storage_mode():
+                # FULL mode: write complete MemCell to MongoDB
+                await memcell.insert(session=session)
+                logger.info(f"✅ MemCell appended (FULL mode): {memcell.event_id}")
+            else:
+                # LITE mode: write only MemCellLite to MongoDB
+                memcell_lite = self._memcell_to_lite(memcell)
+                await memcell_lite.insert(session=session)
+                # Copy generated ID and audit fields back to full MemCell
+                memcell.id = memcell_lite.id
+                memcell.created_at = memcell_lite.created_at
+                memcell.updated_at = memcell_lite.updated_at
+                logger.info(f"✅ MemCell appended (LITE mode): {memcell.event_id}")
 
-            # 2. Write to KV-Storage (secondary operation)
+            # 2. Write to KV-Storage (always full MemCell)
             kv_storage = self._get_kv_storage()
             if kv_storage:
                 try:
-                    # Serialize MemCell to JSON using model_dump_json()
                     json_value = memcell.model_dump_json(by_alias=True, exclude_none=False)
                     success = await kv_storage.put(
-                        key=str(memcell.id),  # Use MongoDB _id as key
+                        key=str(memcell.id),
                         value=json_value
                     )
                     if success:
                         logger.debug(f"✅ KV-Storage write success: {memcell.event_id}")
                     else:
-                        logger.warning(f"⚠️  KV-Storage write returned False: {memcell.event_id}")
+                        logger.warning(f"⚠️  KV-Storage write failed: {memcell.event_id}")
                 except Exception as kv_error:
-                    # KV-Storage write failure does not affect main flow
                     logger.warning(
-                        f"⚠️  KV-Storage write failed for {memcell.event_id}: {kv_error}",
+                        f"⚠️  KV-Storage write error for {memcell.event_id}: {kv_error}",
                         exc_info=True
                     )
 
@@ -302,106 +503,117 @@ class MemCellRawRepository(BaseRepository[MemCell]):
         session: Optional[AsyncClientSession] = None,
     ) -> Optional[MemCell]:
         """
-        Update MemCell by event_id in MongoDB and KV-Storage.
-
-        This method performs dual writes:
-        1. Update in MongoDB (primary storage)
-        2. Update in KV-Storage (for validation and backup)
+        Update MemCell by event_id
 
         Args:
             event_id: Event ID
-            update_data: Dictionary of update data
-            session: Optional MongoDB session, for transaction support
+            update_data: Dictionary of fields to update
+            session: Optional MongoDB session
 
         Returns:
-            Updated MemCell instance or None
+            Updated full MemCell instance or None
         """
         try:
+            # 1. Get current MemCell from KV-Storage (for returning updated data)
             memcell = await self.get_by_event_id(event_id)
-            if memcell:
-                # 1. Update MongoDB (primary operation)
-                for key, value in update_data.items():
-                    if hasattr(memcell, key):
-                        setattr(memcell, key, value)
-                await memcell.save(session=session)
-                logger.debug(
-                    "✅ Successfully updated MemCell by event_id: %s", event_id
-                )
+            if not memcell:
+                logger.warning(f"⚠️  MemCell not found for update: {event_id}")
+                return None
 
-                # 2. Update KV-Storage (secondary operation)
-                kv_storage = self._get_kv_storage()
-                if kv_storage:
-                    try:
-                        # Serialize updated MemCell to JSON
-                        json_value = memcell.model_dump_json(by_alias=True, exclude_none=False)
-                        success = await kv_storage.put(
-                            key=event_id,
-                            value=json_value
-                        )
-                        if success:
-                            logger.debug(f"✅ KV-Storage update success: {event_id}")
-                        else:
-                            logger.warning(f"⚠️  KV-Storage update returned False: {event_id}")
-                    except Exception as kv_error:
-                        logger.warning(
-                            f"⚠️  KV-Storage update failed for {event_id}: {kv_error}",
-                            exc_info=True
-                        )
+            # 2. Apply updates to full MemCell
+            for key, value in update_data.items():
+                if hasattr(memcell, key):
+                    setattr(memcell, key, value)
 
-                return memcell
-            return None
+            # 3. Update MongoDB (query fresh document from MongoDB)
+            if is_full_storage_mode():
+                # FULL mode: query MongoDB document and update it
+                mongo_doc = await MemCell.find_one({"_id": ObjectId(event_id)})
+                if mongo_doc:
+                    # Apply updates to MongoDB document
+                    for key, value in update_data.items():
+                        if hasattr(mongo_doc, key):
+                            setattr(mongo_doc, key, value)
+                    await mongo_doc.save(session=session)
+                    logger.debug("✅ Updated MemCell in MongoDB (FULL mode)")
+            else:
+                # LITE mode: update only indexed fields in MongoDB
+                memcell_lite = self._memcell_to_lite(memcell)
+
+                # Find and update lite document
+                mongo_model = self._get_mongo_model()
+                lite_doc = await mongo_model.find_one({"_id": ObjectId(event_id)})
+                if lite_doc:
+                    # Define indexed fields that can be updated
+                    indexed_fields = ['user_id', 'timestamp', 'group_id', 'participants', 'type', 'keywords']
+
+                    # Only update indexed fields that are present in update_data
+                    updated_count = 0
+                    for field in indexed_fields:
+                        if field in update_data:
+                            setattr(lite_doc, field, getattr(memcell_lite, field))
+                            updated_count += 1
+
+                    # Always update audit timestamp
+                    lite_doc.updated_at = memcell.updated_at
+
+                    await lite_doc.save(session=session)
+                    logger.debug(f"✅ Updated {updated_count} indexed fields in MongoDB (LITE mode)")
+
+            logger.debug("✅ MemCell updated in MongoDB: %s", event_id)
+
+            # 4. Update KV-Storage (always full MemCell)
+            kv_storage = self._get_kv_storage()
+            if kv_storage:
+                try:
+                    json_value = memcell.model_dump_json(by_alias=True, exclude_none=False)
+                    await kv_storage.put(key=event_id, value=json_value)
+                    logger.debug(f"✅ KV-Storage update success: {event_id}")
+                except Exception as kv_error:
+                    logger.warning(f"⚠️  KV-Storage update failed: {kv_error}")
+
+            return memcell
         except Exception as e:
-            logger.error("❌ Failed to update MemCell by event_id: %s", e)
-            raise e
+            logger.error("❌ Failed to update MemCell: %s", e)
+            raise
 
     async def delete_by_event_id(
         self, event_id: str, session: Optional[AsyncClientSession] = None
     ) -> bool:
         """
-        Delete MemCell by event_id from MongoDB and KV-Storage.
-
-        This method performs dual deletes:
-        1. Delete from MongoDB (primary storage)
-        2. Delete from KV-Storage (for consistency)
+        Delete MemCell by event_id
 
         Args:
             event_id: Event ID
-            session: Optional MongoDB session, for transaction support
+            session: Optional MongoDB session
 
         Returns:
-            Returns True if deletion succeeds, otherwise False
+            True if deleted, False otherwise
         """
         try:
-            memcell = await self.get_by_event_id(event_id)
-            if memcell:
-                # 1. Delete from MongoDB (primary operation)
-                await memcell.delete(session=session)
-                logger.debug(
-                    "✅ Successfully deleted MemCell by event_id: %s", event_id
-                )
+            # Get appropriate model based on storage mode
+            mongo_model = self._get_mongo_model()
 
-                # 2. Delete from KV-Storage (secondary operation)
+            # 1. Find and delete from MongoDB
+            memcell = await mongo_model.find_one({"_id": ObjectId(event_id)})
+            if memcell:
+                await memcell.delete(session=session)
+                logger.debug("✅ MemCell deleted from MongoDB: %s", event_id)
+
+                # 2. Delete from KV-Storage
                 kv_storage = self._get_kv_storage()
                 if kv_storage:
                     try:
-                        success = await kv_storage.delete(key=event_id)
-                        if success:
-                            logger.debug(f"✅ KV-Storage delete success: {event_id}")
-                        else:
-                            logger.warning(f"⚠️  KV-Storage delete returned False: {event_id}")
+                        await kv_storage.delete(key=event_id)
+                        logger.debug(f"✅ KV-Storage delete success: {event_id}")
                     except Exception as kv_error:
-                        logger.warning(
-                            f"⚠️  KV-Storage delete failed for {event_id}: {kv_error}",
-                            exc_info=True
-                        )
+                        logger.warning(f"⚠️  KV-Storage delete failed: {kv_error}")
 
                 return True
             return False
         except Exception as e:
-            logger.error("❌ Failed to delete MemCell by event_id: %s", e)
+            logger.error("❌ Failed to delete MemCell: %s", e)
             return False
-
-    # ==================== Query Methods ====================
 
     async def find_by_user_id(
         self,
@@ -415,40 +627,37 @@ class MemCellRawRepository(BaseRepository[MemCell]):
 
         Args:
             user_id: User ID
-            limit: Limit number of returned results
+            limit: Maximum number of results
             skip: Number of results to skip
-            sort_desc: Whether to sort by time in descending order
+            sort_desc: Sort by timestamp descending (default True)
 
         Returns:
-            List of MemCell
+            List of full MemCell instances
         """
         try:
-            query = self.model.find({"user_id": user_id})
+            # Use appropriate model based on storage mode
+            mongo_model = self._get_mongo_model()
 
-            # Sorting
-            if sort_desc:
-                query = query.sort("-timestamp")
-            else:
-                query = query.sort("timestamp")
+            # Build query
+            query = mongo_model.find({"user_id": user_id})
 
-            # Pagination
-            if skip:
+            # Apply sorting
+            sort_order = "-timestamp" if sort_desc else "timestamp"
+            query = query.sort(sort_order)
+
+            # Apply pagination
+            if skip is not None:
                 query = query.skip(skip)
-            if limit:
+            if limit is not None:
                 query = query.limit(limit)
 
+            # Execute query
             results = await query.to_list()
-            logger.debug(
-                "✅ Successfully queried MemCell by user ID: %s, found %d records",
-                user_id,
-                len(results),
-            )
+            logger.debug(f"✅ Found {len(results)} MemCell for user: {user_id}")
 
-            # Validate against KV-Storage
-            kv_data_dict = await self._batch_get_from_kv(results)
-            await self._compare_results_with_kv(results, kv_data_dict)
-
-            return results
+            # Process results based on storage mode
+            full_memcells = await self._process_query_results(results)
+            return full_memcells
         except Exception as e:
             logger.error("❌ Failed to query MemCell by user ID: %s", e)
             return []
@@ -460,58 +669,53 @@ class MemCellRawRepository(BaseRepository[MemCell]):
         end_time: datetime,
         limit: Optional[int] = None,
         skip: Optional[int] = None,
+        sort_desc: bool = True,
     ) -> List[MemCell]:
         """
         Query MemCell by user ID and time range
 
-        Check both user_id field and participants array, match if user_id is in either
-
         Args:
             user_id: User ID
-            start_time: Start time
-            end_time: End time
-            limit: Limit number of returned results
+            start_time: Start time (inclusive)
+            end_time: End time (exclusive)
+            limit: Maximum number of results
             skip: Number of results to skip
+            sort_desc: Sort by timestamp descending (default True)
 
         Returns:
-            List of MemCell
+            List of full MemCell instances
         """
         try:
-            # Check both user_id field and participants array
-            # Use OR logic: user_id matches OR user_id is in participants
-            # Note: MongoDB automatically checks if array contains the value when using Eq on array fields
-            query = self.model.find(
-                And(
-                    Or(
-                        Eq(MemCell.user_id, user_id),
-                        Eq(
-                            MemCell.participants, user_id
-                        ),  # MongoDB checks if array contains the value
-                    ),
-                    GTE(MemCell.timestamp, start_time),
-                    LT(MemCell.timestamp, end_time),
-                )
-            ).sort("-timestamp")
+            # Use appropriate model based on storage mode
+            mongo_model = self._get_mongo_model()
 
-            if skip:
+            # Build query with time range
+            query_filter = And(
+                Eq(mongo_model.user_id, user_id),
+                GTE(mongo_model.timestamp, start_time),
+                LT(mongo_model.timestamp, end_time),
+            )
+            query = mongo_model.find(query_filter)
+
+            # Apply sorting
+            sort_order = "-timestamp" if sort_desc else "timestamp"
+            query = query.sort(sort_order)
+
+            # Apply pagination
+            if skip is not None:
                 query = query.skip(skip)
-            if limit:
+            if limit is not None:
                 query = query.limit(limit)
 
+            # Execute query
             results = await query.to_list()
             logger.debug(
-                "✅ Successfully queried MemCell by user and time range: %s, time range: %s - %s, found %d records",
-                user_id,
-                start_time,
-                end_time,
-                len(results),
+                f"✅ Found {len(results)} MemCell for user {user_id} in time range"
             )
 
-            # Validate against KV-Storage
-            kv_data_dict = await self._batch_get_from_kv(results)
-            await self._compare_results_with_kv(results, kv_data_dict)
-
-            return results
+            # Process results based on storage mode
+            full_memcells = await self._process_query_results(results)
+            return full_memcells
         except Exception as e:
             logger.error("❌ Failed to query MemCell by user and time range: %s", e)
             return []
@@ -528,38 +732,37 @@ class MemCellRawRepository(BaseRepository[MemCell]):
 
         Args:
             group_id: Group ID
-            limit: Limit number of returned results
+            limit: Maximum number of results
             skip: Number of results to skip
-            sort_desc: Whether to sort by time in descending order
+            sort_desc: Sort by timestamp descending (default True)
 
         Returns:
-            List of MemCell
+            List of full MemCell instances
         """
         try:
-            query = self.model.find({"group_id": group_id})
+            # Use appropriate model based on storage mode
+            mongo_model = self._get_mongo_model()
 
-            if sort_desc:
-                query = query.sort("-timestamp")
-            else:
-                query = query.sort("timestamp")
+            # Build query
+            query = mongo_model.find({"group_id": group_id})
 
-            if skip:
+            # Apply sorting
+            sort_order = "-timestamp" if sort_desc else "timestamp"
+            query = query.sort(sort_order)
+
+            # Apply pagination
+            if skip is not None:
                 query = query.skip(skip)
-            if limit:
+            if limit is not None:
                 query = query.limit(limit)
 
+            # Execute query
             results = await query.to_list()
-            logger.debug(
-                "✅ Successfully queried MemCell by group ID: %s, found %d records",
-                group_id,
-                len(results),
-            )
+            logger.debug(f"✅ Found {len(results)} MemCell for group: {group_id}")
 
-            # Validate against KV-Storage
-            kv_data_dict = await self._batch_get_from_kv(results)
-            await self._compare_results_with_kv(results, kv_data_dict)
-
-            return results
+            # Process results based on storage mode
+            full_memcells = await self._process_query_results(results)
+            return full_memcells
         except Exception as e:
             logger.error("❌ Failed to query MemCell by group ID: %s", e)
             return []
@@ -570,54 +773,51 @@ class MemCellRawRepository(BaseRepository[MemCell]):
         end_time: datetime,
         limit: Optional[int] = None,
         skip: Optional[int] = None,
-        sort_desc: bool = False,
+        sort_desc: bool = True,
     ) -> List[MemCell]:
         """
         Query MemCell by time range
 
         Args:
-            start_time: Start time
-            end_time: End time
-            limit: Limit number of returned results
+            start_time: Start time (inclusive)
+            end_time: End time (exclusive)
+            limit: Maximum number of results
             skip: Number of results to skip
-            sort_desc: Whether to sort by time in descending order, default False (ascending)
+            sort_desc: Sort by timestamp descending (default True)
 
         Returns:
-            List of MemCell
+            List of full MemCell instances
         """
         try:
-            query = self.model.find(
-                {"timestamp": {"$gte": start_time, "$lt": end_time}}
+            # Use appropriate model based on storage mode
+            mongo_model = self._get_mongo_model()
+
+            # Build query with time range
+            query_filter = And(
+                GTE(mongo_model.timestamp, start_time),
+                LT(mongo_model.timestamp, end_time),
             )
+            query = mongo_model.find(query_filter)
 
-            if sort_desc:
-                query = query.sort("-timestamp")
-            else:
-                query = query.sort("timestamp")
+            # Apply sorting
+            sort_order = "-timestamp" if sort_desc else "timestamp"
+            query = query.sort(sort_order)
 
-            if skip:
+            # Apply pagination
+            if skip is not None:
                 query = query.skip(skip)
-            if limit:
+            if limit is not None:
                 query = query.limit(limit)
 
+            # Execute query
             results = await query.to_list()
-            logger.debug(
-                "✅ Successfully queried MemCell by time range: time range: %s - %s, found %d records",
-                start_time,
-                end_time,
-                len(results),
-            )
+            logger.debug(f"✅ Found {len(results)} MemCell in time range")
 
-            # Validate against KV-Storage
-            kv_data_dict = await self._batch_get_from_kv(results)
-            await self._compare_results_with_kv(results, kv_data_dict)
-
-            return results
+            # Process results based on storage mode
+            full_memcells = await self._process_query_results(results)
+            return full_memcells
         except Exception as e:
             logger.error("❌ Failed to query MemCell by time range: %s", e)
-            import traceback
-
-            logger.error("Detailed error information: %s", traceback.format_exc())
             return []
 
     async def find_by_participants(
@@ -631,42 +831,42 @@ class MemCellRawRepository(BaseRepository[MemCell]):
         Query MemCell by participants
 
         Args:
-            participants: List of participants
-            match_all: Whether to match all participants (True) or any participant (False)
-            limit: Limit number of returned results
+            participants: List of participant names
+            match_all: If True, match all participants; if False, match any
+            limit: Maximum number of results
             skip: Number of results to skip
 
         Returns:
-            List of MemCell
+            List of full MemCell instances
         """
         try:
+            # Use appropriate model based on storage mode
+            mongo_model = self._get_mongo_model()
+
+            # Build query based on match mode
             if match_all:
                 # Match all participants
-                query = self.model.find({"participants": {"$all": participants}})
+                query = mongo_model.find({"participants": {"$all": participants}})
             else:
                 # Match any participant
-                query = self.model.find({"participants": {"$in": participants}})
+                query = mongo_model.find({"participants": {"$in": participants}})
 
+            # Apply sorting
             query = query.sort("-timestamp")
 
-            if skip:
+            # Apply pagination
+            if skip is not None:
                 query = query.skip(skip)
-            if limit:
+            if limit is not None:
                 query = query.limit(limit)
 
+            # Execute query
             results = await query.to_list()
-            logger.debug(
-                "✅ Successfully queried MemCell by participants: %s, match mode: %s, found %d records",
-                participants,
-                'all' if match_all else 'any',
-                len(results),
-            )
+            logger.debug(f"✅ Found {len(results)} MemCell for participants")
 
-            # Validate against KV-Storage
-            kv_data_dict = await self._batch_get_from_kv(results)
-            await self._compare_results_with_kv(results, kv_data_dict)
-
-            return results
+            # Process results based on storage mode
+            full_memcells = await self._process_query_results(results)
+            return full_memcells
         except Exception as e:
             logger.error("❌ Failed to query MemCell by participants: %s", e)
             return []
@@ -679,266 +879,221 @@ class MemCellRawRepository(BaseRepository[MemCell]):
         skip: Optional[int] = None,
     ) -> List[MemCell]:
         """
-        Query MemCell by keywords
+        Search MemCell by keywords
 
         Args:
             keywords: List of keywords
-            match_all: Whether to match all keywords (True) or any keyword (False)
-            limit: Limit number of returned results
+            match_all: If True, match all keywords; if False, match any
+            limit: Maximum number of results
             skip: Number of results to skip
 
         Returns:
-            List of MemCell
+            List of full MemCell instances
         """
         try:
-            if match_all:
-                query = self.model.find({"keywords": {"$all": keywords}})
-            else:
-                query = self.model.find({"keywords": {"$in": keywords}})
+            # Use appropriate model based on storage mode
+            mongo_model = self._get_mongo_model()
 
+            # Build query based on match mode
+            if match_all:
+                # Match all keywords
+                query = mongo_model.find({"keywords": {"$all": keywords}})
+            else:
+                # Match any keyword
+                query = mongo_model.find({"keywords": {"$in": keywords}})
+
+            # Apply sorting
             query = query.sort("-timestamp")
 
-            if skip:
+            # Apply pagination
+            if skip is not None:
                 query = query.skip(skip)
-            if limit:
+            if limit is not None:
                 query = query.limit(limit)
 
+            # Execute query
             results = await query.to_list()
-            logger.debug(
-                "✅ Successfully queried MemCell by keywords: %s, match mode: %s, found %d records",
-                keywords,
-                'all' if match_all else 'any',
-                len(results),
-            )
+            logger.debug(f"✅ Found {len(results)} MemCell matching keywords")
 
-            # Validate against KV-Storage
-            kv_data_dict = await self._batch_get_from_kv(results)
-            await self._compare_results_with_kv(results, kv_data_dict)
-
-            return results
+            # Process results based on storage mode
+            full_memcells = await self._process_query_results(results)
+            return full_memcells
         except Exception as e:
-            logger.error("❌ Failed to query MemCell by keywords: %s", e)
+            logger.error("❌ Failed to search MemCell by keywords: %s", e)
             return []
-
-    # ==================== Batch Operations ====================
 
     async def delete_by_user_id(
         self, user_id: str, session: Optional[AsyncClientSession] = None
     ) -> int:
         """
-        Delete all MemCell of a user from MongoDB and KV-Storage.
-
-        This method performs dual batch deletes:
-        1. Query all event_ids to be deleted
-        2. Delete from MongoDB (primary storage)
-        3. Batch delete from KV-Storage (for consistency)
+        Delete all MemCell for a user
 
         Args:
             user_id: User ID
-            session: Optional MongoDB session, for transaction support
+            session: Optional MongoDB session
 
         Returns:
-            Number of deleted records from MongoDB
+            Number of deleted records
         """
         try:
-            # 1. Query all event_ids to be deleted (for KV-Storage batch delete)
-            event_ids = []
-            kv_storage = self._get_kv_storage()
-            if kv_storage:
-                try:
-                    memcells = await self.model.find({"user_id": user_id}).to_list()
-                    event_ids = [str(mc.id) for mc in memcells]
-                    logger.debug(f"Found {len(event_ids)} MemCells to delete for user: {user_id}")
-                except Exception as query_error:
-                    logger.warning(f"Failed to query event_ids for KV batch delete: {query_error}")
+            # Use appropriate model based on storage mode
+            mongo_model = self._get_mongo_model()
 
-            # 2. Delete from MongoDB (primary operation)
-            result = await self.model.find({"user_id": user_id}).delete(session=session)
+            # 1. Query all event IDs first (for KV-Storage cleanup)
+            memcells = await mongo_model.find({"user_id": user_id}).to_list()
+            event_ids = [str(mc.id) for mc in memcells]
+
+            # 2. Delete from MongoDB
+            result = await mongo_model.find({"user_id": user_id}).delete(session=session)
             count = result.deleted_count if result else 0
             logger.info(
-                "✅ Successfully deleted all MemCell of user: %s, deleted %d records",
-                user_id,
-                count,
+                "✅ Deleted %d MemCell from MongoDB for user: %s", count, user_id
             )
 
-            # 3. Batch delete from KV-Storage (secondary operation)
-            if kv_storage and event_ids:
-                try:
-                    deleted_count = await kv_storage.batch_delete(keys=event_ids)
-                    logger.info(f"✅ KV-Storage batch delete success: {deleted_count} records")
-                except Exception as kv_error:
-                    logger.warning(
-                        f"⚠️  KV-Storage batch delete failed for user {user_id}: {kv_error}",
-                        exc_info=True
-                    )
+            # 3. Batch delete from KV-Storage
+            if event_ids:
+                kv_storage = self._get_kv_storage()
+                if kv_storage:
+                    try:
+                        deleted_count = await kv_storage.batch_delete(keys=event_ids)
+                        logger.info(f"✅ KV-Storage batch delete: {deleted_count} records")
+                    except Exception as kv_error:
+                        logger.warning(f"⚠️  KV-Storage batch delete failed: {kv_error}")
 
             return count
         except Exception as e:
-            logger.error("❌ Failed to delete all MemCell of user: %s", e)
+            logger.error("❌ Failed to delete MemCell by user ID: %s", e)
             return 0
 
     async def delete_by_time_range(
         self,
         start_time: datetime,
         end_time: datetime,
-        user_id: Optional[str] = None,
         session: Optional[AsyncClientSession] = None,
     ) -> int:
         """
-        Delete MemCell within time range from MongoDB and KV-Storage.
-
-        This method performs dual batch deletes:
-        1. Query all event_ids to be deleted
-        2. Delete from MongoDB (primary storage)
-        3. Batch delete from KV-Storage (for consistency)
+        Delete MemCell by time range
 
         Args:
-            start_time: Start time
-            end_time: End time
-            user_id: Optional user ID filter
-            session: Optional MongoDB session, for transaction support
+            start_time: Start time (inclusive)
+            end_time: End time (exclusive)
+            session: Optional MongoDB session
 
         Returns:
-            Number of deleted records from MongoDB
+            Number of deleted records
         """
         try:
-            conditions = [
-                GTE(MemCell.timestamp, start_time),
-                LT(MemCell.timestamp, end_time),
-            ]
+            # Use appropriate model based on storage mode
+            mongo_model = self._get_mongo_model()
 
-            if user_id:
-                conditions.append(Eq(MemCell.user_id, user_id))
+            # 1. Query all event IDs first (for KV-Storage cleanup)
+            query_filter = And(
+                GTE(mongo_model.timestamp, start_time),
+                LT(mongo_model.timestamp, end_time),
+            )
+            memcells = await mongo_model.find(query_filter).to_list()
+            event_ids = [str(mc.id) for mc in memcells]
 
-            # 1. Query all event_ids to be deleted (for KV-Storage batch delete)
-            event_ids = []
-            kv_storage = self._get_kv_storage()
-            if kv_storage:
-                try:
-                    memcells = await self.model.find(And(*conditions)).to_list()
-                    event_ids = [str(mc.id) for mc in memcells]
-                    logger.debug(f"Found {len(event_ids)} MemCells to delete in time range")
-                except Exception as query_error:
-                    logger.warning(f"Failed to query event_ids for KV batch delete: {query_error}")
-
-            # 2. Delete from MongoDB (primary operation)
-            result = await self.model.find(And(*conditions)).delete(session=session)
+            # 2. Delete from MongoDB
+            result = await mongo_model.find(query_filter).delete(session=session)
             count = result.deleted_count if result else 0
             logger.info(
-                "✅ Successfully deleted MemCell within time range: %s - %s, user: %s, deleted %d records",
-                start_time,
-                end_time,
-                user_id or 'all',
-                count,
+                "✅ Deleted %d MemCell from MongoDB in time range", count
             )
 
-            # 3. Batch delete from KV-Storage (secondary operation)
-            if kv_storage and event_ids:
-                try:
-                    deleted_count = await kv_storage.batch_delete(keys=event_ids)
-                    logger.info(f"✅ KV-Storage batch delete success: {deleted_count} records")
-                except Exception as kv_error:
-                    logger.warning(
-                        f"⚠️  KV-Storage batch delete failed for time range: {kv_error}",
-                        exc_info=True
-                    )
+            # 3. Batch delete from KV-Storage
+            if event_ids:
+                kv_storage = self._get_kv_storage()
+                if kv_storage:
+                    try:
+                        deleted_count = await kv_storage.batch_delete(keys=event_ids)
+                        logger.info(f"✅ KV-Storage batch delete: {deleted_count} records")
+                    except Exception as kv_error:
+                        logger.warning(f"⚠️  KV-Storage batch delete failed: {kv_error}")
 
             return count
         except Exception as e:
-            logger.error("❌ Failed to delete MemCell within time range: %s", e)
+            logger.error("❌ Failed to delete MemCell by time range: %s", e)
             return 0
-
-    # ==================== Statistics and Aggregation Queries ====================
 
     async def count_by_user_id(self, user_id: str) -> int:
         """
-        Count number of MemCell for a user
+        Count MemCell by user ID
 
         Args:
             user_id: User ID
 
         Returns:
-            Number of records
+            Total count
         """
         try:
-            count = await self.model.find({"user_id": user_id}).count()
-            logger.debug(
-                "✅ Successfully counted user MemCell: %s, total %d records",
-                user_id,
-                count,
-            )
+            # Use appropriate model based on storage mode
+            mongo_model = self._get_mongo_model()
+            count = await mongo_model.find({"user_id": user_id}).count()
+            logger.debug(f"✅ Count for user {user_id}: {count}")
             return count
         except Exception as e:
-            logger.error("❌ Failed to count user MemCell: %s", e)
+            logger.error("❌ Failed to count MemCell by user ID: %s", e)
             return 0
 
     async def count_by_time_range(
-        self, start_time: datetime, end_time: datetime, user_id: Optional[str] = None
+        self, start_time: datetime, end_time: datetime
     ) -> int:
         """
-        Count number of MemCell within time range
+        Count MemCell by time range
 
         Args:
-            start_time: Start time
-            end_time: End time
-            user_id: Optional user ID filter
+            start_time: Start time (inclusive)
+            end_time: End time (exclusive)
 
         Returns:
-            Number of records
+            Total count
         """
         try:
-            conditions = [
-                GTE(MemCell.timestamp, start_time),
-                LT(MemCell.timestamp, end_time),
-            ]
-
-            if user_id:
-                conditions.append(Eq(MemCell.user_id, user_id))
-
-            count = await self.model.find(And(*conditions)).count()
-            logger.debug(
-                "✅ Successfully counted MemCell within time range: %s - %s, user: %s, total %d records",
-                start_time,
-                end_time,
-                user_id or 'all',
-                count,
+            # Use appropriate model based on storage mode
+            mongo_model = self._get_mongo_model()
+            query_filter = And(
+                GTE(mongo_model.timestamp, start_time),
+                LT(mongo_model.timestamp, end_time),
             )
+            count = await mongo_model.find(query_filter).count()
+            logger.debug(f"✅ Count in time range: {count}")
             return count
         except Exception as e:
-            logger.error("❌ Failed to count MemCell within time range: %s", e)
+            logger.error("❌ Failed to count MemCell by time range: %s", e)
             return 0
 
-    async def get_latest_by_user(self, user_id: str, limit: int = 10) -> List[MemCell]:
+    async def get_latest_by_user(
+        self, user_id: str, limit: int = 10
+    ) -> List[MemCell]:
         """
-        Get latest MemCell records for a user
+        Get latest MemCell for a user
 
         Args:
             user_id: User ID
-            limit: Limit on number of returned records
+            limit: Maximum number of results (default 10)
 
         Returns:
-            List of MemCell
+            List of full MemCell instances sorted by timestamp descending
         """
         try:
-            results = (
-                await self.model.find({"user_id": user_id})
+            # Use appropriate model based on storage mode
+            mongo_model = self._get_mongo_model()
+
+            # Query with limit and sort
+            results = await (
+                mongo_model.find({"user_id": user_id})
                 .sort("-timestamp")
                 .limit(limit)
                 .to_list()
             )
-            logger.debug(
-                "✅ Successfully retrieved latest user MemCell: %s, returned %d records",
-                user_id,
-                len(results),
-            )
+            logger.debug(f"✅ Found {len(results)} latest MemCell for user: {user_id}")
 
-            # Validate against KV-Storage
-            kv_data_dict = await self._batch_get_from_kv(results)
-            await self._compare_results_with_kv(results, kv_data_dict)
-
-            return results
+            # Process results based on storage mode
+            full_memcells = await self._process_query_results(results)
+            return full_memcells
         except Exception as e:
-            logger.error("❌ Failed to retrieve latest user MemCell: %s", e)
+            logger.error("❌ Failed to get latest MemCell by user: %s", e)
             return []
 
     async def get_user_activity_summary(
@@ -956,30 +1111,33 @@ class MemCellRawRepository(BaseRepository[MemCell]):
             Activity summary dictionary
         """
         try:
+            # Use appropriate model based on storage mode
+            mongo_model = self._get_mongo_model()
+
             # Base query conditions
             base_query = And(
-                Eq(MemCell.user_id, user_id),
-                GTE(MemCell.timestamp, start_time),
-                LT(MemCell.timestamp, end_time),
+                Eq(mongo_model.user_id, user_id),
+                GTE(mongo_model.timestamp, start_time),
+                LT(mongo_model.timestamp, end_time),
             )
 
             # Total count
-            total_count = await self.model.find(base_query).count()
+            total_count = await mongo_model.find(base_query).count()
 
             # Count by type
             type_stats = {}
             for data_type in DataTypeEnum:
-                type_query = And(base_query, Eq(MemCell.type, data_type))
-                count = await self.model.find(type_query).count()
+                type_query = And(base_query, Eq(mongo_model.type, data_type))
+                count = await mongo_model.find(type_query).count()
                 if count > 0:
                     type_stats[data_type.value] = count
 
             # Get latest and earliest records
             latest = (
-                await self.model.find(base_query).sort("-timestamp").limit(1).to_list()
+                await mongo_model.find(base_query).sort("-timestamp").limit(1).to_list()
             )
             earliest = (
-                await self.model.find(base_query).sort("timestamp").limit(1).to_list()
+                await mongo_model.find(base_query).sort("timestamp").limit(1).to_list()
             )
 
             summary = {
