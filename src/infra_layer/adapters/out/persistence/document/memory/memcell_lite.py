@@ -2,8 +2,8 @@
 MemCell Lite Model - Minimal MongoDB Storage
 
 Lightweight MemCell model containing only indexed and query fields.
-Used when FULL_STORAGE_MODE=false to minimize MongoDB storage.
-Complete MemCell data is stored in KV-Storage.
+Used to minimize MongoDB storage - only stores indexed fields for queries.
+Complete MemCell data is stored in KV-Storage (encrypted).
 """
 
 from datetime import datetime
