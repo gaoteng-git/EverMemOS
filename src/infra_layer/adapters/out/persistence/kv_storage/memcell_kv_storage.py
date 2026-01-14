@@ -1,7 +1,7 @@
 """
-MemCell KV-Storage Interface
+Generic KV-Storage Interface
 
-Abstract interface for key-value storage of MemCell documents.
+Abstract interface for key-value storage of memory documents (MemCell, EpisodicMemory, etc.).
 Supports both in-memory (dict-based) and persistent (RocksDB/LevelDB) implementations.
 """
 
@@ -11,11 +11,11 @@ from typing import Optional, List, Dict
 
 class MemCellKVStorage(ABC):
     """
-    Abstract interface for MemCell key-value storage.
+    Abstract interface for generic key-value storage.
 
-    This interface defines the contract for storing and retrieving MemCell documents
-    in a key-value store. The key is the MongoDB ObjectId (as string), and the value
-    is the JSON-serialized MemCell document.
+    This interface defines the contract for storing and retrieving memory documents
+    (MemCell, EpisodicMemory, etc.) in a key-value store. The key is the MongoDB
+    ObjectId (as string), and the value is the JSON-serialized document.
 
     Implementations should handle errors gracefully and return None/False on failures
     rather than raising exceptions, to ensure KV-Storage issues don't break the main
