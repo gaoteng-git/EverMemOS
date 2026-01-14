@@ -179,7 +179,12 @@ class AliasSupportDoc(DocBase):
         return generate_index_name(cls)
 
 
-def AliasDoc(doc_name: str, number_of_shards: int = 2) -> Type[AsyncDocument]:
+def AliasDoc(
+    doc_name: str,
+    number_of_shards: int = 2,
+    number_of_replicas: int = 1,
+    refresh_interval: str = "10s",
+) -> Type[AsyncDocument]:
     """
     Create an ES document class supporting alias pattern
 
@@ -207,8 +212,8 @@ def AliasDoc(doc_name: str, number_of_shards: int = 2) -> Type[AsyncDocument]:
             name = doc_name
             settings = {
                 "number_of_shards": number_of_shards,
-                "number_of_replicas": 1,
-                "refresh_interval": "60s",
+                "number_of_replicas": number_of_replicas,
+                "refresh_interval": refresh_interval,
                 "max_ngram_diff": 50,
                 "max_shingle_diff": 10,
             }
