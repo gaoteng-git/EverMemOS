@@ -13,8 +13,8 @@ from infra_layer.adapters.out.persistence.document.memory.episodic_memory import
 from infra_layer.adapters.out.persistence.document.memory.episodic_memory_lite import (
     EpisodicMemoryLite,
 )
-from infra_layer.adapters.out.persistence.kv_storage.episodic_memory_kv_storage import (
-    EpisodicMemoryKVStorage,
+from infra_layer.adapters.out.persistence.kv_storage.memcell_kv_storage import (
+    MemCellKVStorage,
 )
 from agentic_layer.vectorize_service import get_vectorize_service
 from common_utils.datetime_utils import get_now_with_timezone
@@ -34,9 +34,9 @@ class EpisodicMemoryRawRepository(BaseRepository[EpisodicMemoryLite]):
         super().__init__(EpisodicMemoryLite)
 
         # Inject KV-Storage with graceful degradation
-        self._kv_storage: Optional[EpisodicMemoryKVStorage] = None
+        self._kv_storage: Optional[MemCellKVStorage] = None
         try:
-            self._kv_storage = get_bean_by_type(EpisodicMemoryKVStorage)
+            self._kv_storage = get_bean_by_type(MemCellKVStorage)
             logger.info("✅ EpisodicMemory KV-Storage initialized successfully")
         except Exception as e:
             logger.error(f"⚠️ EpisodicMemory KV-Storage not available: {e}")
@@ -47,7 +47,7 @@ class EpisodicMemoryRawRepository(BaseRepository[EpisodicMemoryLite]):
 
     # ==================== Helper Methods ====================
 
-    def _get_kv_storage(self) -> Optional[EpisodicMemoryKVStorage]:
+    def _get_kv_storage(self) -> Optional[MemCellKVStorage]:
         """
         Get KV-Storage instance with availability check.
 
