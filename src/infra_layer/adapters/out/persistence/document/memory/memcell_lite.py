@@ -68,7 +68,8 @@ class MemCellLite(DocumentBase, AuditBase):
 
         name = "memcells"
 
-        # Indexes for query fields (audit field indexes managed by AuditBase)
+        # Indexes for query fields
+        # Note: No indexes on audit fields (created_at/updated_at) as all queries use timestamp field
         indexes = [
             IndexModel(
                 [("user_id", ASCENDING), ("timestamp", DESCENDING)],
@@ -97,9 +98,6 @@ class MemCellLite(DocumentBase, AuditBase):
                 ],
                 name="idx_group_type_timestamp",
             ),
-            # Indexes on audit fields (for pagination and time-based queries)
-            IndexModel([("created_at", DESCENDING)], name="idx_created_at"),
-            IndexModel([("updated_at", DESCENDING)], name="idx_updated_at"),
         ]
 
         validate_on_save = True
