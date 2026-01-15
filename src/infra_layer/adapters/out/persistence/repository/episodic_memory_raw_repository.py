@@ -276,7 +276,7 @@ class EpisodicMemoryRawRepository(BaseRepository[EpisodicMemoryLite]):
 
             results = await query.to_list()
             logger.debug(
-                "✅ MongoDB query: user_id=%s, found %d records",
+                "✅ Successfully retrieved episodic memories by user ID: %s, found %d records",
                 user_id,
                 len(results),
             )
@@ -506,7 +506,7 @@ class EpisodicMemoryRawRepository(BaseRepository[EpisodicMemoryLite]):
 
             results = await query.to_list()
             logger.debug(
-                "✅ MongoDB query by time range: %s - %s, found %d records",
+                "✅ Successfully queried EpisodicMemory by time range: time range: %s - %s, found %d records",
                 start_time,
                 end_time,
                 len(results),
@@ -556,7 +556,7 @@ class EpisodicMemoryRawRepository(BaseRepository[EpisodicMemoryLite]):
 
             results = await query.to_list()
             logger.debug(
-                "✅ MongoDB paginated query: filter=%s, skip=%d, limit=%d, found %d records",
+                "✅ Successfully paginated query of EpisodicMemory: filter=%s, skip=%d, limit=%d, found %d records",
                 filter_dict,
                 skip,
                 limit,
