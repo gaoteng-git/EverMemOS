@@ -97,8 +97,7 @@ class ForesightRecord(DocumentBase, AuditBase):
         """Beanie settings"""
 
         name = "foresight_records"
-        # Note: In Dual Storage architecture, these indexes apply to MongoDB (ForesightRecordLite)
-        # The full ForesightRecord model is stored in KV-Storage, not MongoDB
+
         indexes = [
             # User ID index
             IndexModel([("user_id", ASCENDING)], name="idx_user_id"),
@@ -111,8 +110,10 @@ class ForesightRecord(DocumentBase, AuditBase):
             ),
             # Group ID index
             IndexModel([("group_id", ASCENDING)], name="idx_group_id", sparse=True),
-            # Index on created_at (used by devops scripts for data sync)
+            # Creation time index
             IndexModel([("created_at", DESCENDING)], name="idx_created_at"),
+            # Update time index
+            IndexModel([("updated_at", DESCENDING)], name="idx_updated_at"),
         ]
 
         validate_on_save = True
