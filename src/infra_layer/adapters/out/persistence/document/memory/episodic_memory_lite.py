@@ -10,20 +10,21 @@ from datetime import datetime
 from typing import List, Optional
 from beanie import Indexed
 from core.oxm.mongo.document_base import DocumentBase
+from core.oxm.mongo.audit_base import AuditBase
 from pydantic import Field, ConfigDict
 from pymongo import IndexModel, ASCENDING, DESCENDING
 from beanie import PydanticObjectId
 
 
-class EpisodicMemoryLite(DocumentBase):
+class EpisodicMemoryLite(DocumentBase, AuditBase):
     """
     EpisodicMemory Lite Model - Minimal storage version
 
     Contains only indexed and query fields for MongoDB.
     Full EpisodicMemory data is stored in KV-Storage as backup.
 
-    Note: Does not inherit from AuditBase - created_at/updated_at are managed manually
-    and stored in both MongoDB (for queries) and KV-Storage (for full data).
+    Note: Inherits from AuditBase to automatically manage created_at/updated_at timestamps.
+    These audit fields are stored in both MongoDB (for queries) and KV-Storage (for full data).
     """
 
     # Core indexed fields
@@ -37,14 +38,6 @@ class EpisodicMemoryLite(DocumentBase):
     keywords: Optional[List[str]] = Field(default=None, description="Keywords")
     linked_entities: Optional[List[str]] = Field(
         default=None, description="Associated entity IDs"
-    )
-
-    # Audit fields (indexed, managed manually)
-    created_at: Indexed(datetime) = Field(
-        default=None, description="Creation time"
-    )
-    updated_at: Indexed(datetime) = Field(
-        default=None, description="Last update time"
     )
 
     model_config = ConfigDict(
@@ -63,7 +56,7 @@ class EpisodicMemoryLite(DocumentBase):
 
         name = "episodic_memories"
 
-        # Same indexes as full EpisodicMemory
+        # Indexes for query fields (audit field indexes included for time-based queries)
         indexes = [
             # Composite index on user ID and timestamp
             IndexModel(
@@ -83,7 +76,7 @@ class EpisodicMemoryLite(DocumentBase):
                 name="idx_linked_entities",
                 sparse=True,
             ),
-            # Index on audit fields
+            # Indexes on audit fields (for pagination and time-based queries)
             IndexModel([("created_at", DESCENDING)], name="idx_created_at"),
             IndexModel([("updated_at", DESCENDING)], name="idx_updated_at"),
         ]

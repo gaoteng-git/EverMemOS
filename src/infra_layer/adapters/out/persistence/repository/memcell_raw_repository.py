@@ -79,6 +79,10 @@ class MemCellRawRepository(BaseRepository[MemCellLite]):
 
         Returns:
             MemCellLite instance with only indexed/query fields
+
+        Note:
+            Audit fields (created_at/updated_at) are not copied here.
+            They will be automatically set by AuditBase during insert/update operations.
         """
         return MemCellLite(
             id=memcell.id,
@@ -88,8 +92,6 @@ class MemCellRawRepository(BaseRepository[MemCellLite]):
             participants=memcell.participants,
             type=memcell.type,
             keywords=memcell.keywords,
-            created_at=memcell.created_at,
-            updated_at=memcell.updated_at,
         )
 
     async def _memcell_lite_to_full(
@@ -236,19 +238,16 @@ class MemCellRawRepository(BaseRepository[MemCellLite]):
         Append MemCell
         """
         try:
-            # Set audit fields BEFORE creating Lite model
-            now = get_now_with_timezone()
-            if memcell.created_at is None:
-                memcell.created_at = now
-            if memcell.updated_at is None:
-                memcell.updated_at = now
-
-            # 1. Write MemCellLite to MongoDB (indexed fields only, including audit fields)
+            # 1. Write MemCellLite to MongoDB (indexed fields only)
+            # Note: MemCellLite inherits AuditBase, which will auto-set created_at/updated_at on insert
             memcell_lite = self._memcell_to_lite(memcell)
             await memcell_lite.insert(session=session)
 
-            # Copy generated ID back to full MemCell
+            # Copy generated ID and audit fields back to full MemCell
+            # (AuditBase has set these fields automatically during insert)
             memcell.id = memcell_lite.id
+            memcell.created_at = memcell_lite.created_at
+            memcell.updated_at = memcell_lite.updated_at
 
             logger.info(f"✅ MemCell appended to MongoDB: {memcell.event_id}")
 

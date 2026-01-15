@@ -71,6 +71,10 @@ class EpisodicMemoryRawRepository(BaseRepository[EpisodicMemoryLite]):
 
         Returns:
             EpisodicMemoryLite with only indexed fields
+
+        Note:
+            Audit fields (created_at/updated_at) are not copied here.
+            They will be automatically set by AuditBase during insert/update operations.
         """
         return EpisodicMemoryLite(
             id=episodic.id,
@@ -79,8 +83,6 @@ class EpisodicMemoryRawRepository(BaseRepository[EpisodicMemoryLite]):
             timestamp=episodic.timestamp,
             keywords=episodic.keywords,
             linked_entities=episodic.linked_entities,
-            created_at=episodic.created_at,
-            updated_at=episodic.updated_at,
         )
 
     async def _episodic_lite_to_full(
@@ -357,19 +359,16 @@ class EpisodicMemoryRawRepository(BaseRepository[EpisodicMemoryLite]):
                 logger.error("❌ Failed to synchronize vector: %s", e)
 
         try:
-            # Set audit fields BEFORE creating Lite model
-            now = get_now_with_timezone()
-            if episodic_memory.created_at is None:
-                episodic_memory.created_at = now
-            if episodic_memory.updated_at is None:
-                episodic_memory.updated_at = now
-
             # 1. Write EpisodicMemoryLite to MongoDB (indexed fields only)
+            # Note: EpisodicMemoryLite inherits AuditBase, which will auto-set created_at/updated_at on insert
             episodic_lite = self._episodic_to_lite(episodic_memory)
             await episodic_lite.insert(session=session)
 
-            # Copy generated ID back to full EpisodicMemory
+            # Copy generated ID and audit fields back to full EpisodicMemory
+            # (AuditBase has set these fields automatically during insert)
             episodic_memory.id = episodic_lite.id
+            episodic_memory.created_at = episodic_lite.created_at
+            episodic_memory.updated_at = episodic_lite.updated_at
 
             logger.info(
                 "✅ Successfully appended episodic memory: event_id=%s, user_id=%s",
