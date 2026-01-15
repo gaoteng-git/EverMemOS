@@ -12,6 +12,7 @@ from enum import Enum
 
 from beanie import Indexed
 from core.oxm.mongo.document_base import DocumentBase
+from core.oxm.mongo.audit_base import AuditBase
 from pydantic import Field, ConfigDict
 from pymongo import IndexModel, ASCENDING, DESCENDING
 from beanie import PydanticObjectId
@@ -23,15 +24,15 @@ class DataTypeEnum(str, Enum):
     CONVERSATION = "Conversation"
 
 
-class MemCellLite(DocumentBase):
+class MemCellLite(DocumentBase, AuditBase):
     """
     MemCell Lite Model - Minimal storage version
 
     Contains only indexed and query fields for MongoDB.
     Full MemCell data is stored in KV-Storage as backup.
 
-    Note: Does not inherit from AuditBase - created_at/updated_at are managed manually
-    and stored in both MongoDB (for queries) and KV-Storage (for full data).
+    Note: Inherits from AuditBase to automatically manage created_at/updated_at timestamps.
+    These audit fields are stored in both MongoDB (for queries) and KV-Storage (for full data).
     """
 
     # Core indexed fields
@@ -51,14 +52,6 @@ class MemCellLite(DocumentBase):
     type: Optional[DataTypeEnum] = Field(default=None, description="Scenario type")
     keywords: Optional[List[str]] = Field(default=None, description="Keywords")
 
-    # Audit fields (indexed, managed manually)
-    created_at: Indexed(datetime) = Field(
-        default=None, description="Creation time"
-    )
-    updated_at: Indexed(datetime) = Field(
-        default=None, description="Last update time"
-    )
-
     model_config = ConfigDict(
         # Collection name (same as full MemCell)
         collection="memcells",
@@ -75,7 +68,7 @@ class MemCellLite(DocumentBase):
 
         name = "memcells"
 
-        # Same indexes as full MemCell
+        # Indexes for query fields (audit field indexes managed by AuditBase)
         indexes = [
             IndexModel(
                 [("user_id", ASCENDING), ("timestamp", DESCENDING)],
@@ -104,7 +97,7 @@ class MemCellLite(DocumentBase):
                 ],
                 name="idx_group_type_timestamp",
             ),
-            # Index on audit fields
+            # Indexes on audit fields (for pagination and time-based queries)
             IndexModel([("created_at", DESCENDING)], name="idx_created_at"),
             IndexModel([("updated_at", DESCENDING)], name="idx_updated_at"),
         ]
