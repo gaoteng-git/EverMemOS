@@ -27,6 +27,8 @@ async def init_database():
     from infra_layer.adapters.out.persistence.document.memory.memcell_lite import MemCellLite
     from infra_layer.adapters.out.persistence.document.memory.episodic_memory import EpisodicMemory
     from infra_layer.adapters.out.persistence.document.memory.episodic_memory_lite import EpisodicMemoryLite
+    from infra_layer.adapters.out.persistence.document.memory.event_log_record import EventLogRecord
+    from infra_layer.adapters.out.persistence.document.memory.event_log_record_lite import EventLogRecordLite
     from core.di import get_container
 
     # Load environment variables from .env file
@@ -50,13 +52,14 @@ async def init_database():
     database = client[db_name]
 
     # Initialize Beanie with all document models
-    await init_beanie(database=database, document_models=[MemCell, MemCellLite, EpisodicMemory, EpisodicMemoryLite])
+    await init_beanie(database=database, document_models=[MemCell, MemCellLite, EpisodicMemory, EpisodicMemoryLite, EventLogRecord, EventLogRecordLite])
 
     # Initialize DI container and manually register repositories
     # (Avoid full scan which loads unnecessary components)
     container = get_container()
     from infra_layer.adapters.out.persistence.repository.memcell_raw_repository import MemCellRawRepository
     from infra_layer.adapters.out.persistence.repository.episodic_memory_raw_repository import EpisodicMemoryRawRepository
+    from infra_layer.adapters.out.persistence.repository.event_log_record_raw_repository import EventLogRecordRawRepository
     from infra_layer.adapters.out.persistence.kv_storage.in_memory_kv_storage import InMemoryKVStorage
     from infra_layer.adapters.out.persistence.kv_storage.kv_storage_interface import KVStorageInterface
 
@@ -73,6 +76,11 @@ async def init_database():
         container.register_bean(
             bean_type=KVStorageInterface,
             bean_name="episodic_memory_kv_storage",
+            instance=kv_storage_instance
+        )
+        container.register_bean(
+            bean_type=KVStorageInterface,
+            bean_name="kv_storage",
             instance=kv_storage_instance
         )
 
@@ -94,6 +102,16 @@ async def init_database():
             bean_type=EpisodicMemoryRawRepository,
             bean_name="EpisodicMemoryRawRepository",
             instance=EpisodicMemoryRawRepository()
+        )
+
+    # Register EventLogRecord repository manually (only if not already registered)
+    try:
+        container.get_bean("EventLogRecordRawRepository")
+    except:
+        container.register_bean(
+            bean_type=EventLogRecordRawRepository,
+            bean_name="EventLogRecordRawRepository",
+            instance=EventLogRecordRawRepository()
         )
 
     yield
