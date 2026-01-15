@@ -547,7 +547,7 @@ class EpisodicMemoryRawRepository(BaseRepository[EpisodicMemoryLite]):
 
             results = await query.to_list()
             logger.debug(
-                "✅ MongoDB paginated query: filter=%s, skip=%d, limit=%d, found %d records",
+                "✅ Successfully paginated query of EpisodicMemory: filter=%s, skip=%d, limit=%d, found %d records",
                 filter_dict,
                 skip,
                 limit,
