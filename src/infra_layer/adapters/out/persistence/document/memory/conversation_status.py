@@ -45,16 +45,8 @@ class ConversationStatus(DocumentBase, AuditBase):
         return self.id
 
     class Settings:
-        """Beanie settings"""
-
         name = "conversation_status"
-        indexes = [
-            # Note: conversation_id maps to the _id field, MongoDB automatically creates a primary key index on _id
-            IndexModel(
-                [("group_id", ASCENDING)], name="idx_group_id", unique=True
-            ),  # group_id must be unique
-            IndexModel([("created_at", DESCENDING)], name="idx_created_at"),
-            IndexModel([("updated_at", DESCENDING)], name="idx_updated_at"),
-        ]
-        validate_on_save = True
-        use_state_management = True
+
+        # Dual Storage architecture:
+        # - MongoDB stores ConversationStatusLite (indexed fields only)
+        # - KV-Storage stores complete ConversationStatus (full data)

@@ -35,6 +35,8 @@ async def init_database():
     from infra_layer.adapters.out.persistence.document.memory.cluster_state_lite import ClusterStateLite
     from infra_layer.adapters.out.persistence.document.memory.user_profile import UserProfile
     from infra_layer.adapters.out.persistence.document.memory.user_profile_lite import UserProfileLite
+    from infra_layer.adapters.out.persistence.document.memory.conversation_meta import ConversationMeta
+    from infra_layer.adapters.out.persistence.document.memory.conversation_meta_lite import ConversationMetaLite
     from core.di import get_container
 
     # Load environment variables from .env file
@@ -58,7 +60,7 @@ async def init_database():
     database = client[db_name]
 
     # Initialize Beanie with all document models
-    await init_beanie(database=database, document_models=[MemCell, MemCellLite, EpisodicMemory, EpisodicMemoryLite, EventLogRecord, EventLogRecordLite, ForesightRecord, ForesightRecordLite, ClusterState, ClusterStateLite, UserProfile, UserProfileLite])
+    await init_beanie(database=database, document_models=[MemCell, MemCellLite, EpisodicMemory, EpisodicMemoryLite, EventLogRecord, EventLogRecordLite, ForesightRecord, ForesightRecordLite, ClusterState, ClusterStateLite, UserProfile, UserProfileLite, ConversationMeta, ConversationMetaLite])
 
     # Initialize DI container and manually register repositories
     # (Avoid full scan which loads unnecessary components)
@@ -69,6 +71,7 @@ async def init_database():
     from infra_layer.adapters.out.persistence.repository.foresight_record_repository import ForesightRecordRawRepository
     from infra_layer.adapters.out.persistence.repository.cluster_state_raw_repository import ClusterStateRawRepository
     from infra_layer.adapters.out.persistence.repository.user_profile_raw_repository import UserProfileRawRepository
+    from infra_layer.adapters.out.persistence.repository.conversation_meta_raw_repository import ConversationMetaRawRepository
     from infra_layer.adapters.out.persistence.kv_storage.in_memory_kv_storage import InMemoryKVStorage
     from infra_layer.adapters.out.persistence.kv_storage.kv_storage_interface import KVStorageInterface
 
@@ -151,6 +154,16 @@ async def init_database():
             bean_type=UserProfileRawRepository,
             bean_name="UserProfileRawRepository",
             instance=UserProfileRawRepository()
+        )
+
+    # Register ConversationMeta repository manually (only if not already registered)
+    try:
+        container.get_bean("ConversationMetaRawRepository")
+    except:
+        container.register_bean(
+            bean_type=ConversationMetaRawRepository,
+            bean_name="ConversationMetaRawRepository",
+            instance=ConversationMetaRawRepository()
         )
 
     yield
