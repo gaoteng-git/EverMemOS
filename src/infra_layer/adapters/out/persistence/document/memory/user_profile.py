@@ -46,3 +46,7 @@ class UserProfile(DocumentBase, AuditBase):
     class Settings:
         name = "user_profiles"
         indexes = [[("user_id", 1), ("group_id", 1)]]  # Composite index
+
+        # Dual Storage architecture:
+        # - MongoDB stores UserProfileLite (indexed fields only)
+        # - KV-Storage stores complete UserProfile (full data)
