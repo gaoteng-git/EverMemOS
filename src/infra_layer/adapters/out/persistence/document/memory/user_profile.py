@@ -1,6 +1,5 @@
 from datetime import datetime
 from typing import List, Optional, Dict, Any
-from beanie import Indexed
 from core.oxm.mongo.document_base import DocumentBase
 from pydantic import Field
 from core.oxm.mongo.audit_base import AuditBase
@@ -14,8 +13,8 @@ class UserProfile(DocumentBase, AuditBase):
     """
 
     # Composite primary key
-    user_id: Indexed(str) = Field(..., description="User ID")
-    group_id: Indexed(str) = Field(..., description="Group ID")
+    user_id: str = Field(..., description="User ID")
+    group_id: str = Field(..., description="Group ID")
 
     # Profile content (stored in JSON format)
     profile_data: Dict[str, Any] = Field(
@@ -45,7 +44,6 @@ class UserProfile(DocumentBase, AuditBase):
 
     class Settings:
         name = "user_profiles"
-        indexes = [[("user_id", 1), ("group_id", 1)]]  # Composite index
 
         # Dual Storage architecture:
         # - MongoDB stores UserProfileLite (indexed fields only)
