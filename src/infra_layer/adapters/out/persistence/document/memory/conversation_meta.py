@@ -6,7 +6,6 @@ A conversation metadata document model based on Beanie ODM, storing complete met
 
 from datetime import datetime
 from typing import List, Optional, Dict, Any
-from beanie import Indexed
 from core.oxm.mongo.document_base import DocumentBase
 from pydantic import Field, ConfigDict, BaseModel
 from pymongo import IndexModel, ASCENDING, DESCENDING, TEXT
@@ -55,7 +54,7 @@ class ConversationMeta(DocumentBase, AuditBase):
     description: Optional[str] = Field(
         default=None, description="Conversation description"
     )
-    group_id: Indexed(str) = Field(
+    group_id: str = Field(
         ..., description="Group ID, used to associate a group of conversations"
     )
 
@@ -131,19 +130,8 @@ class ConversationMeta(DocumentBase, AuditBase):
     )
 
     class Settings:
-        """Beanie settings"""
-
         name = "conversation_metas"
-        indexes = [
-            # group_id index (high-frequency query)
-            IndexModel([("group_id", ASCENDING)], name="idx_group_id"),
-            # scene index (scene query)
-            IndexModel([("scene", ASCENDING)], name="idx_scene"),
-            # Composite index: group_id + scene (common compound query)
-            IndexModel(
-                [("group_id", ASCENDING), ("scene", ASCENDING)],
-                name="idx_group_id_scene",
-            ),
-        ]
-        validate_on_save = True
-        use_state_management = True
+
+        # Dual Storage architecture:
+        # - MongoDB stores ConversationMetaLite (indexed fields only)
+        # - KV-Storage stores complete ConversationMeta (full data)

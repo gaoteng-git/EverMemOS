@@ -10,8 +10,15 @@ from pymongo.asynchronous.client_session import AsyncClientSession
 
 from core.oxm.mongo.base_repository import BaseRepository
 from core.di.decorators import repository
+from core.di import get_bean_by_type
 from infra_layer.adapters.out.persistence.document.memory.conversation_meta import (
     ConversationMeta,
+)
+from infra_layer.adapters.out.persistence.document.memory.conversation_meta_lite import (
+    ConversationMetaLite,
+)
+from infra_layer.adapters.out.persistence.kv_storage.kv_storage_interface import (
+    KVStorageInterface,
 )
 
 logger = logging.getLogger(__name__)
@@ -21,7 +28,7 @@ ALLOWED_SCENES = ["assistant", "companion"]
 
 
 @repository("conversation_meta_raw_repository", primary=True)
-class ConversationMetaRawRepository(BaseRepository[ConversationMeta]):
+class ConversationMetaRawRepository(BaseRepository[ConversationMetaLite]):
     """
     Raw repository layer for conversation metadata
 
@@ -30,7 +37,93 @@ class ConversationMetaRawRepository(BaseRepository[ConversationMeta]):
 
     def __init__(self):
         """Initialize repository"""
-        super().__init__(ConversationMeta)
+        super().__init__(ConversationMetaLite)
+
+        # Inject KV-Storage with graceful degradation
+        self._kv_storage: Optional[KVStorageInterface] = None
+        try:
+            self._kv_storage = get_bean_by_type(KVStorageInterface)
+            logger.info("✅ ConversationMeta KV-Storage initialized successfully")
+        except Exception as e:
+            logger.error(f"⚠️ ConversationMeta KV-Storage not available: {e}")
+            raise e
+
+    def _get_kv_storage(self) -> Optional[KVStorageInterface]:
+        """
+        Get KV-Storage instance with availability check.
+
+        Returns:
+            KV-Storage instance if available
+
+        Raises:
+            Exception: If KV-Storage is not available
+        """
+        if self._kv_storage is None:
+            logger.debug("KV-Storage not available, skipping KV operations")
+            raise Exception("KV-Storage not available")
+        return self._kv_storage
+
+    def _conversation_meta_to_lite(
+        self, conversation_meta: ConversationMeta
+    ) -> ConversationMetaLite:
+        """
+        Convert full ConversationMeta to ConversationMetaLite (only indexed fields).
+
+        Args:
+            conversation_meta: Full ConversationMeta object
+
+        Returns:
+            ConversationMetaLite with only indexed fields
+
+        Note:
+            Audit fields (created_at/updated_at) are not copied here.
+            They will be automatically set by AuditBase during insert/update operations.
+        """
+        return ConversationMetaLite(
+            id=conversation_meta.id,
+            group_id=conversation_meta.group_id,
+            scene=conversation_meta.scene,
+        )
+
+    async def _conversation_meta_lite_to_full(
+        self, lite: ConversationMetaLite
+    ) -> Optional[ConversationMeta]:
+        """
+        Reconstruct full ConversationMeta object from KV-Storage.
+        MongoDB is ONLY used for querying and getting _id.
+
+        Args:
+            lite: ConversationMetaLite from MongoDB query
+
+        Returns:
+            Full ConversationMeta object from KV-Storage or None
+        """
+        if not lite:
+            return None
+
+        kv_storage = self._get_kv_storage()
+        if not kv_storage:
+            logger.error("❌ KV-Storage unavailable, cannot reconstruct ConversationMeta")
+            return None
+
+        # Get from KV-Storage (source of truth)
+        conversation_meta_id = str(lite.id)
+        kv_json = await kv_storage.get(conversation_meta_id)
+
+        if kv_json:
+            try:
+                full_conversation_meta = ConversationMeta.model_validate_json(kv_json)
+                return full_conversation_meta
+            except Exception as e:
+                logger.error(
+                    f"❌ Failed to deserialize ConversationMeta: {conversation_meta_id}, error: {e}"
+                )
+                return None
+        else:
+            logger.warning(
+                f"⚠️ ConversationMeta not found in KV-Storage: {conversation_meta_id}"
+            )
+            return None
 
     def _validate_scene(self, scene: str) -> bool:
         """
@@ -63,15 +156,25 @@ class ConversationMetaRawRepository(BaseRepository[ConversationMeta]):
             Conversation metadata object or None
         """
         try:
-            conversation_meta = await self.model.find_one(
+            # Query MongoDB Lite model first
+            lite_result = await self.model.find_one(
                 {"group_id": group_id}, session=session
             )
-            if conversation_meta:
+            if not lite_result:
                 logger.debug(
-                    "✅ Successfully retrieved conversation metadata by group_id: %s",
-                    group_id,
+                    "ℹ️  ConversationMeta not found: group_id=%s", group_id
                 )
-            return conversation_meta
+                return None
+
+            # Reconstruct from KV-Storage
+            full_conversation_meta = await self._conversation_meta_lite_to_full(
+                lite_result
+            )
+            if full_conversation_meta:
+                logger.debug(
+                    "✅ Retrieved ConversationMeta successfully: group_id=%s", group_id
+                )
+            return full_conversation_meta
         except Exception as e:
             logger.error(
                 "❌ Failed to retrieve conversation metadata by group_id: %s", e
@@ -107,19 +210,28 @@ class ConversationMetaRawRepository(BaseRepository[ConversationMeta]):
                 )
                 return []
 
+            # Query MongoDB Lite models
             query = self.model.find({"scene": scene}, session=session)
             if skip:
                 query = query.skip(skip)
             if limit:
                 query = query.limit(limit)
 
-            result = await query.to_list()
+            lite_results = await query.to_list()
+
+            # Reconstruct full objects from KV-Storage
+            full_metas = []
+            for lite in lite_results:
+                full_meta = await self._conversation_meta_lite_to_full(lite)
+                if full_meta:
+                    full_metas.append(full_meta)
+
             logger.debug(
                 "✅ Successfully retrieved conversation metadata list by scene: scene=%s, count=%d",
                 scene,
-                len(result),
+                len(full_metas),
             )
-            return result
+            return full_metas
         except Exception as e:
             logger.error(
                 "❌ Failed to retrieve conversation metadata list by scene: %s", e
@@ -151,7 +263,40 @@ class ConversationMetaRawRepository(BaseRepository[ConversationMeta]):
                 )
                 return None
 
-            await conversation_meta.insert(session=session)
+            # Insert new Lite
+            conversation_meta_lite = self._conversation_meta_to_lite(conversation_meta)
+            await conversation_meta_lite.insert(session=session)
+
+            # Copy generated ID and audit fields back
+            conversation_meta.id = conversation_meta_lite.id
+            conversation_meta.created_at = conversation_meta_lite.created_at
+            conversation_meta.updated_at = conversation_meta_lite.updated_at
+
+            # Write to KV-Storage (always full ConversationMeta)
+            kv_storage = self._get_kv_storage()
+            if kv_storage:
+                try:
+                    json_value = conversation_meta.model_dump_json(
+                        by_alias=True, exclude_none=False
+                    )
+                    success = await kv_storage.put(
+                        key=str(conversation_meta.id), value=json_value
+                    )
+                    if success:
+                        logger.debug(
+                            f"✅ KV-Storage write success: {conversation_meta.id}"
+                        )
+                    else:
+                        logger.error(
+                            f"⚠️  KV-Storage write failed: {conversation_meta.id}"
+                        )
+                        return None
+                except Exception as kv_error:
+                    logger.error(
+                        f"⚠️  KV-Storage write error: {conversation_meta.id}: {kv_error}"
+                    )
+                    return None
+
             logger.info(
                 "✅ Successfully created conversation metadata: group_id=%s, scene=%s",
                 conversation_meta.group_id,
@@ -193,18 +338,63 @@ class ConversationMetaRawRepository(BaseRepository[ConversationMeta]):
                 )
                 return None
 
-            conversation_meta = await self.get_by_group_id(group_id, session=session)
-            if conversation_meta:
-                for key, value in update_data.items():
-                    if hasattr(conversation_meta, key):
-                        setattr(conversation_meta, key, value)
-                await conversation_meta.save(session=session)
-                logger.debug(
-                    "✅ Successfully updated conversation metadata by group_id: %s",
-                    group_id,
+            # Query MongoDB Lite model first
+            existing_lite = await self.model.find_one(
+                {"group_id": group_id}, session=session
+            )
+            if not existing_lite:
+                return None
+
+            # Reconstruct existing from KV-Storage
+            existing = await self._conversation_meta_lite_to_full(existing_lite)
+            if not existing:
+                logger.error(
+                    f"Failed to reconstruct existing conversation meta from KV-Storage: group_id={group_id}"
                 )
-                return conversation_meta
-            return None
+                return None
+
+            # Update fields
+            for key, value in update_data.items():
+                if hasattr(existing, key):
+                    setattr(existing, key, value)
+
+            # Update Lite in MongoDB (for indexed fields)
+            if "group_id" in update_data:
+                existing_lite.group_id = update_data["group_id"]
+            if "scene" in update_data:
+                existing_lite.scene = update_data["scene"]
+            await existing_lite.save(session=session)
+
+            # Copy updated audit fields back
+            existing.created_at = existing_lite.created_at
+            existing.updated_at = existing_lite.updated_at
+
+            # Write to KV-Storage
+            kv_storage = self._get_kv_storage()
+            if kv_storage:
+                try:
+                    json_value = existing.model_dump_json(
+                        by_alias=True, exclude_none=False
+                    )
+                    success = await kv_storage.put(
+                        key=str(existing.id), value=json_value
+                    )
+                    if success:
+                        logger.debug(f"✅ KV-Storage write success: {existing.id}")
+                    else:
+                        logger.error(f"⚠️  KV-Storage write failed: {existing.id}")
+                        return None
+                except Exception as kv_error:
+                    logger.error(
+                        f"⚠️  KV-Storage write error: {existing.id}: {kv_error}"
+                    )
+                    return None
+
+            logger.debug(
+                "✅ Successfully updated conversation metadata by group_id: %s",
+                group_id,
+            )
+            return existing
         except Exception as e:
             logger.error(
                 "❌ Failed to update conversation metadata by group_id: %s",
@@ -244,40 +434,84 @@ class ConversationMetaRawRepository(BaseRepository[ConversationMeta]):
                 )
                 return None
 
-            # 1. First try to find existing record
-            existing_doc = await self.model.find_one(
+            # Check if already exists
+            existing_lite = await self.model.find_one(
                 {"group_id": group_id}, session=session
             )
 
-            if existing_doc:
-                # Found record, update directly
+            # Prepare full ConversationMeta object
+            if existing_lite:
+                # Update: reconstruct existing from KV-Storage
+                existing = await self._conversation_meta_lite_to_full(existing_lite)
+                if not existing:
+                    logger.error(
+                        f"Failed to reconstruct existing conversation meta from KV-Storage: group_id={group_id}"
+                    )
+                    return None
+
+                # Update fields
                 for key, value in conversation_data.items():
-                    if hasattr(existing_doc, key):
-                        setattr(existing_doc, key, value)
-                await existing_doc.save(session=session)
+                    if hasattr(existing, key):
+                        setattr(existing, key, value)
+
+                # Update Lite in MongoDB (for indexed fields)
+                if "group_id" in conversation_data:
+                    existing_lite.group_id = conversation_data["group_id"]
+                if "scene" in conversation_data:
+                    existing_lite.scene = conversation_data["scene"]
+                await existing_lite.save(session=session)
+
+                # Copy updated audit fields back
+                existing.created_at = existing_lite.created_at
+                existing.updated_at = existing_lite.updated_at
+
+                conversation_meta = existing
                 logger.debug(
-                    "✅ Successfully updated existing conversation metadata: group_id=%s",
-                    group_id,
+                    f"Updated conversation metadata: group_id={group_id}"
                 )
-                return existing_doc
+            else:
+                # Insert new ConversationMeta
+                conversation_meta = ConversationMeta(
+                    group_id=group_id, **conversation_data
+                )
 
-            # 2. No record found, create new one
-            try:
-                new_doc = ConversationMeta(group_id=group_id, **conversation_data)
-                await new_doc.insert(session=session)
+                # Insert new Lite
+                conversation_meta_lite = self._conversation_meta_to_lite(
+                    conversation_meta
+                )
+                await conversation_meta_lite.insert(session=session)
+
+                # Copy generated ID and audit fields back
+                conversation_meta.id = conversation_meta_lite.id
+                conversation_meta.created_at = conversation_meta_lite.created_at
+                conversation_meta.updated_at = conversation_meta_lite.updated_at
+
                 logger.info(
-                    "✅ Successfully created new conversation metadata: group_id=%s",
-                    group_id,
+                    f"Created conversation metadata: group_id={group_id}"
                 )
-                return new_doc
-            except Exception as create_error:
-                logger.error(
-                    "❌ Failed to create conversation metadata: %s",
-                    create_error,
-                    exc_info=True,
-                )
-                return None
 
+            # Write to KV-Storage (always full ConversationMeta)
+            kv_storage = self._get_kv_storage()
+            if kv_storage:
+                try:
+                    json_value = conversation_meta.model_dump_json(
+                        by_alias=True, exclude_none=False
+                    )
+                    success = await kv_storage.put(
+                        key=str(conversation_meta.id), value=json_value
+                    )
+                    if success:
+                        logger.debug(f"✅ KV-Storage write success: {conversation_meta.id}")
+                    else:
+                        logger.error(f"⚠️  KV-Storage write failed: {conversation_meta.id}")
+                        return None
+                except Exception as kv_error:
+                    logger.error(
+                        f"⚠️  KV-Storage write error: {conversation_meta.id}: {kv_error}"
+                    )
+                    return None
+
+            return conversation_meta
         except Exception as e:
             logger.error(
                 "❌ Failed to upsert conversation metadata: %s", e, exc_info=True
@@ -298,10 +532,24 @@ class ConversationMetaRawRepository(BaseRepository[ConversationMeta]):
             Whether deletion was successful
         """
         try:
-            result = await self.model.find_one(
-                {"group_id": group_id}, session=session
-            ).delete()
+            # Get the lite object first to obtain ID for KV-Storage deletion
+            lite = await self.model.find_one({"group_id": group_id}, session=session)
+            if not lite:
+                return False
+
+            conversation_meta_id = str(lite.id)
+
+            # Delete from MongoDB
+            result = await lite.delete(session=session)
             if result:
+                # Delete from KV-Storage
+                kv_storage = self._get_kv_storage()
+                if kv_storage:
+                    try:
+                        await kv_storage.delete(conversation_meta_id)
+                    except Exception as kv_error:
+                        logger.error(f"⚠️  KV-Storage delete error: {kv_error}")
+
                 logger.info(
                     "✅ Successfully deleted conversation metadata: group_id=%s",
                     group_id,
