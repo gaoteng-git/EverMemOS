@@ -46,8 +46,6 @@ class ConversationStatus(DocumentBase, AuditBase):
         return self.id
 
     class Settings:
-        name = "conversation_status"
+        """Beanie settings"""
 
-        # Dual Storage architecture:
-        # - MongoDB stores ConversationStatusLite (indexed fields only)
-        # - KV-Storage stores complete ConversationStatus (full data)
+        name = "conversation_status"

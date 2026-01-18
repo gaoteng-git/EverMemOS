@@ -50,7 +50,3 @@ class ClusterState(DocumentBase, AuditBase):
 
     class Settings:
         name = "cluster_states"
-
-        # Dual Storage architecture:
-        # - MongoDB stores ClusterStateLite (indexed fields only)
-        # - KV-Storage stores complete ClusterState (full data)
