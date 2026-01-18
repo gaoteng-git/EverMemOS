@@ -51,8 +51,6 @@ class UserProfileLite(DocumentBase, AuditBase):
             ),
             # Index on user_id (used by get_all_by_user queries)
             IndexModel([("user_id", ASCENDING)], name="idx_user_id"),
-            # Index on created_at (used by devops scripts for data sync)
-            IndexModel([("created_at", DESCENDING)], name="idx_created_at"),
         ]
 
         validate_on_save = True
