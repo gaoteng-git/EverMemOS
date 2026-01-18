@@ -130,8 +130,6 @@ class ConversationMeta(DocumentBase, AuditBase):
     )
 
     class Settings:
-        name = "conversation_metas"
+        """Beanie settings"""
 
-        # Dual Storage architecture:
-        # - MongoDB stores ConversationMetaLite (indexed fields only)
-        # - KV-Storage stores complete ConversationMeta (full data)
+        name = "conversation_metas"
