@@ -57,8 +57,6 @@ class ConversationMetaLite(DocumentBase, AuditBase):
                 [("group_id", ASCENDING), ("scene", ASCENDING)],
                 name="idx_group_id_scene",
             ),
-            # Index on created_at (used by devops scripts for data sync)
-            IndexModel([("created_at", DESCENDING)], name="idx_created_at"),
         ]
 
         validate_on_save = True

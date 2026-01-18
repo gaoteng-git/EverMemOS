@@ -45,8 +45,6 @@ class ClusterStateLite(DocumentBase, AuditBase):
         indexes = [
             # Group ID index (primary query field)
             IndexModel([("group_id", ASCENDING)], name="idx_group_id", unique=True),
-            # Index on created_at (used by devops scripts for data sync)
-            IndexModel([("created_at", DESCENDING)], name="idx_created_at"),
         ]
 
         validate_on_save = True
