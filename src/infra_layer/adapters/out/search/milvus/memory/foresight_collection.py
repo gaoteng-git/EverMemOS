@@ -29,6 +29,20 @@ class ForesightCollection(TenantAwareMilvusCollectionWithSuffix):
     # Base name of the Collection
     _COLLECTION_NAME = "foresight"
 
+    # Lite fields for dual storage (fields used in queries + indexed fields)
+    # These fields will be stored in Milvus, while all fields are stored in KV-Storage
+    _LITE_FIELDS = {
+        "id",            # Primary key, used for queries
+        "vector",        # Vector search (indexed)
+        "user_id",       # User filter (indexed)
+        "group_id",      # Group filter (indexed)
+        "participants",  # Participants filter (used in queries)
+        "parent_type",   # Parent type filter (used in queries)
+        "parent_id",     # Parent ID filter (indexed, used in queries)
+        "start_time",    # Start time filter (indexed, used in queries)
+        "end_time",      # End time filter (indexed, used in queries)
+    }
+
     # Collection Schema definition
     _SCHEMA = CollectionSchema(
         fields=[
