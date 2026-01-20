@@ -132,6 +132,8 @@ class ConversationMeta(DocumentBase, AuditBase):
     )
 
     class Settings:
+        """Beanie settings"""
+
         name = "conversation_metas"
         indexes = [
             IndexModel(
