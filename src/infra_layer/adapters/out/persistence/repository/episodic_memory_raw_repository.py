@@ -57,6 +57,7 @@ class EpisodicMemoryRawRepository(BaseRepository[EpisodicMemoryLite]):
             user_id=episodic.user_id,
             group_id=episodic.group_id,
             timestamp=episodic.timestamp,
+            parent_id=episodic.parent_id,
             keywords=episodic.keywords,
             linked_entities=episodic.linked_entities,
         )

@@ -13,11 +13,10 @@ with the dual MongoDB + KV-Storage pattern. Each test follows the pattern:
 Modified methods tested (8 total):
 - get_by_event_id
 - get_by_event_ids
-- get_by_user_id
+- find_by_filters
 - append_episodic_memory
 - delete_by_event_id
 - delete_by_user_id
-- find_by_time_range
 - find_by_filter_paginated
 """
 
@@ -343,14 +342,14 @@ class TestBasicCRUD:
         assert not kv_exists, "KV-Storage should be cleaned up"
         logger.info(f"✅ KV-Storage cleaned up")
 
-    async def test_04_get_by_user_id(self, repository, test_user_id):
+    async def test_04_find_by_filters(self, repository, test_user_id):
         """
-        Test: append_episodic_memory + get_by_user_id
+        Test: append_episodic_memory + find_by_filters
         Flow: Create 3 EpisodicMemories for user -> Query by user_id -> Verify results
         """
         logger = get_logger()
         logger.info("=" * 60)
-        logger.info("TEST: get_by_user_id")
+        logger.info("TEST: find_by_filters")
 
         # 1. Create 3 EpisodicMemories for the same user
         created_list = []
@@ -369,7 +368,7 @@ class TestBasicCRUD:
         )
 
         # 2. Query by user_id
-        results = await repository.get_by_user_id(test_user_id)
+        results = await repository.find_by_filters(user_id=test_user_id)
         assert len(results) >= 3, f"Expected at least 3 results, got {len(results)}"
         logger.info(f"✅ Found {len(results)} EpisodicMemories for user")
 
@@ -392,12 +391,12 @@ class TestQueryMethods:
 
     async def test_05_find_by_time_range(self, repository, test_user_id):
         """
-        Test: append_episodic_memory + find_by_time_range
+        Test: append_episodic_memory + find_by_filters (with time range)
         Flow: Create EpisodicMemories at different times -> Query by time range -> Verify
         """
         logger = get_logger()
         logger.info("=" * 60)
-        logger.info("TEST: find_by_time_range")
+        logger.info("TEST: find_by_filters (time range)")
 
         from common_utils.datetime_utils import get_now_with_timezone
 
@@ -445,7 +444,7 @@ class TestQueryMethods:
         start_time = now - timedelta(minutes=10)
         end_time = now + timedelta(minutes=20)
 
-        results = await repository.find_by_time_range(
+        results = await repository.find_by_filters(
             start_time=start_time,
             end_time=end_time,
         )
@@ -552,7 +551,7 @@ class TestBatchOperations:
 
     async def test_07_delete_by_user_id(self, repository):
         """
-        Test: append_episodic_memory + delete_by_user_id + get_by_user_id
+        Test: append_episodic_memory + delete_by_user_id + find_by_filters
         Flow: Create 3 EpisodicMemories for user -> Delete all by user -> Verify deletion
         """
         logger = get_logger()
@@ -576,7 +575,7 @@ class TestBatchOperations:
         logger.info(f"✅ Created 3 EpisodicMemories for user: {test_user}")
 
         # 2. Verify count before deletion
-        results_before = await repository.get_by_user_id(test_user)
+        results_before = await repository.find_by_filters(user_id=test_user)
         count_before = len(results_before)
         assert count_before >= 3, f"Expected at least 3 records, got {count_before}"
 
@@ -588,7 +587,7 @@ class TestBatchOperations:
         logger.info(f"✅ Deleted {deleted_count} EpisodicMemories for user")
 
         # 4. Verify count after deletion
-        results_after = await repository.get_by_user_id(test_user)
+        results_after = await repository.find_by_filters(user_id=test_user)
         count_after = len(results_after)
         assert (
             count_after == 0

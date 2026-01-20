@@ -33,6 +33,7 @@ class EpisodicMemoryLite(DocumentBase, AuditBase):
     )
     group_id: Optional[str] = Field(default=None, description="Group ID")
     timestamp: Indexed(datetime) = Field(..., description="Occurrence time (timestamp)")
+    parent_id: Optional[str] = Field(default=None, description="Parent memory ID")
 
     # Additional query fields
     keywords: Optional[List[str]] = Field(default=None, description="Keywords")
@@ -58,6 +59,9 @@ class EpisodicMemoryLite(DocumentBase, AuditBase):
 
         # Indexes for query fields (audit field indexes included for time-based queries)
         indexes = [
+            # Single field indexes
+            IndexModel([("user_id", ASCENDING)], name="idx_user_id"),
+            IndexModel([("parent_id", ASCENDING)], name="idx_parent_id"),
             # Composite index on user ID and timestamp
             IndexModel(
                 [("user_id", ASCENDING), ("timestamp", DESCENDING)],
@@ -67,6 +71,18 @@ class EpisodicMemoryLite(DocumentBase, AuditBase):
             IndexModel(
                 [("group_id", ASCENDING), ("timestamp", DESCENDING)],
                 name="idx_group_timestamp",
+                sparse=True,
+            ),
+            # Composite index on group ID, user ID and timestamp
+            # Note: This also covers (group_id, user_id) queries by left-prefix rule
+            IndexModel(
+                [
+                    ("group_id", ASCENDING),
+                    ("user_id", ASCENDING),
+                    ("timestamp", DESCENDING),
+                ],
+                name="idx_group_user_timestamp",
+                sparse=True,
             ),
             # Index on keywords
             IndexModel([("keywords", ASCENDING)], name="idx_keywords", sparse=True),
