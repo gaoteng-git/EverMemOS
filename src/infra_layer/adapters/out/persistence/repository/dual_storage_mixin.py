@@ -85,11 +85,12 @@ class DualStorageMixin(Generic[TDocument]):
             self.model = DualStorageModelProxy(
                 original_model=original_model,
                 kv_storage=self._kv_storage,
-                full_model_class=original_model,  # 当前设计：Full = Lite
+                full_model_class=original_model,
             )
 
             # 3. Monkey patch Document 类的实例方法
-            self._patch_document_methods(original_model)
+            # 传递 indexed_fields 给 wrapper
+            self._patch_document_methods(original_model, self.model._indexed_fields)
 
             logger.debug(
                 f"✅ Dual storage initialized for {original_model.__name__}"
@@ -107,14 +108,17 @@ class DualStorageMixin(Generic[TDocument]):
             self._kv_storage = get_bean_by_type(KVStorageInterface)
         return self._kv_storage
 
-    def _patch_document_methods(self, document_class):
+    def _patch_document_methods(self, document_class, indexed_fields):
         """
         Monkey patch Document 类的实例方法
 
-        Wrap insert(), save(), delete() 以自动同步 KV-Storage
+        Wrap insert(), save(), delete() 以实现 Lite 存储：
+        - MongoDB 只存索引字段（Lite）
+        - KV-Storage 存完整数据（Full）
 
         Args:
             document_class: Document model class (e.g., EpisodicMemory)
+            indexed_fields: 索引字段集合（运行时自动提取）
         """
         kv_storage = self._kv_storage
 
@@ -124,12 +128,12 @@ class DualStorageMixin(Generic[TDocument]):
             document_class._original_save = document_class.save
             document_class._original_delete = document_class.delete
 
-            # Wrap 实例方法
+            # Wrap 实例方法 - 传递 indexed_fields
             document_class.insert = DocumentInstanceWrapper.wrap_insert(
-                document_class._original_insert, kv_storage
+                document_class._original_insert, kv_storage, indexed_fields
             )
             document_class.save = DocumentInstanceWrapper.wrap_save(
-                document_class._original_save, kv_storage
+                document_class._original_save, kv_storage, indexed_fields
             )
             document_class.delete = DocumentInstanceWrapper.wrap_delete(
                 document_class._original_delete, kv_storage
@@ -149,7 +153,7 @@ class DualStorageMixin(Generic[TDocument]):
                 )
 
             logger.debug(
-                f"✅ Patched instance methods for {document_class.__name__}"
+                f"✅ Patched instance methods for {document_class.__name__} (Lite: {len(indexed_fields)} fields)"
             )
 
 

@@ -404,10 +404,20 @@ class TestDualStorageModelProxy:
         logger.info("✅ Test passed")
 
     async def test_10_kv_miss_fallback_to_mongo(self, repository, kv_storage, test_user_id):
-        """Test: KV miss falls back to MongoDB and backfills KV"""
+        """
+        Test: KV miss behavior in Lite Storage mode
+
+        Lite Storage模式下的预期行为：
+        - MongoDB只存储索引字段（Lite数据）
+        - KV-Storage存储完整数据
+        - 如果KV丢失，无法从MongoDB恢复完整数据（这是设计限制）
+        - 查询会返回None（而不是fallback到MongoDB）
+
+        这个测试验证Lite模式的限制是正确实施的。
+        """
         logger = get_logger()
         logger.info("=" * 60)
-        logger.info("TEST: KV miss fallback and backfill")
+        logger.info("TEST: KV miss behavior in Lite Storage mode")
 
         # Create test record
         test_data = create_test_episodic_memory(user_id=test_user_id)
@@ -423,20 +433,14 @@ class TestDualStorageModelProxy:
         kv_value = await kv_storage.get(doc_id)
         assert kv_value is None, "KV should be empty"
 
-        # Retrieve via repository (should fallback to MongoDB)
+        # Lite模式下：KV miss应该返回None（无法从MongoDB恢复完整数据）
         retrieved = await repository.get_by_event_id(doc_id, test_user_id)
-        assert retrieved is not None, "Should retrieve from MongoDB"
-        assert str(retrieved.id) == doc_id, "IDs should match"
-        logger.info(f"✅ Retrieved from MongoDB fallback")
+        assert retrieved is None, "Lite mode: should return None on KV miss (expected behavior)"
+        logger.info(f"✅ Correctly returned None on KV miss (Lite storage limitation)")
 
-        # Verify KV is backfilled
-        kv_value = await kv_storage.get(doc_id)
-        assert kv_value is not None, "KV should be backfilled"
-        logger.info(f"✅ Verified KV backfill")
-
-        # Cleanup
-        await repository.delete_by_event_id(doc_id, test_user_id)
-        logger.info("✅ Test passed")
+        # 注意：在Lite模式下，KV是关键存储，必须保证可靠性
+        # 这个测试验证了当KV丢失时系统的正确行为
+        logger.info("✅ Test passed - Lite storage limitation verified")
 
 
 if __name__ == "__main__":

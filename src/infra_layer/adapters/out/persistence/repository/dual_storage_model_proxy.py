@@ -1,27 +1,33 @@
 """
-Dual Storage Model Proxy - 拦截 MongoDB 调用层
+Dual Storage Model Proxy - 拦截 MongoDB 调用层（Lite 版本方案）
 
 通过拦截 self.model 的所有 MongoDB 调用来实现双存储，Repository 代码零改动。
 
 工作原理：
-1. 在 Mixin 的 __init__ 中替换 self.model 为 Proxy
-2. Proxy 拦截所有 MongoDB 方法调用（find, get, insert, save, delete 等）
-3. 内部实现：
-   - 查询：先查 MongoDB 获取 IDs，再从 KV 批量加载完整数据
-   - 写入：写 MongoDB 后自动同步 KV
-   - 删除：删 MongoDB 后自动删 KV
-4. 返回和原来完全一样的数据结构
+1. 运行时自动提取 Document 的索引字段（无需手动维护 Lite 类）
+2. 写入时：
+   - MongoDB 只存储 Lite 版本（索引字段）- 用于查询
+   - KV-Storage 存储完整数据（加密存储）- 用于数据读取
+3. 查询时：
+   - MongoDB 查询返回 Lite 数据（包含 ID）
+   - 根据 ID 从 KV-Storage 批量加载完整数据
+4. 安全性：敏感字段只存在 KV-Storage，不存在 MongoDB
 
 优势：
 - Repository 代码完全不需要改动（零改动）
-- 主分支更新 CRUD 方法时，无需同步更新
-- 双存储完全透明
+- 索引字段自动提取，第三方修改索引后无需改代码
+- 敏感数据只存 KV-Storage（加密），安全性更高
 """
 
-from typing import TYPE_CHECKING, Optional, Any, List
+from typing import TYPE_CHECKING, Optional, Any, List, Set
 from pymongo.asynchronous.client_session import AsyncClientSession
+from pydantic import BaseModel, ConfigDict, Field
+from beanie import PydanticObjectId
 
 from core.observation.logger import get_logger
+from infra_layer.adapters.out.persistence.repository.lite_model_extractor import (
+    LiteModelExtractor,
+)
 
 if TYPE_CHECKING:
     from infra_layer.adapters.out.persistence.kv_storage.kv_storage_interface import (
@@ -31,11 +37,22 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
+# Minimal projection model for queries - only returns _id
+class IdOnlyProjection(BaseModel):
+    """Minimal projection to only retrieve document IDs from MongoDB"""
+    # MongoDB uses _id, Beanie Documents map it to id
+    # For projection models, we need to handle _id directly
+    id: Optional[PydanticObjectId] = Field(None, alias="_id")
+
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+
+
 class DualStorageQueryProxy:
     """
     Query Cursor Proxy - 拦截 MongoDB 查询游标操作
 
     拦截 find() 返回的 Cursor 对象，自动从 KV-Storage 加载完整数据
+    MongoDB 只返回 Lite 数据（ID + 索引字段），完整数据从 KV 加载
     """
 
     def __init__(
@@ -73,44 +90,92 @@ class DualStorageQueryProxy:
 
     async def to_list(self, *args, **kwargs) -> List[Any]:
         """
-        Execute query and load full data from KV-Storage
+        Execute query and load full data from KV-Storage（Lite 存储模式）
+
+        Lite 存储模式：
+        1. 使用 PyMongo 直接查询 MongoDB 获取 Lite 数据（原始 dict，避免 Beanie 验证）
+        2. 提取所有 IDs
+        3. 从 KV-Storage 批量加载完整数据
 
         Returns:
-            List of full model instances
+            List of full model instances (from KV-Storage)
         """
-        # 1. 执行 MongoDB 查询（只查询 MongoDB，获取所有文档）
-        mongo_docs = await self._mongo_cursor.to_list(*args, **kwargs)
+        try:
+            # 1. 使用 Beanie 的 project() 方法只返回 _id 字段
+            # 使用 IdOnlyProjection 模型避免完整 Document 验证
 
-        if not mongo_docs:
+            # 添加投影：只返回 _id 字段（使用 Pydantic 模型）
+            projected_cursor = self._mongo_cursor.project(IdOnlyProjection)
+
+            # 执行查询获取 IdOnlyProjection 对象列表
+            length = kwargs.get("length", None) or (args[0] if args else None)
+            id_projections = await projected_cursor.to_list(length=length)
+
+            if not id_projections:
+                return []
+
+            # 2. 提取所有 document IDs from projection objects
+            try:
+                doc_ids = [str(proj.id) for proj in id_projections if proj.id]
+                logger.debug(f"📋 Query returned {len(doc_ids)} IDs from MongoDB")
+            except Exception as e:
+                logger.error(f"❌ Failed to extract IDs: {e}, projections type={type(id_projections)}, first item={id_projections[0] if id_projections else 'empty'}")
+                return []
+
+            # 3. 从 KV-Storage 批量加载完整数据
+            full_docs = []
+            for doc_id in doc_ids:
+                try:
+                    kv_value = await self._kv_storage.get(key=doc_id)
+                    if kv_value:
+                        # 从 KV 反序列化完整数据
+                        full_doc = self._full_model_class.model_validate_json(kv_value)
+                        full_docs.append(full_doc)
+                    else:
+                        # KV miss - Lite 模式下无法恢复完整数据
+                        logger.warning(f"⚠️  KV miss for {doc_id} - cannot return full document")
+                        # 跳过此文档（因为无法从 MongoDB Lite 数据构建完整文档）
+                except Exception as e:
+                    logger.error(f"❌ Failed to load from KV for {doc_id}: {e}")
+
+            logger.debug(f"✅ Loaded {len(full_docs)}/{len(doc_ids)} full documents from KV-Storage")
+            return full_docs
+
+        except Exception as e:
+            import traceback
+            logger.error(f"❌ Failed in to_list: {e}\n{traceback.format_exc()}")
             return []
-
-        # 2. MongoDB 包含完整数据，直接返回
-        # （当前方案：主分支的 EpisodicMemory 在 MongoDB 存储所有字段）
-        logger.debug(f"✅ Query returned {len(mongo_docs)} documents from MongoDB")
-        return mongo_docs
 
     async def delete(self, *args, **kwargs):
         """
-        Delete documents matching query
+        Delete documents matching query（Lite 存储模式）
+
+        Lite 模式：使用 project() 获取 IDs，避免 Beanie 验证
 
         Also deletes from KV-Storage
         """
-        # 1. 先获取所有要删除的文档 IDs
-        mongo_docs = await self._mongo_cursor.to_list()
-        doc_ids = [str(doc.id) for doc in mongo_docs]
+        try:
+            # 1. 使用 project() 获取要删除的文档 IDs（避免 Beanie 验证）
+            projected_cursor = self._mongo_cursor.project(IdOnlyProjection)
+            id_projections = await projected_cursor.to_list(length=None)
+            doc_ids = [str(proj.id) for proj in id_projections if proj.id]
 
-        # 2. 删除 MongoDB
-        result = await self._mongo_cursor.delete(*args, **kwargs)
+            # 2. 删除 MongoDB
+            result = await self._mongo_cursor.delete(*args, **kwargs)
 
-        # 3. 批量删除 KV-Storage
-        if doc_ids:
-            try:
-                await self._kv_storage.batch_delete(keys=doc_ids)
-                logger.debug(f"✅ Deleted {len(doc_ids)} documents from KV-Storage")
-            except Exception as e:
-                logger.warning(f"⚠️  Failed to delete from KV-Storage: {e}")
+            # 3. 批量删除 KV-Storage
+            if doc_ids:
+                try:
+                    await self._kv_storage.batch_delete(keys=doc_ids)
+                    logger.debug(f"✅ Deleted {len(doc_ids)} documents from KV-Storage")
+                except Exception as e:
+                    logger.warning(f"⚠️  Failed to delete from KV-Storage: {e}")
 
-        return result
+            return result
+
+        except Exception as e:
+            logger.error(f"❌ Failed to delete with dual storage: {e}")
+            raise
 
     async def count(self, *args, **kwargs):
         """Proxy count method to original cursor"""
@@ -123,12 +188,13 @@ class DualStorageQueryProxy:
 
 class DualStorageModelProxy:
     """
-    Model Proxy - 拦截 MongoDB Model 层调用
+    Model Proxy - 拦截 MongoDB Model 层调用（Lite 版本方案）
 
     替换 Repository 的 self.model，拦截所有 MongoDB 操作：
-    - find() -> 返回 QueryProxy
-    - get() -> 优先从 KV 读取
-    - 其他方法透明传递
+    - 运行时提取索引字段（自动适配第三方修改）
+    - find() -> 返回 QueryProxy（从 KV 加载完整数据）
+    - get() -> 优先从 KV 读取完整数据
+    - 写入 -> MongoDB 只存 Lite，KV 存完整
     """
 
     def __init__(
@@ -138,16 +204,22 @@ class DualStorageModelProxy:
         full_model_class,
     ):
         """
-        Initialize model proxy
+        Initialize model proxy and extract indexed fields
 
         Args:
             original_model: Original Beanie Document model class
             kv_storage: KV-Storage instance
-            full_model_class: Full model class (same as original_model in current design)
+            full_model_class: Full model class (same as original_model)
         """
         self._original_model = original_model
         self._kv_storage = kv_storage
         self._full_model_class = full_model_class
+
+        # 运行时自动提取索引字段（无需手动维护 Lite 类）
+        self._indexed_fields = LiteModelExtractor.extract_indexed_fields(full_model_class)
+        logger.info(
+            f"🔍 Auto-extracted {len(self._indexed_fields)} indexed fields for {full_model_class.__name__}"
+        )
 
     def find(self, *args, **kwargs):
         """
@@ -170,7 +242,12 @@ class DualStorageModelProxy:
         self, doc_id, session: Optional[AsyncClientSession] = None, **kwargs
     ):
         """
-        Intercept get() - 优先从 KV-Storage 读取
+        Intercept get() - 优先从 KV-Storage 读取（Lite 存储模式）
+
+        Lite 存储模式下：
+        - MongoDB 只存 Lite 数据（索引字段）
+        - KV-Storage 存完整数据
+        - 必须从 KV 读取，MongoDB 无法提供完整文档
 
         Args:
             doc_id: Document ID (ObjectId or str)
@@ -180,27 +257,20 @@ class DualStorageModelProxy:
             Full document or None
         """
         try:
-            # 优先从 KV-Storage 读取
+            # 必须从 KV-Storage 读取完整数据
             doc_id_str = str(doc_id)
             kv_value = await self._kv_storage.get(key=doc_id_str)
 
             if kv_value:
-                # KV hit
+                # KV hit - 返回完整数据
                 document = self._full_model_class.model_validate_json(kv_value)
                 logger.debug(f"✅ KV hit: {doc_id_str}")
                 return document
 
-            # KV miss - fallback to MongoDB
-            logger.debug(f"⚠️  KV miss, fallback to MongoDB: {doc_id_str}")
-            document = await self._original_model.get(doc_id, session=session, **kwargs)
-
-            # 回填 KV-Storage
-            if document:
-                kv_value = document.model_dump_json()
-                await self._kv_storage.put(key=str(document.id), value=kv_value)
-                logger.debug(f"✅ Backfilled KV-Storage: {doc_id_str}")
-
-            return document
+            # KV miss - Lite 模式下无法从 MongoDB 恢复完整数据
+            # MongoDB 只有索引字段，不满足 required fields
+            logger.warning(f"⚠️  KV miss for {doc_id_str} - cannot recover full document from MongoDB Lite data")
+            return None
 
         except Exception as e:
             logger.error(f"❌ Failed to get document: {e}")
@@ -208,7 +278,11 @@ class DualStorageModelProxy:
 
     async def find_one(self, *args, **kwargs):
         """
-        Intercept find_one() - 优先从 KV 读取（如果有 _id 过滤）
+        Intercept find_one() - Lite 存储模式下使用 PyMongo 直接查询
+
+        Lite 存储模式：
+        1. 使用 PyMongo 查询 MongoDB 获取 Lite 数据（避免 Beanie 验证）
+        2. 从 KV-Storage 加载完整数据
 
         Args:
             *args: filter query
@@ -217,24 +291,43 @@ class DualStorageModelProxy:
         Returns:
             Document or None
         """
-        # 调用原始 find_one
-        document = await self._original_model.find_one(*args, **kwargs)
+        try:
+            # 使用 PyMongo 直接查询（避免 Beanie 验证 Lite 数据）
+            mongo_collection = self._original_model.get_pymongo_collection()
+            filter_query = args[0] if args else {}
+            session = kwargs.get("session", None)
 
-        # 如果找到文档，回填 KV-Storage
-        if document and document.id:
-            try:
-                kv_key = str(document.id)
-                kv_value = document.model_dump_json()
-                await self._kv_storage.put(key=kv_key, value=kv_value)
-                logger.debug(f"✅ Backfilled KV-Storage from find_one: {kv_key}")
-            except Exception as e:
-                logger.warning(f"⚠️  Failed to backfill KV-Storage: {e}")
+            lite_doc = await mongo_collection.find_one(filter_query, session=session)
 
-        return document
+            if not lite_doc:
+                return None
+
+            # 从 KV-Storage 加载完整数据
+            doc_id = str(lite_doc["_id"])
+            kv_value = await self._kv_storage.get(key=doc_id)
+
+            if kv_value:
+                full_doc = self._full_model_class.model_validate_json(kv_value)
+                logger.debug(f"✅ find_one loaded from KV: {doc_id}")
+                return full_doc
+            else:
+                # KV miss - 无法恢复完整数据
+                logger.warning(f"⚠️  KV miss in find_one for {doc_id}")
+                return None
+
+        except Exception as e:
+            logger.error(f"❌ Failed in find_one: {e}")
+            return None
 
     async def delete_many(self, *args, **kwargs):
         """
-        Intercept delete_many() - 批量删除并同步 KV-Storage
+        Intercept delete_many() - Lite 存储模式下的批量软删除
+
+        Lite 存储模式下的批量软删除行为：
+        - MongoDB：标记deleted_at（批量更新Lite数据）
+        - KV-Storage：保留完整数据（不删除）
+
+        原因：MongoDB只有索引字段，如果删除KV，恢复时无法重建完整数据
 
         Args:
             *args: filter query
@@ -244,21 +337,11 @@ class DualStorageModelProxy:
             Delete result
         """
         try:
-            # 1. 先查询要删除的文档 IDs
-            filter_query = args[0] if args else {}
-            docs = await self._original_model.find(filter_query).to_list()
-            doc_ids = [str(doc.id) for doc in docs]
-
-            # 2. 执行删除
+            # 执行批量软删除（只在MongoDB标记deleted_at）
             result = await self._original_model.delete_many(*args, **kwargs)
 
-            # 3. 批量删除 KV-Storage
-            if doc_ids:
-                try:
-                    await self._kv_storage.batch_delete(keys=doc_ids)
-                    logger.debug(f"✅ Deleted {len(doc_ids)} documents from KV-Storage")
-                except Exception as e:
-                    logger.warning(f"⚠️  Failed to delete from KV-Storage: {e}")
+            # Lite模式：不从KV删除，保留完整数据以便恢复
+            logger.debug(f"✅ Batch soft deleted in MongoDB (KV data preserved)")
 
             return result
 
@@ -284,7 +367,9 @@ class DualStorageModelProxy:
 
     async def hard_delete_many(self, *args, **kwargs):
         """
-        Intercept hard_delete_many() - 物理删除并同步 KV-Storage
+        Intercept hard_delete_many() - 物理删除并同步 KV-Storage（Lite 存储模式）
+
+        Lite 模式：使用 PyMongo 直接查询获取 IDs，避免 Beanie 验证
 
         Args:
             *args: filter query
@@ -294,10 +379,14 @@ class DualStorageModelProxy:
             Delete result
         """
         try:
-            # 1. 先查询要删除的文档 IDs (使用 hard_find_many 查询所有包括已删除的)
+            # 1. 使用 PyMongo 直接查询要删除的文档 IDs（避免 Beanie 验证）
             filter_query = args[0] if args else {}
-            docs = await self._original_model.hard_find_many(filter_query).to_list()
-            doc_ids = [str(doc.id) for doc in docs]
+            mongo_collection = self._original_model.get_pymongo_collection()
+            session = kwargs.get("session", None)
+
+            # 只查询 _id 字段（包括软删除的文档）
+            lite_docs = await mongo_collection.find(filter_query, {"_id": 1}, session=session).to_list(length=None)
+            doc_ids = [str(doc["_id"]) for doc in lite_docs]
 
             # 2. 执行物理删除
             result = await self._original_model.hard_delete_many(*args, **kwargs)
@@ -318,7 +407,10 @@ class DualStorageModelProxy:
 
     async def restore_many(self, *args, **kwargs):
         """
-        Intercept restore_many() - 恢复已删除文档并同步 KV-Storage
+        Intercept restore_many() - 恢复已删除文档并同步 KV-Storage（Lite 存储模式）
+
+        注意：restore 不需要更新 KV，因为 KV 中已经有完整数据
+        只需要更新 MongoDB 的 deleted_at 字段（Lite 数据）
 
         Args:
             *args: filter query
@@ -328,25 +420,13 @@ class DualStorageModelProxy:
             Update result
         """
         try:
-            # 1. 执行恢复操作
+            # 执行恢复操作（只更新 MongoDB 的 deleted_at 字段）
             result = await self._original_model.restore_many(*args, **kwargs)
 
-            # 2. 查询被恢复的文档并同步到 KV-Storage
-            filter_query = args[0] if args else {}
-            # 恢复后的文档 deleted_at = None，查询它们
-            restored_docs = await self._original_model.find(filter_query).to_list()
+            # Lite 模式下，KV 中已经有完整数据，无需额外同步
+            # restore 只修改 MongoDB 的 deleted_at 字段（索引字段）
 
-            # 3. 批量同步到 KV-Storage
-            if restored_docs:
-                try:
-                    for doc in restored_docs:
-                        kv_key = str(doc.id)
-                        kv_value = doc.model_dump_json()
-                        await self._kv_storage.put(key=kv_key, value=kv_value)
-                    logger.debug(f"✅ Restored {len(restored_docs)} documents to KV-Storage")
-                except Exception as e:
-                    logger.warning(f"⚠️  Failed to restore to KV-Storage: {e}")
-
+            logger.debug(f"✅ Restored documents in MongoDB (Lite data)")
             return result
 
         except Exception as e:
@@ -360,69 +440,129 @@ class DualStorageModelProxy:
 
 class DocumentInstanceWrapper:
     """
-    Document Instance Wrapper - 拦截 Document 实例方法
+    Document Instance Wrapper - 拦截 Document 实例方法（Lite 版本方案）
 
-    拦截 insert(), save(), delete() 等实例方法，自动同步 KV-Storage
+    拦截 insert(), save(), delete() 等实例方法：
+    - MongoDB 只存 Lite 版本（索引字段）
+    - KV-Storage 存完整数据（加密存储）
     """
 
     @staticmethod
-    def wrap_insert(original_insert, kv_storage: "KVStorageInterface"):
-        """Wrap document.insert() to sync KV-Storage"""
+    def wrap_insert(original_insert, kv_storage: "KVStorageInterface", indexed_fields: Set[str]):
+        """
+        Wrap document.insert() to implement Lite storage
+
+        使用底层 pymongo API 来确保 MongoDB 只存 Lite 数据
+
+        MongoDB: Lite data (indexed fields only)
+        KV-Storage: Full data (all fields, encrypted)
+        """
         async def wrapped_insert(self, **kwargs):
-            # 调用原始 insert (传递 self)
-            result = await original_insert(self, **kwargs)
+            # 1. 提取 Lite 数据（只包含索引字段）
+            lite_data = LiteModelExtractor.extract_lite_data(self, indexed_fields)
 
-            # 同步到 KV-Storage
-            if self.id:
-                try:
-                    kv_key = str(self.id)
-                    kv_value = self.model_dump_json()
-                    await kv_storage.put(key=kv_key, value=kv_value)
-                    logger.debug(f"✅ Synced to KV-Storage after insert: {kv_key}")
-                except Exception as e:
-                    logger.warning(f"⚠️  Failed to sync to KV-Storage: {e}")
+            # 2. 保存完整数据到 KV-Storage（在 insert 之前，避免 ID 问题）
+            full_data_for_kv = self.model_dump(mode="python")
 
-            return result
+            # 3. 使用底层 pymongo API 直接插入 Lite 数据到 MongoDB
+            mongo_collection = self.get_pymongo_collection()
+
+            # 获取 session 参数（如果有）
+            session = kwargs.get("session", None)
+
+            # 直接插入 Lite 数据
+            insert_result = await mongo_collection.insert_one(lite_data, session=session)
+
+            # 4. 将生成的 ID 赋值给 document 对象
+            self.id = insert_result.inserted_id
+
+            # 5. 将完整数据存入 KV-Storage
+            try:
+                kv_key = str(self.id)
+
+                # 更新 full_data 的 ID
+                full_data_for_kv["id"] = self.id
+
+                # 序列化完整数据
+                full_document = self.__class__.model_validate(full_data_for_kv)
+                kv_value = full_document.model_dump_json()
+
+                await kv_storage.put(key=kv_key, value=kv_value)
+                logger.debug(f"💾 MongoDB: Lite ({len(lite_data)} fields), KV: Full ({len(full_data_for_kv)} fields) - {kv_key}")
+            except Exception as e:
+                logger.warning(f"⚠️  Failed to sync full data to KV-Storage: {e}")
+
+            # 6. 返回 document 对象（Beanie 的 insert 返回 self）
+            return self
 
         return wrapped_insert
 
     @staticmethod
-    def wrap_save(original_save, kv_storage: "KVStorageInterface"):
-        """Wrap document.save() to sync KV-Storage"""
+    def wrap_save(original_save, kv_storage: "KVStorageInterface", indexed_fields: Set[str]):
+        """
+        Wrap document.save() to implement Lite storage
+
+        使用底层 pymongo API 来确保 MongoDB 只存 Lite 数据
+
+        MongoDB: Lite data (indexed fields only)
+        KV-Storage: Full data (all fields, encrypted)
+        """
         async def wrapped_save(self, **kwargs):
-            # 调用原始 save (传递 self)
-            result = await original_save(self, **kwargs)
+            if not self.id:
+                # 如果没有 ID，应该使用 insert 而不是 save
+                logger.warning("save() called on document without ID, should use insert()")
+                return await self.insert(**kwargs)
 
-            # 同步到 KV-Storage
-            if self.id:
-                try:
-                    kv_key = str(self.id)
-                    kv_value = self.model_dump_json()
-                    await kv_storage.put(key=kv_key, value=kv_value)
-                    logger.debug(f"✅ Synced to KV-Storage after save: {kv_key}")
-                except Exception as e:
-                    logger.warning(f"⚠️  Failed to sync to KV-Storage: {e}")
+            # 1. 提取 Lite 数据
+            lite_data = LiteModelExtractor.extract_lite_data(self, indexed_fields)
 
-            return result
+            # 2. 保存完整数据
+            full_data = self.model_dump(mode="python")
+
+            # 3. 使用底层 pymongo API 更新 MongoDB（只更新 Lite 字段）
+            mongo_collection = self.get_pymongo_collection()
+            session = kwargs.get("session", None)
+
+            # 使用 replace_one 替换整个文档为 Lite 数据
+            from bson import ObjectId
+            await mongo_collection.replace_one(
+                {"_id": ObjectId(self.id)},
+                lite_data,
+                session=session
+            )
+
+            # 4. 将完整数据存入 KV-Storage
+            try:
+                kv_key = str(self.id)
+                kv_value = self.model_dump_json()
+                await kv_storage.put(key=kv_key, value=kv_value)
+                logger.debug(f"💾 MongoDB: Lite ({len(lite_data)} fields), KV: Full ({len(full_data)} fields) - {kv_key}")
+            except Exception as e:
+                logger.warning(f"⚠️  Failed to sync full data to KV-Storage: {e}")
+
+            # 5. 返回 document 对象
+            return self
 
         return wrapped_save
 
     @staticmethod
     def wrap_delete(original_delete, kv_storage: "KVStorageInterface"):
-        """Wrap document.delete() to remove from KV-Storage"""
-        async def wrapped_delete(self, **kwargs):
-            doc_id = str(self.id) if self.id else None
+        """
+        Wrap document.delete() - Lite 存储模式下的软删除
 
-            # 调用原始 delete (传递 self)
+        Lite 模式下的软删除行为：
+        - MongoDB：标记 deleted_at（只更新 Lite 数据）
+        - KV-Storage：保留完整数据（不删除）
+
+        原因：MongoDB 只有索引字段，如果删除 KV，恢复时无法重建完整数据
+        """
+        async def wrapped_delete(self, **kwargs):
+            # 调用原始 delete（只在 MongoDB 标记 deleted_at）
             result = await original_delete(self, **kwargs)
 
-            # 从 KV-Storage 删除
-            if doc_id:
-                try:
-                    await kv_storage.delete(key=doc_id)
-                    logger.debug(f"✅ Deleted from KV-Storage: {doc_id}")
-                except Exception as e:
-                    logger.warning(f"⚠️  Failed to delete from KV-Storage: {e}")
+            # Lite 模式下不从 KV 删除，保留完整数据以便恢复
+            # KV中的数据仍然存在，只是MongoDB标记为已删除
+            logger.debug(f"✅ Soft deleted in MongoDB (KV data preserved): {self.id}")
 
             return result
 
@@ -430,7 +570,30 @@ class DocumentInstanceWrapper:
 
     @staticmethod
     def wrap_restore(original_restore, kv_storage: "KVStorageInterface"):
-        """Wrap document.restore() to sync back to KV-Storage"""
+        """
+        Wrap document.restore() - Lite 存储模式下的恢复
+
+        Lite 模式下的恢复行为：
+        - MongoDB：清除 deleted_at（只更新 Lite 数据）
+        - KV-Storage：无需操作（数据一直都在）
+
+        原因：软删除时KV数据未被删除，所以恢复时无需同步
+        """
+        async def wrapped_restore(self, **kwargs):
+            # 调用原始 restore（只在 MongoDB 清除 deleted_at）
+            result = await original_restore(self, **kwargs)
+
+            # Lite 模式下 KV 数据未被删除，无需同步
+            # KV中的完整数据一直存在，可以直接使用
+            logger.debug(f"✅ Restored in MongoDB (KV data was preserved): {self.id}")
+
+            return result
+
+        return wrapped_restore
+
+    @staticmethod
+    def __original_wrap_restore_not_used(original_restore, kv_storage: "KVStorageInterface"):
+        """DEPRECATED: 原始restore实现（已弃用）"""
         async def wrapped_restore(self, **kwargs):
             # 调用原始 restore (传递 self)
             result = await original_restore(self, **kwargs)

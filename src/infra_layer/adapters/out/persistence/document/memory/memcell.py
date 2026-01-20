@@ -224,6 +224,8 @@ class MemCell(DocumentBaseWithSoftDelete, AuditBase):
                 ],
                 name="idx_group_type_deleted_timestamp",
             ),
+            # 8. Index on keywords for keyword-based search
+            IndexModel([("keywords", ASCENDING)], name="idx_keywords", sparse=True),
             # Creation time index
             IndexModel([("created_at", DESCENDING)], name="idx_created_at"),
             # Update time index

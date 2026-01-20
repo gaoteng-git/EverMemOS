@@ -166,10 +166,18 @@ class TestMemCellDualStorage:
         logger.info("✅ Test passed")
 
     async def test_04_soft_delete_removes_from_kv(self, repository, kv_storage, test_user_id):
-        """Test: soft delete (document.delete()) is intercepted and removes from KV-Storage"""
+        """
+        Test: Soft delete in Lite Storage mode
+
+        Lite Storage模式下的软删除行为：
+        - MongoDB：标记deleted_at（只更新Lite数据）
+        - KV-Storage：保留完整数据（不删除）
+
+        原因：MongoDB只有索引字段，如果删除KV，恢复时无法重建完整数据
+        """
         logger = get_logger()
         logger.info("=" * 60)
-        logger.info("TEST: MemCell soft delete removes from KV-Storage")
+        logger.info("TEST: MemCell soft delete in Lite Storage mode")
 
         # Create test data
         test_data = create_test_memcell(user_id=test_user_id, summary="Test soft delete")
@@ -186,12 +194,12 @@ class TestMemCellDualStorage:
         # Soft delete using Repository method (internally calls document.delete())
         deleted = await repository.delete_by_event_id(doc_id)
         assert deleted is True, "delete_by_event_id failed"
-        logger.info(f"✅ Soft deleted from MongoDB: {doc_id}")
+        logger.info(f"✅ Soft deleted in MongoDB: {doc_id}")
 
-        # Verify KV-Storage is also deleted
+        # Lite模式：KV-Storage保留完整数据（不删除）
         kv_value = await kv_storage.get(doc_id)
-        assert kv_value is None, "KV-Storage should not have data after soft delete"
-        logger.info(f"✅ Verified KV-Storage deletion: {doc_id}")
+        assert kv_value is not None, "Lite mode: KV-Storage should preserve data after soft delete"
+        logger.info(f"✅ Verified KV-Storage preserved (Lite mode): {doc_id}")
 
         # Hard delete cleanup
         await repository.hard_delete_by_event_id(doc_id)
@@ -326,10 +334,17 @@ class TestMemCellDualStorage:
         logger.info(f"✅ Verified KV-Storage deletion after hard delete")
 
     async def test_09_restore_syncs_to_kv(self, repository, kv_storage, test_user_id):
-        """Test: restore_by_event_id restores document and syncs back to KV-Storage"""
+        """
+        Test: restore in Lite Storage mode
+
+        Lite Storage模式下的恢复行为：
+        - 软删除时KV数据被保留（未删除）
+        - 恢复只需要清除MongoDB的deleted_at标记
+        - KV数据一直存在，无需同步
+        """
         logger = get_logger()
         logger.info("=" * 60)
-        logger.info("TEST: MemCell restore_by_event_id")
+        logger.info("TEST: MemCell restore in Lite Storage mode")
 
         # Create test data
         test_data = create_test_memcell(user_id=test_user_id, summary="Test restore")
@@ -341,33 +356,41 @@ class TestMemCellDualStorage:
         await repository.delete_by_event_id(doc_id)
         logger.info(f"✅ Soft deleted: {doc_id}")
 
-        # Verify KV is deleted
+        # Lite模式：KV数据被保留（未删除）
         kv_value = await kv_storage.get(doc_id)
-        assert kv_value is None, "KV should be deleted after soft delete"
+        assert kv_value is not None, "Lite mode: KV should be preserved after soft delete"
+        logger.info(f"✅ Verified KV preserved after soft delete: {doc_id}")
 
         # Restore the document
         restored = await repository.restore_by_event_id(doc_id)
         assert restored is True, "restore_by_event_id failed"
-        logger.info(f"✅ Restored document: {doc_id}")
+        logger.info(f"✅ Restored document in MongoDB: {doc_id}")
 
-        # Verify KV-Storage is restored
+        # Verify KV-Storage still has data (was never deleted)
         kv_value = await kv_storage.get(doc_id)
-        assert kv_value is not None, "KV should be restored after restore"
+        assert kv_value is not None, "KV should still have data (was never deleted)"
 
         from infra_layer.adapters.out.persistence.document.memory.memcell import MemCell
         kv_doc = MemCell.model_validate_json(kv_value)
-        assert str(kv_doc.id) == doc_id, "Restored KV document ID should match"
-        logger.info(f"✅ Verified KV-Storage restoration")
+        assert str(kv_doc.id) == doc_id, "KV document ID should match"
+        logger.info(f"✅ Verified KV-Storage data (preserved throughout)")
 
         # Cleanup
         await repository.hard_delete_by_event_id(doc_id)
-        logger.info("✅ Test passed")
+        logger.info("✅ Test passed - Lite storage restore behavior verified")
 
     async def test_10_restore_by_user_id(self, repository, kv_storage):
-        """Test: restore_by_user_id batch restores and syncs to KV-Storage"""
+        """
+        Test: batch restore by user_id in Lite Storage mode
+
+        Lite Storage模式下的批量恢复行为：
+        - 软删除时KV数据被保留（未删除）
+        - 批量恢复只需清除MongoDB的deleted_at标记
+        - KV数据一直存在，无需同步
+        """
         logger = get_logger()
         logger.info("=" * 60)
-        logger.info("TEST: MemCell restore_by_user_id batch restore")
+        logger.info("TEST: MemCell restore_by_user_id in Lite Storage mode")
 
         # Use unique user ID
         test_user = f"test_user_restore_{uuid.uuid4().hex[:8]}"
@@ -388,26 +411,26 @@ class TestMemCellDualStorage:
         assert deleted_count >= 3, f"Expected to soft delete at least 3"
         logger.info(f"✅ Soft deleted {deleted_count} records")
 
-        # Verify all deleted from KV
+        # Lite模式：验证KV数据被保留（未删除）
         for doc_id in created_ids:
             kv_value = await kv_storage.get(doc_id)
-            assert kv_value is None, f"KV should not have {doc_id} after soft delete"
-        logger.info("✅ All records deleted from KV-Storage")
+            assert kv_value is not None, f"Lite mode: KV should preserve {doc_id} after soft delete"
+        logger.info("✅ Verified all KV data preserved after soft delete")
 
         # Restore all by user_id
         restored_count = await repository.restore_by_user_id(test_user)
         assert restored_count >= 3, f"Expected to restore at least 3, restored {restored_count}"
-        logger.info(f"✅ Restored {restored_count} records for user")
+        logger.info(f"✅ Restored {restored_count} records in MongoDB")
 
-        # Verify all restored to KV
+        # Verify all still in KV (were never deleted)
         for doc_id in created_ids:
             kv_value = await kv_storage.get(doc_id)
-            assert kv_value is not None, f"KV should have {doc_id} after restore"
-        logger.info("✅ All records restored to KV-Storage")
+            assert kv_value is not None, f"KV should still have {doc_id} (was never deleted)"
+        logger.info("✅ Verified all KV data still present (preserved throughout)")
 
         # Hard delete cleanup
         await repository.hard_delete_by_user_id(test_user)
-        logger.info("✅ Test passed")
+        logger.info("✅ Test passed - Lite storage batch restore behavior verified")
 
     async def test_11_find_by_user_and_time_range(self, repository, test_user_id):
         """Test: find_by_user_and_time_range filters correctly"""
