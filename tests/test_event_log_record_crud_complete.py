@@ -10,12 +10,11 @@ with the dual MongoDB + KV-Storage pattern. Each test follows the pattern:
 3. Verify data consistency between MongoDB and KV-Storage
 4. Verify data integrity (inserted == retrieved)
 
-Modified methods tested (7 total):
+Modified methods tested:
 - save
 - get_by_id
 - get_by_parent_id
-- get_by_user_id
-- find_by_time_range
+- find_by_filters
 - delete_by_id
 - delete_by_parent_id
 """
@@ -364,20 +363,20 @@ class TestBasicCRUD:
 
 
 class TestParentEpisodeOperations:
-    """Test operations related to parent_episode_id"""
+    """Test operations related to parent_id"""
 
     async def test_05_get_by_parent_id(
         self, repository, test_user_id, test_parent_id
     ):
         """
         Test: save + get_by_parent_id
-        Flow: Create 3 EventLogRecords with same parent -> Query by parent_episode_id -> Verify
+        Flow: Create 3 EventLogRecords with same parent -> Query by parent_id -> Verify
         """
         logger = get_logger()
         logger.info("=" * 60)
         logger.info("TEST: get_by_parent_id")
 
-        # 1. Create 3 EventLogRecords with same parent_episode_id
+        # 1. Create 3 EventLogRecords with same parent_id
         created_list = []
         for i in range(3):
             original = create_test_event_log_record(
@@ -393,10 +392,10 @@ class TestParentEpisodeOperations:
             f"✅ Created {len(created_list)} EventLogRecords for parent: {test_parent_id}"
         )
 
-        # 2. Query by parent_episode_id
+        # 2. Query by parent_id
         results = await repository.get_by_parent_id(test_parent_id)
         assert len(results) == 3, f"Expected 3 results, got {len(results)}"
-        logger.info(f"✅ Found {len(results)} EventLogRecords for parent episode")
+        logger.info(f"✅ Found {len(results)} EventLogRecords for parent")
 
         # 3. Verify all created EventLogRecords are in results
         result_ids = {str(log.id) for log in results}
@@ -422,7 +421,7 @@ class TestParentEpisodeOperations:
         logger.info("=" * 60)
         logger.info("TEST: delete_by_parent_id")
 
-        # 1. Create 3 EventLogRecords for the same parent_episode_id
+        # 1. Create 3 EventLogRecords for the same parent_id
         created_list = []
         for i in range(3):
             log = create_test_event_log_record(
@@ -442,12 +441,12 @@ class TestParentEpisodeOperations:
         count_before = len(results_before)
         assert count_before >= 3, f"Expected at least 3 records, got {count_before}"
 
-        # 3. Delete all by parent_episode_id
+        # 3. Delete all by parent_id
         deleted_count = await repository.delete_by_parent_id(test_parent_id)
         assert (
             deleted_count >= 3
         ), f"Expected to delete at least 3, deleted {deleted_count}"
-        logger.info(f"✅ Deleted {deleted_count} EventLogRecords for parent episode")
+        logger.info(f"✅ Deleted {deleted_count} EventLogRecords for parent")
 
         # 4. Verify count after deletion
         results_after = await repository.get_by_parent_id(test_parent_id)
