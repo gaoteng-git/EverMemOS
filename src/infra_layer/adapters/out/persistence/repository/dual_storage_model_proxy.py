@@ -314,12 +314,18 @@ class DualStorageModelProxy:
         """
         Intercept find() - 返回 QueryProxy 自动处理双存储
 
+        Supports both:
+        - Dict syntax: find({"user_id": "123"})
+        - Beanie operator syntax: find(Model.user_id == "123")
+
         Returns:
             DualStorageQueryProxy
         """
-        # 验证查询字段
-        filter_query = args[0] if args else {}
-        self._validate_query_fields(filter_query)
+        # 只在使用字典语法时验证查询字段
+        # Beanie 操作符语法会直接传递给底层 MongoDB
+        if args and isinstance(args[0], dict):
+            filter_query = args[0]
+            self._validate_query_fields(filter_query)
 
         # 调用原始 model 的 find 方法
         mongo_cursor = self._original_model.find(*args, **kwargs)
@@ -371,34 +377,50 @@ class DualStorageModelProxy:
 
     async def find_one(self, *args, **kwargs):
         """
-        Intercept find_one() - Lite 存储模式下使用 PyMongo 直接查询
+        Intercept find_one() - Lite 存储模式下使用 PyMongo 或 Beanie 查询
+
+        Supports both:
+        - Dict syntax: find_one({"user_id": "123", "group_id": "456"})
+        - Beanie operator syntax: find_one(Model.user_id == "123", Model.group_id == "456")
 
         Lite 存储模式：
-        1. 使用 PyMongo 查询 MongoDB 获取 Lite 数据（避免 Beanie 验证）
+        1. 查询 MongoDB 获取 Lite 数据（ID + 索引字段）
         2. 从 KV-Storage 加载完整数据
 
         Args:
-            *args: filter query
+            *args: filter query (dict or Beanie operators)
             **kwargs: additional options
 
         Returns:
             Document or None
 
         Raises:
-            LiteStorageQueryError: 如果查询字段不在 Lite 存储中
+            LiteStorageQueryError: 如果查询字段不在 Lite 存储中（仅字典语法）
         """
-        # 提取查询条件
-        filter_query = args[0] if args else {}
-
-        # 验证查询字段（如果失败会抛出 LiteStorageQueryError）
-        self._validate_query_fields(filter_query)
-
         try:
-            # 使用 PyMongo 直接查询（避免 Beanie 验证 Lite 数据）
-            mongo_collection = self._original_model.get_pymongo_collection()
-            session = kwargs.get("session", None)
+            # 检测是否使用字典语法
+            is_dict_syntax = args and isinstance(args[0], dict)
 
-            lite_doc = await mongo_collection.find_one(filter_query, session=session)
+            if is_dict_syntax:
+                # 字典语法：验证查询字段并使用 PyMongo
+                filter_query = args[0]
+                self._validate_query_fields(filter_query)
+
+                mongo_collection = self._original_model.get_pymongo_collection()
+                session = kwargs.get("session", None)
+                lite_doc = await mongo_collection.find_one(filter_query, session=session)
+            else:
+                # Beanie 操作符语法：使用 Beanie 的原生 find_one
+                # 注意：projection_model 设置为 IdOnlyProjection 只获取 ID
+                lite_doc = await self._original_model.find_one(
+                    *args,
+                    projection_model=IdOnlyProjection,
+                    **kwargs
+                )
+
+                # 转换 IdOnlyProjection 对象为字典格式
+                if lite_doc:
+                    lite_doc = {"_id": lite_doc.id}
 
             if not lite_doc:
                 return None

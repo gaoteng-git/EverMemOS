@@ -205,7 +205,6 @@ class UserProfileRawRepository(
             existing = await self.get_by_user_and_group(user_id, group_id)
 
             if existing:
-                # Update fields directly on existing document
                 existing.profile_data = profile_data
                 existing.version += 1
                 existing.confidence = metadata.get("confidence", existing.confidence)
@@ -219,58 +218,10 @@ class UserProfileRawRepository(
                 if "memcell_count" in metadata:
                     existing.memcell_count = metadata["memcell_count"]
 
-                # Use replace_one directly to avoid ExpressionField serialization issues
-                # This bypasses Beanie's save() which has issues with Indexed fields
-                from bson import ObjectId
-                from datetime import datetime, timezone
-
-                # Prepare update data (exclude id and internal fields)
-                update_data = {
-                    "user_id": user_id,
-                    "group_id": group_id,
-                    "profile_data": profile_data,
-                    "scenario": existing.scenario,
-                    "confidence": existing.confidence,
-                    "version": existing.version,
-                    "cluster_ids": existing.cluster_ids,
-                    "memcell_count": existing.memcell_count,
-                    "last_updated_cluster": existing.last_updated_cluster,
-                    "created_at": existing.created_at,
-                    "updated_at": datetime.now(timezone.utc),
-                }
-
-                # Get pymongo collection and update
-                mongo_collection = UserProfile.get_pymongo_collection()
-                await mongo_collection.replace_one(
-                    {"_id": ObjectId(existing.id)},
-                    update_data
-                )
-
-                # Update KV storage manually (since we bypassed Beanie's save)
-                from core.di import get_bean_by_type
-                from infra_layer.adapters.out.persistence.kv_storage.kv_storage_interface import KVStorageInterface
-                kv_storage = get_bean_by_type(KVStorageInterface)
-
-                # Create a dict with full data including id
-                full_data = update_data.copy()
-                full_data["id"] = existing.id
-
-                import json
-                def json_serializer(obj):
-                    if isinstance(obj, ObjectId):
-                        return str(obj)
-                    elif isinstance(obj, datetime):
-                        return obj.isoformat()
-                    raise TypeError(f"Type {type(obj)} not serializable")
-
-                kv_value = json.dumps(full_data, default=json_serializer)
-                await kv_storage.put(key=str(existing.id), value=kv_value)
-
+                await existing.save()
                 logger.debug(
                     f"Updated user profile: user_id={user_id}, group_id={group_id}, version={existing.version}"
                 )
-
-                # Return the updated existing object (with updated fields)
                 return existing
             else:
                 user_profile = UserProfile(
