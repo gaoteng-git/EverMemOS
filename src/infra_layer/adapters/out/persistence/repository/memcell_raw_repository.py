@@ -267,6 +267,9 @@ class MemCellRawRepository(BaseRepository[MemCellLite]):
         """
         Soft delete MemCell by event_id
 
+        Soft delete only marks the record as deleted in MongoDB (sets deleted_at).
+        KV-Storage data is NOT deleted during soft delete (needed for restore).
+
         Args:
             event_id: Event ID
             deleted_by: Deleter (optional)
@@ -276,29 +279,16 @@ class MemCellRawRepository(BaseRepository[MemCellLite]):
             Returns True if deletion succeeds, otherwise False
         """
         try:
-            memcell = await self.get_by_event_id(event_id)
-            if memcell:
-                # 1. Delete from MongoDB (primary operation)
-                await memcell.delete(deleted_by=deleted_by, session=session)
+            # Soft delete: Only mark as deleted in MongoDB (set deleted_at field)
+            # Query from MongoDB, not KV-Storage
+            memcell_lite = await self.model.find_one({"_id": ObjectId(event_id)})
+            if memcell_lite:
+                await memcell_lite.delete(deleted_by=deleted_by, session=session)
                 logger.debug(
                     "✅ Successfully soft deleted MemCell by event_id: %s", event_id
                 )
-
-                # 2. Delete from KV-Storage (secondary operation)
-                kv_storage = self._get_kv_storage()
-                if kv_storage:
-                    try:
-                        success = await kv_storage.delete(key=event_id)
-                        if success:
-                            logger.debug(f"✅ KV-Storage delete success: {event_id}")
-                        else:
-                            logger.warning(f"⚠️  KV-Storage delete returned False: {event_id}")
-                    except Exception as kv_error:
-                        logger.warning(
-                            f"⚠️  KV-Storage delete failed for {event_id}: {kv_error}",
-                            exc_info=True
-                        )
-
+                # NOTE: KV-Storage data is NOT deleted during soft delete
+                # This allows restore operation to work properly
                 return True
             return False
         except Exception as e:
@@ -309,9 +299,12 @@ class MemCellRawRepository(BaseRepository[MemCellLite]):
         self, event_id: str, session: Optional[AsyncClientSession] = None
     ) -> bool:
         """
-        Hard delete (physical deletion) MemCell by event_id
+        Hard delete (physical deletion) MemCell by event_id from both MongoDB and KV-Storage
 
         ⚠️ Warning: This operation is irreversible! Use with caution.
+
+        Strategy: Delete from KV-Storage first (data source), then MongoDB (index).
+        This ensures data is removed before index, preventing orphaned references.
 
         Args:
             event_id: Event ID
@@ -324,17 +317,17 @@ class MemCellRawRepository(BaseRepository[MemCellLite]):
             # 1. First delete from KV-Storage (data source)
             kv_deleted = await self._dual_storage.delete_from_kv(event_id)
 
-            # 2. Then delete from MongoDB (index)
+            # 2. Then hard delete from MongoDB (index) - use hard_find_one + hard_delete
             mongo_deleted = False
-            memcell = await self.model.find_one({"_id": ObjectId(event_id)})
-            if memcell:
-                await memcell.delete(session=session)
+            memcell_lite = await self.model.hard_find_one({"_id": ObjectId(event_id)})
+            if memcell_lite:
+                await memcell_lite.hard_delete(session=session)
                 mongo_deleted = True
-                logger.debug("✅ MemCell deleted from MongoDB: %s", event_id)
+                logger.debug("✅ MemCell hard deleted from MongoDB: %s", event_id)
             else:
                 logger.warning(f"⚠️  MemCell not found in MongoDB: {event_id}")
 
-            # Return True only if deleted from both storages (strict consistency)
+            # Return True if deleted from both storages (strict consistency)
             return kv_deleted and mongo_deleted
         except Exception as e:
             logger.error("❌ Failed to hard delete MemCell by event_id: %s", e)
@@ -679,41 +672,26 @@ class MemCellRawRepository(BaseRepository[MemCellLite]):
         self, user_id: str, session: Optional[AsyncClientSession] = None
     ) -> int:
         """
-        Hard delete (physical deletion) all MemCell of a user
+        Hard delete (physical deletion) all MemCell of a user from both MongoDB and KV-Storage
 
         ⚠️ Warning: This operation is irreversible! Use with caution.
+
+        Strategy: Delete from KV-Storage first (data source), then MongoDB (index).
 
         Args:
             user_id: User ID
             session: Optional MongoDB session
 
         Returns:
-            Number of hard deleted records
+            Number of hard deleted records from MongoDB
         """
         try:
             # 1. Query all event_ids to be deleted (for KV-Storage batch delete)
-            event_ids = []
-            kv_storage = self._get_kv_storage()
-            if kv_storage:
-                try:
-                    memcells = await self.model.find({"user_id": user_id}).to_list()
-                    event_ids = [str(mc.id) for mc in memcells]
-                    logger.debug(f"Found {len(event_ids)} MemCells to delete for user: {user_id}")
-                except Exception as query_error:
-                    logger.warning(f"Failed to query event_ids for KV batch delete: {query_error}")
+            memcells = await self.model.find({"user_id": user_id}).to_list()
+            event_ids = [str(mc.id) for mc in memcells]
+            logger.debug(f"Found {len(event_ids)} MemCells to delete for user: {user_id}")
 
-            # 2. Delete from MongoDB (primary operation)
-            result = await self.model.hard_delete_many(
-                {"user_id": user_id}, session=session
-            )
-            count = result.deleted_count if result else 0
-            logger.info(
-                "✅ Successfully hard deleted all MemCell of user: %s, deleted %d records",
-                user_id,
-                count,
-            )
-
-            # 3. Batch delete from KV-Storage
+            # 2. First batch delete from KV-Storage (data source)
             if event_ids:
                 kv_storage = self._dual_storage.get_kv_storage()
                 try:
@@ -722,11 +700,13 @@ class MemCellRawRepository(BaseRepository[MemCellLite]):
                 except Exception as kv_error:
                     logger.warning(f"⚠️  KV-Storage batch delete failed: {kv_error}")
 
-            # 3. Then delete from MongoDB (index)
-            result = await self.model.find({"user_id": user_id}).delete(session=session)
+            # 3. Then hard delete from MongoDB (index)
+            result = await self.model.hard_delete_many(
+                {"user_id": user_id}, session=session
+            )
             count = result.deleted_count if result else 0
             logger.info(
-                "✅ Successfully deleted all MemCell of user: %s, deleted %d records",
+                "✅ Successfully hard deleted all MemCell of user: %s, deleted %d records",
                 user_id,
                 count,
             )
@@ -785,9 +765,11 @@ class MemCellRawRepository(BaseRepository[MemCellLite]):
         session: Optional[AsyncClientSession] = None,
     ) -> int:
         """
-        Hard delete (physical deletion) MemCell within time range
+        Hard delete (physical deletion) MemCell within time range from both MongoDB and KV-Storage
 
         ⚠️ Warning: This operation is irreversible! Use with caution.
+
+        Strategy: Delete from KV-Storage first (data source), then MongoDB (index).
 
         Args:
             start_time: Start time
@@ -796,25 +778,29 @@ class MemCellRawRepository(BaseRepository[MemCellLite]):
             session: Optional MongoDB session, for transaction support
 
         Returns:
-            Number of hard deleted records
+            Number of hard deleted records from MongoDB
         """
         try:
+            # Build filter
             filter_dict = {"timestamp": {"$gte": start_time, "$lt": end_time}}
             if user_id:
                 filter_dict["user_id"] = user_id
 
             # 1. Query all event_ids to be deleted (for KV-Storage batch delete)
-            event_ids = []
-            kv_storage = self._get_kv_storage()
-            if kv_storage:
-                try:
-                    memcells = await self.model.find(And(*conditions)).to_list()
-                    event_ids = [str(mc.id) for mc in memcells]
-                    logger.debug(f"Found {len(event_ids)} MemCells to delete in time range")
-                except Exception as query_error:
-                    logger.warning(f"Failed to query event_ids for KV batch delete: {query_error}")
+            memcells = await self.model.find(filter_dict).to_list()
+            event_ids = [str(mc.id) for mc in memcells]
+            logger.debug(f"Found {len(event_ids)} MemCells to delete in time range")
 
-            # 2. Delete from MongoDB (primary operation)
+            # 2. First batch delete from KV-Storage (data source)
+            if event_ids:
+                kv_storage = self._dual_storage.get_kv_storage()
+                try:
+                    kv_deleted_count = await kv_storage.batch_delete(keys=event_ids)
+                    logger.debug(f"✅ KV-Storage batch delete: {kv_deleted_count} records")
+                except Exception as kv_error:
+                    logger.warning(f"⚠️  KV-Storage batch delete failed: {kv_error}")
+
+            # 3. Then hard delete from MongoDB (index)
             result = await self.model.hard_delete_many(filter_dict, session=session)
             count = result.deleted_count if result else 0
             logger.info(
