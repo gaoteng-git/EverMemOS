@@ -12,9 +12,16 @@ from core.observation.logger import get_logger
 from core.di.decorators import repository
 from core.oxm.mongo.base_repository import BaseRepository
 from core.oxm.constants import MAGIC_ALL
+from common_utils.datetime_utils import get_now_with_timezone
 from infra_layer.adapters.out.persistence.document.memory.event_log_record import (
     EventLogRecord,
     EventLogRecordProjection,
+)
+from infra_layer.adapters.out.persistence.document.memory.event_log_record_lite import (
+    EventLogRecordLite,
+)
+from infra_layer.adapters.out.persistence.repository.dual_storage_helper import (
+    DualStorageHelper,
 )
 
 # Define generic type variable
@@ -24,7 +31,7 @@ logger = get_logger(__name__)
 
 
 @repository("event_log_record_repository", primary=True)
-class EventLogRecordRawRepository(BaseRepository[EventLogRecord]):
+class EventLogRecordRawRepository(BaseRepository[EventLogRecordLite]):
     """
     Personal event log raw data repository
 
@@ -33,7 +40,89 @@ class EventLogRecordRawRepository(BaseRepository[EventLogRecord]):
     """
 
     def __init__(self):
-        super().__init__(EventLogRecord)
+        super().__init__(EventLogRecordLite)
+        self._dual_storage = DualStorageHelper[EventLogRecord, EventLogRecordLite](
+            model_name="EventLogRecord", full_model=EventLogRecord
+        )
+
+    def _event_log_to_lite(self, event_log: EventLogRecord) -> EventLogRecordLite:
+        """
+        Convert full EventLogRecord to EventLogRecordLite (only indexed fields).
+
+        Args:
+            event_log: Full EventLogRecord object
+
+        Returns:
+            EventLogRecordLite with only indexed fields
+
+        Note:
+            Audit fields (created_at/updated_at) are not copied here.
+            They will be automatically set by AuditBase during insert/update operations.
+        """
+        return EventLogRecordLite(
+            id=event_log.id,
+            user_id=event_log.user_id,
+            group_id=event_log.group_id,
+            parent_id=event_log.parent_id,
+            parent_type=event_log.parent_type,
+            timestamp=event_log.timestamp,
+        )
+
+    async def _event_log_lite_to_full(
+        self, results: List[EventLogRecordLite]
+    ) -> List[EventLogRecord]:
+        """
+        Reconstruct full EventLogRecord objects from KV-Storage.
+
+        Args:
+            results: List of EventLogRecordLite from MongoDB query
+
+        Returns:
+            List of complete EventLogRecord objects
+        """
+        return await self._dual_storage.reconstruct_batch(results)
+
+    def _convert_to_projection_if_needed(
+        self,
+        full_event_logs: List[EventLogRecord],
+        target_model: Optional[Type[T]] = None,
+    ) -> List[Union[EventLogRecord, EventLogRecordProjection]]:
+        """
+        Convert full EventLogRecord objects to Projection if needed.
+
+        Args:
+            full_event_logs: List of full EventLogRecord objects
+            target_model: Target model type
+
+        Returns:
+            List of converted objects
+        """
+        if not target_model or target_model == EventLogRecord:
+            return full_event_logs
+
+        if target_model == EventLogRecordProjection:
+            return [
+                EventLogRecordProjection(
+                    id=log.id,
+                    created_at=log.created_at,
+                    updated_at=log.updated_at,
+                    user_id=log.user_id,
+                    user_name=log.user_name,
+                    group_id=log.group_id,
+                    group_name=log.group_name,
+                    atomic_fact=log.atomic_fact,
+                    parent_type=log.parent_type,
+                    parent_id=log.parent_id,
+                    timestamp=log.timestamp,
+                    participants=log.participants,
+                    vector_model=log.vector_model,
+                    event_type=log.event_type,
+                    extend=log.extend,
+                )
+                for log in full_event_logs
+            ]
+
+        return full_event_logs
 
     # ==================== Basic CRUD Methods ====================
 
@@ -51,7 +140,17 @@ class EventLogRecordRawRepository(BaseRepository[EventLogRecord]):
             Saved EventLogRecord or None
         """
         try:
-            await event_log.insert(session=session)
+            # 1. Write EventLogRecordLite to MongoDB (indexed fields only)
+            # Note: EventLogRecordLite inherits AuditBase, which will auto-set created_at/updated_at on insert
+            event_log_lite = self._event_log_to_lite(event_log)
+            await event_log_lite.insert(session=session)
+
+            # Copy generated ID and audit fields back to full EventLogRecord
+            # (AuditBase has set these fields automatically during insert)
+            event_log.id = event_log_lite.id
+            event_log.created_at = event_log_lite.created_at
+            event_log.updated_at = event_log_lite.updated_at
+
             logger.info(
                 "✅ Saved personal event log successfully: id=%s, user_id=%s, parent_type=%s, parent_id=%s",
                 event_log.id,
@@ -59,7 +158,10 @@ class EventLogRecordRawRepository(BaseRepository[EventLogRecord]):
                 event_log.parent_type,
                 event_log.parent_id,
             )
-            return event_log
+
+            # 2. Write to KV-Storage (always full EventLogRecord)
+            success = await self._dual_storage.write_to_kv(event_log)
+            return event_log if success else None
         except Exception as e:
             logger.error("❌ Failed to save personal event log: %s", e)
             return None
@@ -76,7 +178,7 @@ class EventLogRecordRawRepository(BaseRepository[EventLogRecord]):
         Args:
             log_id: Log ID
             session: Optional MongoDB session, for transaction support
-            model: Returned model type, default is EventLogRecord (full version), can pass EventLogRecordShort
+            model: Returned model type, default is EventLogRecord (full version), can pass EventLogRecordProjection
 
         Returns:
             Event log object of specified type or None
@@ -84,25 +186,28 @@ class EventLogRecordRawRepository(BaseRepository[EventLogRecord]):
         try:
             object_id = ObjectId(log_id)
 
-            # If model is not specified, use full version
-            target_model = model if model is not None else self.model
+            # Query MongoDB Lite model first
+            lite_result = await self.model.find_one({"_id": object_id}, session=session)
+            if not lite_result:
+                logger.debug("ℹ️  Personal event log not found: id=%s", log_id)
+                return None
 
-            # Determine whether to use projection based on model type
-            if target_model == self.model:
-                result = await self.model.find_one({"_id": object_id}, session=session)
-            else:
-                result = await self.model.find_one(
-                    {"_id": object_id}, projection_model=target_model, session=session
-                )
+            # Reconstruct from KV-Storage
+            full_event_logs = await self._event_log_lite_to_full([lite_result])
+            if not full_event_logs:
+                return None
+
+            # Convert to target model type if needed
+            results = self._convert_to_projection_if_needed(full_event_logs, model)
+            result = results[0] if results else None
 
             if result:
+                target_model = model if model is not None else EventLogRecord
                 logger.debug(
                     "✅ Retrieved personal event log by ID successfully: %s (model=%s)",
                     log_id,
                     target_model.__name__,
                 )
-            else:
-                logger.debug("ℹ️  Personal event log not found: id=%s", log_id)
             return result
         except Exception as e:
             logger.error("❌ Failed to retrieve personal event log by ID: %s", e)
@@ -122,29 +227,27 @@ class EventLogRecordRawRepository(BaseRepository[EventLogRecord]):
             parent_id: Parent memory ID
             parent_type: Optional parent type filter (e.g., "memcell", "episode")
             session: Optional MongoDB session, for transaction support
-            model: Returned model type, default is EventLogRecord (full version), can pass EventLogRecordShort
+            model: Returned model type, default is EventLogRecord (full version), can pass EventLogRecordProjection
 
         Returns:
             List of event log objects of specified type
         """
         try:
-            # If model is not specified, use full version
-            target_model = model if model is not None else self.model
-
             # Build query filter
             query_filter = {"parent_id": parent_id}
             if parent_type:
                 query_filter["parent_type"] = parent_type
 
-            # Determine whether to use projection based on model type
-            if target_model == self.model:
-                query = self.model.find(query_filter, session=session)
-            else:
-                query = self.model.find(
-                    query_filter, projection_model=target_model, session=session
-                )
+            # Query MongoDB for Lite results
+            lite_results = await self.model.find(query_filter, session=session).to_list()
 
-            results = await query.to_list()
+            # Reconstruct from KV-Storage
+            full_event_logs = await self._event_log_lite_to_full(lite_results)
+
+            # Convert to target model type if needed
+            results = self._convert_to_projection_if_needed(full_event_logs, model)
+
+            target_model = model if model is not None else EventLogRecord
             logger.debug(
                 "✅ Retrieved event logs by parent memory ID successfully: %s (type=%s), found %d records (model=%s)",
                 parent_id,
@@ -222,16 +325,8 @@ class EventLogRecordRawRepository(BaseRepository[EventLogRecord]):
                 else:
                     filter_dict["group_id"] = group_id
 
-            # If model is not specified, use full version
-            target_model = model if model is not None else self.model
-
-            # Determine whether to use projection based on model type
-            if target_model == self.model:
-                query = self.model.find(filter_dict, session=session)
-            else:
-                query = self.model.find(
-                    filter_dict, projection_model=target_model, session=session
-                )
+            # Query MongoDB Lite
+            query = self.model.find(filter_dict, session=session)
 
             if sort_desc:
                 query = query.sort("-timestamp")
@@ -243,7 +338,15 @@ class EventLogRecordRawRepository(BaseRepository[EventLogRecord]):
             if limit:
                 query = query.limit(limit)
 
-            results = await query.to_list()
+            lite_results = await query.to_list()
+
+            # Reconstruct from KV-Storage
+            full_event_logs = await self._event_log_lite_to_full(lite_results)
+
+            # Convert to target model type if needed
+            results = self._convert_to_projection_if_needed(full_event_logs, model)
+
+            target_model = model if model is not None else EventLogRecord
             logger.debug(
                 "✅ Retrieved event logs successfully: user_id=%s, group_id=%s, time_range=[%s, %s), found %d records (model=%s)",
                 user_id,
@@ -273,10 +376,14 @@ class EventLogRecordRawRepository(BaseRepository[EventLogRecord]):
         """
         try:
             object_id = ObjectId(log_id)
+
+            # Delete from MongoDB
             result = await self.model.find({"_id": object_id}, session=session).delete()
             success = result.deleted_count > 0 if result else False
 
             if success:
+                # Delete from KV-Storage
+                await self._dual_storage.delete_from_kv(log_id)
                 logger.info("✅ Deleted personal event log successfully: %s", log_id)
             else:
                 logger.warning("⚠️  Personal event log to delete not found: %s", log_id)
@@ -304,12 +411,28 @@ class EventLogRecordRawRepository(BaseRepository[EventLogRecord]):
             Number of deleted records
         """
         try:
+            # Get all IDs first for KV-Storage deletion
             query_filter = {"parent_id": parent_id}
             if parent_type is not None:
                 query_filter["parent_type"] = parent_type
 
+            lite_results = await self.model.find(query_filter, session=session).to_list()
+            event_log_ids = [str(result.id) for result in lite_results]
+
+            # Delete from MongoDB
             result = await self.model.find(query_filter, session=session).delete()
             count = result.deleted_count if result else 0
+
+            # Delete from KV-Storage
+            if count > 0 and event_log_ids:
+                kv_storage = self._dual_storage.get_kv_storage()
+                try:
+                    await kv_storage.batch_delete(event_log_ids)
+                except Exception as kv_error:
+                    logger.error(
+                        f"⚠️  KV-Storage batch delete error for parent {parent_id}: {kv_error}"
+                    )
+
             logger.info(
                 "✅ Deleted event logs by parent memory ID successfully: %s (type=%s), deleted %d records",
                 parent_id,

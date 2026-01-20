@@ -9,13 +9,20 @@ from core.oxm.constants import MAGIC_ALL
 from infra_layer.adapters.out.persistence.document.memory.episodic_memory import (
     EpisodicMemory,
 )
+from infra_layer.adapters.out.persistence.document.memory.episodic_memory_lite import (
+    EpisodicMemoryLite,
+)
+from infra_layer.adapters.out.persistence.repository.dual_storage_helper import (
+    DualStorageHelper,
+)
 from agentic_layer.vectorize_service import get_vectorize_service
+from common_utils.datetime_utils import get_now_with_timezone
 
 logger = get_logger(__name__)
 
 
 @repository("episodic_memory_raw_repository", primary=True)
-class EpisodicMemoryRawRepository(BaseRepository[EpisodicMemory]):
+class EpisodicMemoryRawRepository(BaseRepository[EpisodicMemoryLite]):
     """
     Episodic memory raw data repository
     Generates vectorized text content and saves it to the database
@@ -23,8 +30,51 @@ class EpisodicMemoryRawRepository(BaseRepository[EpisodicMemory]):
     """
 
     def __init__(self):
-        super().__init__(EpisodicMemory)
+        super().__init__(EpisodicMemoryLite)
+        self._dual_storage = DualStorageHelper[EpisodicMemory, EpisodicMemoryLite](
+            model_name="EpisodicMemory", full_model=EpisodicMemory
+        )
         self.vectorize_service = get_vectorize_service()
+
+    # ==================== Helper Methods ====================
+
+    def _episodic_to_lite(self, episodic: EpisodicMemory) -> EpisodicMemoryLite:
+        """
+        Convert full EpisodicMemory to EpisodicMemoryLite (only indexed fields).
+
+        Args:
+            episodic: Full EpisodicMemory object
+
+        Returns:
+            EpisodicMemoryLite with only indexed fields
+
+        Note:
+            Audit fields (created_at/updated_at) are not copied here.
+            They will be automatically set by AuditBase during insert/update operations.
+        """
+        return EpisodicMemoryLite(
+            id=episodic.id,
+            user_id=episodic.user_id,
+            group_id=episodic.group_id,
+            timestamp=episodic.timestamp,
+            parent_id=episodic.parent_id,
+            keywords=episodic.keywords,
+            linked_entities=episodic.linked_entities,
+        )
+
+    async def _episodic_lite_to_full(
+        self, results: List[EpisodicMemoryLite]
+    ) -> List[EpisodicMemory]:
+        """
+        Reconstruct full EpisodicMemory objects from KV-Storage.
+
+        Args:
+            results: List of EpisodicMemoryLite from MongoDB query
+
+        Returns:
+            List of full EpisodicMemory objects from KV-Storage
+        """
+        return await self._dual_storage.reconstruct_batch(results)
 
     # ==================== Basic CRUD Methods ====================
 
@@ -43,23 +93,34 @@ class EpisodicMemoryRawRepository(BaseRepository[EpisodicMemory]):
             EpisodicMemory or None
         """
         try:
-            # Convert string event_id to ObjectId
-            object_id = ObjectId(event_id)
-            result = await self.model.find_one(
-                {"_id": object_id, "user_id": user_id}, session=session
-            )
-            if result:
-                logger.debug(
-                    "✅ Successfully retrieved episodic memory by event ID and user ID: %s",
-                    event_id,
-                )
-            else:
+            # Read directly from KV-Storage (no need to check MongoDB)
+            kv_storage = self._dual_storage.get_kv_storage()
+
+            kv_json = await kv_storage.get(key=event_id)
+            if not kv_json:
                 logger.debug(
                     "ℹ️  Episodic memory not found: event_id=%s, user_id=%s",
                     event_id,
                     user_id,
                 )
-            return result
+                return None
+
+            # Deserialize and validate user_id
+            full_episodic = EpisodicMemory.model_validate_json(kv_json)
+            if full_episodic.user_id != user_id:
+                logger.debug(
+                    "ℹ️  User mismatch for episodic memory: event_id=%s, expected_user=%s, actual_user=%s",
+                    event_id,
+                    user_id,
+                    full_episodic.user_id,
+                )
+                return None
+
+            logger.debug(
+                "✅ Successfully retrieved episodic memory by event ID and user ID: %s",
+                event_id,
+            )
+            return full_episodic
         except Exception as e:
             logger.error(
                 "❌ Failed to retrieve episodic memory by event ID and user ID: %s", e
@@ -87,27 +148,24 @@ class EpisodicMemoryRawRepository(BaseRepository[EpisodicMemory]):
             return {}
 
         try:
-            # Convert list of string event_ids to list of ObjectIds
-            object_ids = []
+            kv_storage = self._dual_storage.get_kv_storage()
+
+            # Batch get from KV-Storage
+            kv_data_dict = await kv_storage.batch_get(keys=event_ids)
+
+            # Reconstruct and filter by user_id
+            result_dict = {}
             for event_id in event_ids:
-                try:
-                    object_ids.append(ObjectId(event_id))
-                except Exception as e:
-                    logger.warning(f"⚠️  Invalid event_id: {event_id}, error: {e}")
-                    continue
-
-            if not object_ids:
-                return {}
-
-            # Batch query
-            query = {"_id": {"$in": object_ids}}
-            if user_id:
-                query["user_id"] = user_id
-
-            results = await self.model.find(query, session=session).to_list()
-
-            # Convert to dictionary for easier subsequent use
-            result_dict = {str(doc.id): doc for doc in results}
+                kv_json = kv_data_dict.get(event_id)
+                if kv_json:
+                    try:
+                        full_episodic = EpisodicMemory.model_validate_json(kv_json)
+                        if not user_id or full_episodic.user_id == user_id:
+                            result_dict[event_id] = full_episodic
+                    except Exception as e:
+                        logger.error(
+                            f"❌ Failed to deserialize episodic memory: {event_id}, error: {e}"
+                        )
 
             logger.debug(
                 "✅ Successfully batch retrieved episodic memories: user_id=%s, requested %d, found %d",
@@ -202,7 +260,10 @@ class EpisodicMemoryRawRepository(BaseRepository[EpisodicMemory]):
                 end_time,
                 len(results),
             )
-            return results
+
+            # Reconstruct from KV-Storage
+            full_episodics = await self._episodic_lite_to_full(results)
+            return full_episodics
         except Exception as e:
             logger.error("❌ Failed to retrieve episodic memories: %s", e)
             return []
@@ -234,14 +295,28 @@ class EpisodicMemoryRawRepository(BaseRepository[EpisodicMemory]):
                 episodic_memory.vector_model = self.vectorize_service.get_model_name()
             except Exception as e:
                 logger.error("❌ Failed to synchronize vector: %s", e)
+
         try:
-            await episodic_memory.insert(session=session)
+            # 1. Write EpisodicMemoryLite to MongoDB (indexed fields only)
+            # Note: EpisodicMemoryLite inherits AuditBase, which will auto-set created_at/updated_at on insert
+            episodic_lite = self._episodic_to_lite(episodic_memory)
+            await episodic_lite.insert(session=session)
+
+            # Copy generated ID and audit fields back to full EpisodicMemory
+            # (AuditBase has set these fields automatically during insert)
+            episodic_memory.id = episodic_lite.id
+            episodic_memory.created_at = episodic_lite.created_at
+            episodic_memory.updated_at = episodic_lite.updated_at
+
             logger.info(
                 "✅ Successfully appended episodic memory: event_id=%s, user_id=%s",
                 episodic_memory.event_id,
                 episodic_memory.user_id,
             )
-            return episodic_memory
+
+            # 2. Write to KV-Storage (always full EpisodicMemory)
+            success = await self._dual_storage.write_to_kv(episodic_memory)
+            return episodic_memory if success else None
         except Exception as e:
             logger.error("❌ Failed to append episodic memory: %s", e)
             return None
@@ -261,9 +336,12 @@ class EpisodicMemoryRawRepository(BaseRepository[EpisodicMemory]):
             Whether deletion was successful
         """
         try:
-            # Convert string event_id to ObjectId
+            # 1. First delete from KV-Storage (data source)
+            kv_deleted = await self._dual_storage.delete_from_kv(event_id)
+
+            # 2. Then delete from MongoDB (index)
+            mongo_deleted = False
             object_id = ObjectId(event_id)
-            # Directly delete and check deletion count
             result = await self.model.find(
                 {"_id": object_id, "user_id": user_id}, session=session
             ).delete()
@@ -271,21 +349,22 @@ class EpisodicMemoryRawRepository(BaseRepository[EpisodicMemory]):
             deleted_count = (
                 result.deleted_count if hasattr(result, 'deleted_count') else 0
             )
-            success = deleted_count > 0
+            mongo_deleted = deleted_count > 0
 
-            if success:
+            if mongo_deleted:
                 logger.info(
                     "✅ Successfully deleted episodic memory by event ID and user ID: %s",
                     event_id,
                 )
-                return True
             else:
                 logger.warning(
                     "⚠️  Episodic memory to delete not found: event_id=%s, user_id=%s",
                     event_id,
                     user_id,
                 )
-                return False
+
+            # Return True only if deleted from both (strict consistency)
+            return kv_deleted and mongo_deleted
         except Exception as e:
             logger.error(
                 "❌ Failed to delete episodic memory by event ID and user ID: %s", e
@@ -306,6 +385,23 @@ class EpisodicMemoryRawRepository(BaseRepository[EpisodicMemory]):
             Number of deleted records
         """
         try:
+            # 1. Query all event IDs first
+            lite_docs = await self.model.find({"user_id": user_id}).to_list()
+            event_ids = [str(doc.id) for doc in lite_docs]
+
+            # 2. First batch delete from KV-Storage
+            kv_deleted_count = 0
+            if event_ids:
+                kv_storage = self._dual_storage.get_kv_storage()
+                try:
+                    kv_deleted_count = await kv_storage.batch_delete(keys=event_ids)
+                    logger.debug(
+                        f"✅ KV-Storage batch delete: {kv_deleted_count} records"
+                    )
+                except Exception as kv_error:
+                    logger.warning(f"⚠️  KV-Storage batch delete failed: {kv_error}")
+
+            # 3. Then delete from MongoDB
             result = await self.model.find({"user_id": user_id}).delete(session=session)
             count = result.deleted_count if result else 0
             logger.info(
@@ -361,7 +457,10 @@ class EpisodicMemoryRawRepository(BaseRepository[EpisodicMemory]):
                 limit,
                 len(results),
             )
-            return results
+
+            # Reconstruct from KV-Storage
+            full_episodics = await self._episodic_lite_to_full(results)
+            return full_episodics
         except Exception as e:
             logger.error("❌ Failed to paginate query of EpisodicMemory: %s", e)
             return []

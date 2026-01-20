@@ -16,12 +16,18 @@ from core.oxm.constants import MAGIC_ALL
 from infra_layer.adapters.out.persistence.document.request.memory_request_log import (
     MemoryRequestLog,
 )
+from infra_layer.adapters.out.persistence.document.request.memory_request_log_lite import (
+    MemoryRequestLogLite,
+)
+from infra_layer.adapters.out.persistence.repository.dual_storage_helper import (
+    DualStorageHelper,
+)
 
 logger = get_logger(__name__)
 
 
 @repository("memory_request_log_repository", primary=True)
-class MemoryRequestLogRepository(BaseRepository[MemoryRequestLog]):
+class MemoryRequestLogRepository(BaseRepository[MemoryRequestLogLite]):
     """
     Memory Request Log Repository
 
@@ -30,7 +36,51 @@ class MemoryRequestLogRepository(BaseRepository[MemoryRequestLog]):
     """
 
     def __init__(self):
-        super().__init__(MemoryRequestLog)
+        super().__init__(MemoryRequestLogLite)
+        self._dual_storage = DualStorageHelper[MemoryRequestLog, MemoryRequestLogLite](
+            model_name="MemoryRequestLog", full_model=MemoryRequestLog
+        )
+
+    def _memory_request_log_to_lite(
+        self, memory_request_log: MemoryRequestLog
+    ) -> MemoryRequestLogLite:
+        """
+        Convert full MemoryRequestLog to MemoryRequestLogLite (only indexed fields).
+
+        Args:
+            memory_request_log: Full MemoryRequestLog object
+
+        Returns:
+            MemoryRequestLogLite with only indexed fields
+
+        Note:
+            Audit fields (created_at/updated_at) are not copied here.
+            They will be automatically set by AuditBase during insert/update operations.
+        """
+        return MemoryRequestLogLite(
+            id=memory_request_log.id,
+            group_id=memory_request_log.group_id,
+            request_id=memory_request_log.request_id,
+            user_id=memory_request_log.user_id,
+            event_id=memory_request_log.event_id,
+            message_id=memory_request_log.message_id,
+            message_create_time=memory_request_log.message_create_time,
+            sync_status=memory_request_log.sync_status,
+        )
+
+    async def _memory_request_log_lite_to_full(
+        self, lite: MemoryRequestLogLite
+    ) -> Optional[MemoryRequestLog]:
+        """
+        Reconstruct full MemoryRequestLog object from KV-Storage.
+
+        Args:
+            lite: MemoryRequestLogLite from MongoDB query
+
+        Returns:
+            Full MemoryRequestLog object from KV-Storage or None
+        """
+        return await self._dual_storage.reconstruct_single(lite)
 
     # ==================== Save Methods ====================
 
@@ -50,7 +100,22 @@ class MemoryRequestLogRepository(BaseRepository[MemoryRequestLog]):
             Saved MemoryRequestLog or None
         """
         try:
-            await memory_request_log.insert(session=session)
+            # Insert new Lite
+            memory_request_log_lite = self._memory_request_log_to_lite(
+                memory_request_log
+            )
+            await memory_request_log_lite.insert(session=session)
+
+            # Copy generated ID and audit fields back
+            memory_request_log.id = memory_request_log_lite.id
+            memory_request_log.created_at = memory_request_log_lite.created_at
+            memory_request_log.updated_at = memory_request_log_lite.updated_at
+
+            # Write to KV-Storage (always full MemoryRequestLog)
+            success = await self._dual_storage.write_to_kv(memory_request_log)
+            if not success:
+                return None
+
             logger.debug(
                 "Memory request log saved successfully: id=%s, group_id=%s, request_id=%s",
                 memory_request_log.id,
@@ -78,10 +143,16 @@ class MemoryRequestLogRepository(BaseRepository[MemoryRequestLog]):
             MemoryRequestLog or None
         """
         try:
-            result = await MemoryRequestLog.find_one(
+            # Query MongoDB Lite model first
+            lite_result = await self.model.find_one(
                 {"request_id": request_id}, session=session
             )
-            return result
+            if not lite_result:
+                return None
+
+            # Reconstruct from KV-Storage
+            full_result = await self._memory_request_log_lite_to_full(lite_result)
+            return full_result
         except Exception as e:
             logger.error("Failed to get Memory request log by request ID: %s", e)
             return None
@@ -128,19 +199,28 @@ class MemoryRequestLogRepository(BaseRepository[MemoryRequestLog]):
                 else:
                     query["created_at"] = {"$lte": end_time}
 
-            results = (
-                await MemoryRequestLog.find(query, session=session)
+            # Query MongoDB Lite models
+            lite_results = (
+                await self.model.find(query, session=session)
                 .sort([("created_at", 1)])  # Ascending order by time, oldest first
                 .limit(limit)
                 .to_list()
             )
+
+            # Reconstruct full objects from KV-Storage
+            full_results = []
+            for lite in lite_results:
+                full_result = await self._memory_request_log_lite_to_full(lite)
+                if full_result:
+                    full_results.append(full_result)
+
             logger.debug(
                 "Query Memory request logs by group_id: group_id=%s, sync_status=%s, count=%d",
                 group_id,
                 sync_status,
-                len(results),
+                len(full_results),
             )
-            return results
+            return full_results
         except Exception as e:
             logger.error("Failed to query Memory request logs by group_id: %s", e)
             return []
@@ -205,20 +285,29 @@ class MemoryRequestLogRepository(BaseRepository[MemoryRequestLog]):
             # Determine sort order
             sort_order = 1 if ascending else -1
 
-            results = (
-                await MemoryRequestLog.find(query, session=session)
+            # Query MongoDB Lite models
+            lite_results = (
+                await self.model.find(query, session=session)
                 .sort([("created_at", sort_order)])
                 .limit(limit)
                 .to_list()
             )
+
+            # Reconstruct full objects from KV-Storage
+            full_results = []
+            for lite in lite_results:
+                full_result = await self._memory_request_log_lite_to_full(lite)
+                if full_result:
+                    full_results.append(full_result)
+
             logger.debug(
                 "Query Memory request logs by group_id with statuses: group_id=%s, sync_status_list=%s, exclude=%d, count=%d",
                 group_id,
                 sync_status_list,
                 len(exclude_message_ids) if exclude_message_ids else 0,
-                len(results),
+                len(full_results),
             )
-            return results
+            return full_results
         except Exception as e:
             logger.error(
                 "Failed to query Memory request logs by group_id with statuses: %s", e
@@ -243,18 +332,27 @@ class MemoryRequestLogRepository(BaseRepository[MemoryRequestLog]):
             List of MemoryRequestLog
         """
         try:
-            results = (
-                await MemoryRequestLog.find({"user_id": user_id}, session=session)
+            # Query MongoDB Lite models
+            lite_results = (
+                await self.model.find({"user_id": user_id}, session=session)
                 .sort([("created_at", -1)])
                 .limit(limit)
                 .to_list()
             )
+
+            # Reconstruct full objects from KV-Storage
+            full_results = []
+            for lite in lite_results:
+                full_result = await self._memory_request_log_lite_to_full(lite)
+                if full_result:
+                    full_results.append(full_result)
+
             logger.debug(
                 "Query Memory request logs by user_id: user_id=%s, count=%d",
                 user_id,
-                len(results),
+                len(full_results),
             )
-            return results
+            return full_results
         except Exception as e:
             logger.error("Failed to query Memory request logs by user_id: %s", e)
             return []
@@ -273,10 +371,24 @@ class MemoryRequestLogRepository(BaseRepository[MemoryRequestLog]):
             Number of deleted records
         """
         try:
-            result = await MemoryRequestLog.find(
+            # Get all lite objects first to obtain IDs for KV-Storage deletion
+            lite_list = await self.model.find(
+                {"group_id": group_id}, session=session
+            ).to_list()
+
+            if not lite_list:
+                return 0
+
+            # Delete from MongoDB
+            result = await self.model.find(
                 {"group_id": group_id}, session=session
             ).delete()
             deleted_count = result.deleted_count if result else 0
+
+            # Delete from KV-Storage
+            for lite in lite_list:
+                await self._dual_storage.delete_from_kv(str(lite.id))
+
             logger.info(
                 "Deleted Memory request logs: group_id=%s, deleted=%d",
                 group_id,
@@ -318,7 +430,7 @@ class MemoryRequestLogRepository(BaseRepository[MemoryRequestLog]):
             Number of updated records
         """
         try:
-            collection = MemoryRequestLog.get_pymongo_collection()
+            collection = self.model.get_pymongo_collection()
             result = await collection.update_many(
                 {"group_id": group_id, "sync_status": -1},
                 {"$set": {"sync_status": 0}},
@@ -365,7 +477,7 @@ class MemoryRequestLogRepository(BaseRepository[MemoryRequestLog]):
             return 0
 
         try:
-            collection = MemoryRequestLog.get_pymongo_collection()
+            collection = self.model.get_pymongo_collection()
             result = await collection.update_many(
                 {
                     "group_id": group_id,
@@ -414,7 +526,7 @@ class MemoryRequestLogRepository(BaseRepository[MemoryRequestLog]):
             Number of updated records
         """
         try:
-            collection = MemoryRequestLog.get_pymongo_collection()
+            collection = self.model.get_pymongo_collection()
             query = {"group_id": group_id, "sync_status": {"$in": [-1, 0]}}
 
             # Exclude specific message_ids
@@ -525,13 +637,21 @@ class MemoryRequestLogRepository(BaseRepository[MemoryRequestLog]):
             # Determine sort order
             sort_order = 1 if ascending else -1
 
-            results = (
-                await MemoryRequestLog.find(query, session=session)
+            # Query MongoDB Lite models
+            lite_results = (
+                await self.model.find(query, session=session)
                 .sort([("created_at", sort_order)])
                 .skip(skip)
                 .limit(limit)
                 .to_list()
             )
+
+            # Reconstruct full objects from KV-Storage
+            full_results = []
+            for lite in lite_results:
+                full_result = await self._memory_request_log_lite_to_full(lite)
+                if full_result:
+                    full_results.append(full_result)
 
             logger.debug(
                 "Query pending Memory request logs: user_id=%s, group_id=%s, "
@@ -541,9 +661,9 @@ class MemoryRequestLogRepository(BaseRepository[MemoryRequestLog]):
                 sync_status_list,
                 skip,
                 limit,
-                len(results),
+                len(full_results),
             )
-            return results
+            return full_results
         except Exception as e:
             logger.error(
                 "Failed to query pending Memory request logs: user_id=%s, group_id=%s, error=%s",

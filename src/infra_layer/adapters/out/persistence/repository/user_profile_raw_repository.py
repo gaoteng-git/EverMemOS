@@ -15,12 +15,18 @@ from core.oxm.constants import MAGIC_ALL
 from infra_layer.adapters.out.persistence.document.memory.user_profile import (
     UserProfile,
 )
+from infra_layer.adapters.out.persistence.document.memory.user_profile_lite import (
+    UserProfileLite,
+)
+from infra_layer.adapters.out.persistence.repository.dual_storage_helper import (
+    DualStorageHelper,
+)
 
 logger = get_logger(__name__)
 
 
 @repository("user_profile_raw_repository", primary=True)
-class UserProfileRawRepository(BaseRepository[UserProfile]):
+class UserProfileRawRepository(BaseRepository[UserProfileLite]):
     """
     UserProfile native CRUD repository
 
@@ -33,7 +39,44 @@ class UserProfileRawRepository(BaseRepository[UserProfile]):
     """
 
     def __init__(self):
-        super().__init__(UserProfile)
+        super().__init__(UserProfileLite)
+        self._dual_storage = DualStorageHelper[UserProfile, UserProfileLite](
+            model_name="UserProfile", full_model=UserProfile
+        )
+
+    def _user_profile_to_lite(self, user_profile: UserProfile) -> UserProfileLite:
+        """
+        Convert full UserProfile to UserProfileLite (only indexed fields).
+
+        Args:
+            user_profile: Full UserProfile object
+
+        Returns:
+            UserProfileLite with only indexed fields
+
+        Note:
+            Audit fields (created_at/updated_at) are not copied here.
+            They will be automatically set by AuditBase during insert/update operations.
+        """
+        return UserProfileLite(
+            id=user_profile.id,
+            user_id=user_profile.user_id,
+            group_id=user_profile.group_id,
+        )
+
+    async def _user_profile_lite_to_full(
+        self, lite: UserProfileLite
+    ) -> Optional[UserProfile]:
+        """
+        Reconstruct full UserProfile object from KV-Storage.
+
+        Args:
+            lite: UserProfileLite from MongoDB query
+
+        Returns:
+            Full UserProfile object from KV-Storage or None
+        """
+        return await self._dual_storage.reconstruct_single(lite)
 
     # ==================== ProfileStorage interface implementation ====================
 
@@ -91,9 +134,23 @@ class UserProfileRawRepository(BaseRepository[UserProfile]):
         self, user_id: str, group_id: str
     ) -> Optional[UserProfile]:
         try:
-            return await self.model.find_one(
-                UserProfile.user_id == user_id, UserProfile.group_id == group_id
+            # Query MongoDB Lite model first
+            lite_result = await self.model.find_one(
+                {"user_id": user_id, "group_id": group_id}
             )
+            if not lite_result:
+                logger.debug(
+                    f"ℹ️  UserProfile not found: user_id={user_id}, group_id={group_id}"
+                )
+                return None
+
+            # Reconstruct from KV-Storage
+            full_user_profile = await self._user_profile_lite_to_full(lite_result)
+            if full_user_profile:
+                logger.debug(
+                    f"✅ Retrieved UserProfile successfully: user_id={user_id}, group_id={group_id}"
+                )
+            return full_user_profile
         except Exception as e:
             logger.error(
                 f"Failed to retrieve user profile: user_id={user_id}, group_id={group_id}, error={e}"
@@ -102,7 +159,17 @@ class UserProfileRawRepository(BaseRepository[UserProfile]):
 
     async def get_all_by_group(self, group_id: str) -> List[UserProfile]:
         try:
-            return await self.model.find(UserProfile.group_id == group_id).to_list()
+            # Query MongoDB Lite models
+            lite_results = await self.model.find({"group_id": group_id}).to_list()
+
+            # Reconstruct full objects from KV-Storage
+            full_profiles = []
+            for lite in lite_results:
+                full_profile = await self._user_profile_lite_to_full(lite)
+                if full_profile:
+                    full_profiles.append(full_profile)
+
+            return full_profiles
         except Exception as e:
             logger.error(
                 f"Failed to retrieve group user profiles: group_id={group_id}, error={e}"
@@ -111,12 +178,22 @@ class UserProfileRawRepository(BaseRepository[UserProfile]):
 
     async def get_all_by_user(self, user_id: str, limit: int = 40) -> List[UserProfile]:
         try:
-            return (
-                await self.model.find(UserProfile.user_id == user_id)
+            # Query MongoDB Lite models
+            lite_results = (
+                await self.model.find({"user_id": user_id})
                 .sort([("version", -1)])
                 .limit(limit)
                 .to_list()
             )
+
+            # Reconstruct full objects from KV-Storage
+            full_profiles = []
+            for lite in lite_results:
+                full_profile = await self._user_profile_lite_to_full(lite)
+                if full_profile:
+                    full_profiles.append(full_profile)
+
+            return full_profiles
         except Exception as e:
             logger.error(f"Failed to get user profile: user_id={user_id}, error={e}")
             return []
@@ -153,20 +230,20 @@ class UserProfileRawRepository(BaseRepository[UserProfile]):
                 if user_id == "" or user_id is None:
                     # Explicitly filter for null or empty string
                     conditions.append(
-                        Or(Eq(UserProfile.user_id, None), Eq(UserProfile.user_id, ""))
+                        Or(Eq(UserProfileLite.user_id, None), Eq(UserProfileLite.user_id, ""))
                     )
                 else:
-                    conditions.append(UserProfile.user_id == user_id)
+                    conditions.append(UserProfileLite.user_id == user_id)
 
             # Handle group_id filter
             if group_id != MAGIC_ALL:
                 if group_id == "" or group_id is None:
                     # Explicitly filter for null or empty string
                     conditions.append(
-                        Or(Eq(UserProfile.group_id, None), Eq(UserProfile.group_id, ""))
+                        Or(Eq(UserProfileLite.group_id, None), Eq(UserProfileLite.group_id, ""))
                     )
                 else:
-                    conditions.append(UserProfile.group_id == group_id)
+                    conditions.append(UserProfileLite.group_id == group_id)
 
             # Build query
             if conditions:
@@ -183,14 +260,22 @@ class UserProfileRawRepository(BaseRepository[UserProfile]):
             if limit:
                 query = query.limit(limit)
 
-            results = await query.to_list()
+            lite_results = await query.to_list()
+
+            # Reconstruct full objects from KV-Storage
+            full_profiles = []
+            for lite in lite_results:
+                full_profile = await self._user_profile_lite_to_full(lite)
+                if full_profile:
+                    full_profiles.append(full_profile)
+
             logger.debug(
                 "✅ Retrieved user profiles successfully: user_id=%s, group_id=%s, found %d records",
                 user_id,
                 group_id,
-                len(results),
+                len(full_profiles),
             )
-            return results
+            return full_profiles
         except Exception as e:
             logger.error("❌ Failed to retrieve user profiles: %s", e)
             return []
@@ -204,9 +289,23 @@ class UserProfileRawRepository(BaseRepository[UserProfile]):
     ) -> Optional[UserProfile]:
         try:
             metadata = metadata or {}
-            existing = await self.get_by_user_and_group(user_id, group_id)
 
-            if existing:
+            # Check if already exists
+            existing_lite = await self.model.find_one(
+                {"user_id": user_id, "group_id": group_id}
+            )
+
+            # Prepare full UserProfile object
+            if existing_lite:
+                # Update: reconstruct existing profile from KV-Storage
+                existing = await self._user_profile_lite_to_full(existing_lite)
+                if not existing:
+                    logger.error(
+                        f"Failed to reconstruct existing profile from KV-Storage: user_id={user_id}, group_id={group_id}"
+                    )
+                    return None
+
+                # Update fields
                 existing.profile_data = profile_data
                 existing.version += 1
                 existing.confidence = metadata.get("confidence", existing.confidence)
@@ -220,12 +319,21 @@ class UserProfileRawRepository(BaseRepository[UserProfile]):
                 if "memcell_count" in metadata:
                     existing.memcell_count = metadata["memcell_count"]
 
-                await existing.save()
+                # Update Lite in MongoDB
+                existing_lite.user_id = user_id
+                existing_lite.group_id = group_id
+                await existing_lite.save()
+
+                # Copy updated audit fields back
+                existing.created_at = existing_lite.created_at
+                existing.updated_at = existing_lite.updated_at
+
+                user_profile = existing
                 logger.debug(
-                    f"Updated user profile: user_id={user_id}, group_id={group_id}, version={existing.version}"
+                    f"Updated user profile: user_id={user_id}, group_id={group_id}, version={user_profile.version}"
                 )
-                return existing
             else:
+                # Insert new UserProfile
                 user_profile = UserProfile(
                     user_id=user_id,
                     group_id=group_id,
@@ -239,11 +347,23 @@ class UserProfileRawRepository(BaseRepository[UserProfile]):
                     memcell_count=metadata.get("memcell_count", 0),
                     last_updated_cluster=metadata.get("cluster_id"),
                 )
-                await user_profile.insert()
+
+                # Insert new Lite
+                user_profile_lite = self._user_profile_to_lite(user_profile)
+                await user_profile_lite.insert()
+
+                # Copy generated ID and audit fields back
+                user_profile.id = user_profile_lite.id
+                user_profile.created_at = user_profile_lite.created_at
+                user_profile.updated_at = user_profile_lite.updated_at
+
                 logger.info(
                     f"Created user profile: user_id={user_id}, group_id={group_id}"
                 )
-                return user_profile
+
+            # Write to KV-Storage (always full UserProfile)
+            success = await self._dual_storage.write_to_kv(user_profile)
+            return user_profile if success else None
         except Exception as e:
             logger.error(
                 f"Failed to save user profile: user_id={user_id}, group_id={group_id}, error={e}"
@@ -252,8 +372,22 @@ class UserProfileRawRepository(BaseRepository[UserProfile]):
 
     async def delete_by_group(self, group_id: str) -> int:
         try:
-            result = await self.model.find(UserProfile.group_id == group_id).delete()
+            # Get all IDs first for KV-Storage deletion
+            all_lites = await self.model.find({"group_id": group_id}).to_list()
+            user_profile_ids = [str(lite.id) for lite in all_lites]
+
+            # Delete from MongoDB
+            result = await self.model.find({"group_id": group_id}).delete()
             count = result.deleted_count if result else 0
+
+            # Delete from KV-Storage
+            if count > 0 and user_profile_ids:
+                kv_storage = self._dual_storage.get_kv_storage()
+                try:
+                    await kv_storage.batch_delete(user_profile_ids)
+                except Exception as kv_error:
+                    logger.error(f"⚠️  KV-Storage batch delete error: {kv_error}")
+
             logger.info(
                 f"Deleted group user profiles: group_id={group_id}, count={count}"
             )
@@ -266,8 +400,22 @@ class UserProfileRawRepository(BaseRepository[UserProfile]):
 
     async def delete_all(self) -> int:
         try:
+            # Get all IDs first for KV-Storage deletion
+            all_lites = await self.model.find_all().to_list()
+            user_profile_ids = [str(lite.id) for lite in all_lites]
+
+            # Delete from MongoDB
             result = await self.model.delete_all()
             count = result.deleted_count if result else 0
+
+            # Delete from KV-Storage
+            if count > 0 and user_profile_ids:
+                kv_storage = self._dual_storage.get_kv_storage()
+                try:
+                    await kv_storage.batch_delete(user_profile_ids)
+                except Exception as kv_error:
+                    logger.error(f"⚠️  KV-Storage batch delete error: {kv_error}")
+
             logger.info(f"Deleted all user profiles: {count} items")
             return count
         except Exception as e:

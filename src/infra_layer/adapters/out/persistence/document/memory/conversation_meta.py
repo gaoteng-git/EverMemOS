@@ -6,10 +6,9 @@ A conversation metadata document model based on Beanie ODM, storing complete met
 
 from datetime import datetime
 from typing import List, Optional, Dict, Any
-from core.oxm.mongo.document_base import DocumentBase
+from typing import Optional as OptionalType
 from pydantic import Field, ConfigDict, BaseModel
-from pymongo import DESCENDING, IndexModel, ASCENDING
-from core.oxm.mongo.audit_base import AuditBase
+from beanie import PydanticObjectId
 from common_utils.datetime_utils import get_timezone
 
 
@@ -28,13 +27,28 @@ class UserDetailModel(BaseModel):
     )
 
 
-class ConversationMeta(DocumentBase, AuditBase):
+class ConversationMeta(BaseModel):
     """
     Conversation metadata document model
 
     Stores complete metadata of conversations, including scene, participants, tags, etc.
     Used for context management and memory retrieval in multi-turn conversations.
+
+    Note: This model is stored in KV-Storage only (not MongoDB).
     """
+
+    # ID field (managed by MongoDB through ConversationMetaLite)
+    id: OptionalType[PydanticObjectId] = Field(
+        default=None, description="Document ID (set after MongoDB insert)"
+    )
+
+    # Audit fields (managed by MongoDB through ConversationMetaLite)
+    created_at: OptionalType[datetime] = Field(
+        default=None, description="Creation timestamp"
+    )
+    updated_at: OptionalType[datetime] = Field(
+        default=None, description="Last update timestamp"
+    )
 
     # Version information
     version: str = Field(..., description="Data version number, e.g.: 1.0.0")
@@ -81,12 +95,10 @@ class ConversationMeta(DocumentBase, AuditBase):
     )
 
     model_config = ConfigDict(
-        # Collection name
-        collection="conversation_metas",
         # Validation configuration
         validate_assignment=True,
         # JSON serialization configuration
-        json_encoders={datetime: lambda dt: dt.isoformat()},
+        json_encoders={datetime: lambda dt: dt.isoformat(), PydanticObjectId: str},
         # Example data
         json_schema_extra={
             "example": {
@@ -130,23 +142,3 @@ class ConversationMeta(DocumentBase, AuditBase):
         },
         extra="allow",
     )
-
-    class Settings:
-        """Beanie settings"""
-
-        name = "conversation_metas"
-        indexes = [
-            IndexModel(
-                [("conversation_created_at", ASCENDING)],
-                name="idx_conversation_created_at",
-            ),
-            # Creation time index
-            IndexModel([("created_at", DESCENDING)], name="idx_created_at"),
-            # Update time index
-            IndexModel([("updated_at", DESCENDING)], name="idx_updated_at"),
-            IndexModel(
-                [("group_id", ASCENDING)], name="idx_group_id_unique", unique=True
-            ),
-        ]
-        validate_on_save = True
-        use_state_management = True
