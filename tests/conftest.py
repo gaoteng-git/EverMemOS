@@ -32,6 +32,7 @@ async def init_database():
     from infra_layer.adapters.out.persistence.document.memory.user_profile_lite import UserProfileLite
     from infra_layer.adapters.out.persistence.document.memory.conversation_meta_lite import ConversationMetaLite
     from infra_layer.adapters.out.persistence.document.memory.conversation_status_lite import ConversationStatusLite
+    from infra_layer.adapters.out.persistence.document.request.memory_request_log_lite import MemoryRequestLogLite
     from core.di import get_container
 
     # Load environment variables from .env file
@@ -67,6 +68,7 @@ async def init_database():
             UserProfileLite,
             ConversationMetaLite,
             ConversationStatusLite,
+            MemoryRequestLogLite,
         ]
     )
 

@@ -8,13 +8,13 @@ Primarily saves message content from memorize requests, which can later be used 
 
 from datetime import datetime
 from typing import Optional, Dict, Any, List
-from core.oxm.mongo.document_base import DocumentBase
-from core.oxm.mongo.audit_base import AuditBase
-from pydantic import Field, ConfigDict
+from typing import Optional as OptionalType
+from pydantic import BaseModel, Field, ConfigDict
 from pymongo import IndexModel, ASCENDING, DESCENDING
+from beanie import PydanticObjectId
 
 
-class MemoryRequestLog(DocumentBase, AuditBase):
+class MemoryRequestLog(BaseModel):
     """
     Memory Request Log Document Model
 
@@ -24,7 +24,22 @@ class MemoryRequestLog(DocumentBase, AuditBase):
     - user_id: user ID
     - raw_input: raw input data
     - message core fields: message_id, create_time, sender, sender_name, content, etc.
+
+    Note: This model is stored in KV-Storage only (not MongoDB).
     """
+
+    # ID field (managed by MongoDB through MemoryRequestLogLite)
+    id: OptionalType[PydanticObjectId] = Field(
+        default=None, description="Document ID (set after MongoDB insert)"
+    )
+
+    # Audit fields (managed by MongoDB through MemoryRequestLogLite)
+    created_at: OptionalType[datetime] = Field(
+        default=None, description="Creation timestamp"
+    )
+    updated_at: OptionalType[datetime] = Field(
+        default=None, description="Last update timestamp"
+    )
 
     # Core fields
     group_id: str = Field(..., description="Conversation group ID")
@@ -74,9 +89,8 @@ class MemoryRequestLog(DocumentBase, AuditBase):
     )
 
     model_config = ConfigDict(
-        collection="memory_request_logs",
         validate_assignment=True,
-        json_encoders={datetime: lambda dt: dt.isoformat()},
+        json_encoders={datetime: lambda dt: dt.isoformat(), PydanticObjectId: str},
         json_schema_extra={
             "example": {
                 "group_id": "group_123",
@@ -97,28 +111,5 @@ class MemoryRequestLog(DocumentBase, AuditBase):
                 "endpoint_name": "memorize",
             }
         },
+        extra="allow",
     )
-
-    class Settings:
-        """Beanie settings"""
-
-        name = "memory_request_logs"
-        indexes = [
-            IndexModel([("group_id", ASCENDING), ("created_at", DESCENDING)]),
-            IndexModel([("request_id", ASCENDING)]),
-            IndexModel([("user_id", ASCENDING)]),
-            IndexModel([("created_at", DESCENDING)]),
-            IndexModel([("event_id", ASCENDING)]),
-            IndexModel([("message_id", ASCENDING)]),
-            IndexModel([("group_id", ASCENDING), ("message_create_time", DESCENDING)]),
-            # Composite index: used for batch updates and querying by status
-            # Supports operations like update_many({"group_id": "xxx", "sync_status": -1}, ...)
-            IndexModel([("group_id", ASCENDING), ("sync_status", ASCENDING)]),
-            IndexModel(
-                [
-                    ("group_id", ASCENDING),
-                    ("user_id", ASCENDING),
-                    ("sync_status", ASCENDING),
-                ]
-            ),
-        ]
