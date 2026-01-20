@@ -214,7 +214,7 @@ class TestBasicCRUD:
         # 1. Prepare conversation data
         conversation_data = {
             "version": "1.0.0",
-            "scene": "companion",
+            "scene": "group_chat",
             "scene_desc": {"bot_ids": ["bot_003"]},
             "name": "Upsert Test Conversation",
             "description": "Test upsert insert mode",
@@ -239,7 +239,7 @@ class TestBasicCRUD:
         # 4. Verify data
         assert result.group_id == test_group_id
         assert result.name == "Upsert Test Conversation"
-        assert result.scene == "companion"
+        assert result.scene == "group_chat"
         logger.info("✅ Upsert insert data verified")
 
         # Cleanup
@@ -388,7 +388,7 @@ class TestSceneQuery:
         test_data = [
             (f"group_assistant_{uuid.uuid4().hex[:8]}", "assistant", "Assistant Conversation 1"),
             (f"group_assistant_{uuid.uuid4().hex[:8]}", "assistant", "Assistant Conversation 2"),
-            (f"group_companion_{uuid.uuid4().hex[:8]}", "companion", "Companion Conversation 1"),
+            (f"group_chat_{uuid.uuid4().hex[:8]}", "group_chat", "Group Chat Conversation 1"),
         ]
 
         created_ids = []
@@ -411,16 +411,16 @@ class TestSceneQuery:
         assistant_groups = [cm.group_id for cm in assistant_list]
         assert any(gid.startswith("group_assistant_") for gid in assistant_groups), "Should find assistant conversations"
 
-        # 3. Query by scene: companion
-        companion_list = await repository.list_by_scene("companion")
-        logger.info(f"✅ Retrieved {len(companion_list)} companion conversations")
+        # 3. Query by scene: group_chat
+        group_chat_list = await repository.list_by_scene("group_chat")
+        logger.info(f"✅ Retrieved {len(group_chat_list)} group_chat conversations")
 
-        # Should have at least 1 companion conversation
-        companion_groups = [cm.group_id for cm in companion_list]
-        assert any(gid.startswith("group_companion_") for gid in companion_groups), "Should find companion conversations"
+        # Should have at least 1 group_chat conversation
+        group_chat_groups = [cm.group_id for cm in group_chat_list]
+        assert any(gid.startswith("group_chat_") for gid in group_chat_groups), "Should find group_chat conversations"
 
         # 4. Verify all retrieved objects are complete (not Lite)
-        for cm in assistant_list + companion_list:
+        for cm in assistant_list + group_chat_list:
             assert cm.name is not None, "Should have full data"
             assert cm.user_details is not None, "Should have user_details"
             logger.debug(f"Verified full data for group_id: {cm.group_id}")
@@ -474,6 +474,8 @@ class TestEdgeCases:
         """
         Test: Create ConversationMeta with invalid scene
         """
+        from core.constants.exceptions import ValidationException
+
         logger = get_logger()
         logger.info("=" * 60)
         logger.info("TEST: create_conversation_meta (invalid scene)")
@@ -482,9 +484,15 @@ class TestEdgeCases:
             group_id=test_group_id,
             scene="invalid_scene",  # Invalid scene
         )
-        result = await repository.create_conversation_meta(meta)
-        assert result is None, "Should return None for invalid scene"
-        logger.info("✅ Correctly rejected invalid scene")
+
+        # Should raise ValidationException for invalid scene
+        with pytest.raises(ValidationException) as exc_info:
+            await repository.create_conversation_meta(meta)
+
+        # Verify exception details
+        assert "invalid scene value" in str(exc_info.value).lower()
+        assert "scene" in str(exc_info.value).lower()
+        logger.info("✅ Correctly rejected invalid scene with ValidationException")
 
 
 class TestDualStorage:
