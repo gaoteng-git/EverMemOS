@@ -330,7 +330,7 @@ class ConversationMetaRawRepository(
             Whether deletion was successful
         """
         try:
-            result = await self.model.find(
+            result = await self.model.find_one(
                 {"group_id": group_id}, session=session
             ).delete()
             if result and result.deleted_count > 0:

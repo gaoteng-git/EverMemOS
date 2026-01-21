@@ -52,6 +52,222 @@ class IdOnlyProjection(BaseModel):
     model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
 
+class FindOneQueryProxy:
+    """
+    FindOne Query Proxy - 支持 find_one().delete() 链式调用和直接 await
+
+    包装 DualStorageModelProxy 的 find_one 逻辑，支持：
+    1. 直接 await：await find_one(...) -> Document
+    2. 链式 delete：await find_one(...).delete() -> DeleteResult
+
+    确保删除操作能触发 DualStorageMixin 的 KV 同步
+    """
+
+    def __init__(
+        self,
+        original_model,
+        kv_storage: "KVStorageInterface",
+        full_model_class,
+        indexed_fields: Set[str],
+        filter_args,
+        filter_kwargs,
+    ):
+        """
+        Initialize find_one query proxy
+
+        Args:
+            original_model: Original Beanie model class
+            kv_storage: KV-Storage instance
+            full_model_class: Full model class
+            indexed_fields: Set of indexed field names
+            filter_args: Positional arguments from find_one(*args)
+            filter_kwargs: Keyword arguments from find_one(**kwargs)
+        """
+        self._original_model = original_model
+        self._kv_storage = kv_storage
+        self._full_model_class = full_model_class
+        self._indexed_fields = indexed_fields
+        self._filter_args = filter_args
+        self._filter_kwargs = filter_kwargs
+
+    def __await__(self):
+        """
+        Support direct await: doc = await find_one(...)
+
+        Returns full document from KV-Storage
+        """
+        return self._execute_find_one().__await__()
+
+    async def _execute_find_one(self):
+        """
+        Execute find_one query and return document from KV-Storage
+
+        This is the core logic that both __await__ and delete() use
+        """
+        try:
+            # 检测是否使用字典语法
+            is_dict_syntax = self._filter_args and isinstance(self._filter_args[0], dict)
+
+            if is_dict_syntax:
+                # 字典语法：验证查询字段并使用 PyMongo
+                filter_query = self._filter_args[0]
+                self._validate_query_fields(filter_query)
+
+                mongo_collection = self._original_model.get_pymongo_collection()
+                session = self._filter_kwargs.get("session", None)
+                lite_doc = await mongo_collection.find_one(filter_query, session=session)
+            else:
+                # Beanie 操作符语法：使用 Beanie 的原生 find_one
+                lite_doc = await self._original_model.find_one(
+                    *self._filter_args,
+                    projection_model=IdOnlyProjection,
+                    **self._filter_kwargs
+                )
+
+                # 转换 IdOnlyProjection 对象为字典格式
+                if lite_doc:
+                    lite_doc = {"_id": lite_doc.id}
+
+            if not lite_doc:
+                return None
+
+            # 从 KV-Storage 加载完整数据
+            doc_id = str(lite_doc["_id"])
+            kv_value = await self._kv_storage.get(key=doc_id)
+
+            if kv_value:
+                full_doc = self._full_model_class.model_validate_json(kv_value)
+                logger.debug(f"✅ find_one loaded from KV: {doc_id}")
+                return full_doc
+            else:
+                # KV miss - 无法恢复完整数据
+                logger.warning(f"⚠️  KV miss in find_one for {doc_id}")
+                return None
+
+        except LiteStorageQueryError:
+            # 重新抛出查询字段验证错误
+            raise
+        except Exception as e:
+            logger.error(f"❌ Failed in find_one: {e}")
+            return None
+
+    def _extract_query_fields(self, filter_dict: Any) -> Set[str]:
+        """递归提取查询条件中使用的所有字段名（与 DualStorageModelProxy 相同的逻辑）"""
+        fields = set()
+        if not isinstance(filter_dict, dict):
+            return fields
+
+        for key, value in filter_dict.items():
+            if key.startswith("$"):
+                if isinstance(value, list):
+                    for sub_condition in value:
+                        fields.update(self._extract_query_fields(sub_condition))
+                elif isinstance(value, dict):
+                    fields.update(self._extract_query_fields(value))
+            else:
+                fields.add(key)
+
+        return fields
+
+    def _validate_query_fields(self, filter_dict: Any) -> None:
+        """验证查询字段是否在 Lite 数据中（与 DualStorageModelProxy 相同的逻辑）"""
+        if not filter_dict:
+            return
+
+        queried_fields = self._extract_query_fields(filter_dict)
+        if not queried_fields:
+            return
+
+        # MongoDB 字段别名映射：_id -> id
+        normalized_queried_fields = set()
+        for field in queried_fields:
+            if field == "_id":
+                normalized_queried_fields.add("id")
+            else:
+                normalized_queried_fields.add(field)
+
+        # 检查是否有字段不在 indexed_fields 中
+        missing_fields = normalized_queried_fields - self._indexed_fields
+
+        if missing_fields:
+            error_msg = (
+                f"❌ Query uses fields not available in Lite storage: {sorted(missing_fields)}\n\n"
+                f"These fields are not indexed and not in query_fields.\n"
+                f"In Lite storage mode, MongoDB only stores indexed fields and query_fields.\n\n"
+                f"To fix this issue, add these fields to Settings.query_fields in {self._full_model_class.__name__}:\n\n"
+                f"  class Settings:\n"
+                f"      query_fields = {sorted(list(missing_fields))}\n\n"
+                f"Current indexed fields: {sorted(self._indexed_fields)}\n"
+                f"Queried fields: {sorted(normalized_queried_fields)}\n"
+            )
+            raise LiteStorageQueryError(error_msg)
+
+    async def delete(self, *args, **kwargs):
+        """
+        Execute find_one and delete the result
+
+        Supports chaining: await find_one(...).delete()
+
+        Returns:
+            Delete result with deleted_count
+        """
+        try:
+            # 1. Execute find_one to get document ID only
+            is_dict_syntax = self._filter_args and isinstance(self._filter_args[0], dict)
+
+            if is_dict_syntax:
+                # 字典语法
+                filter_query = self._filter_args[0]
+                self._validate_query_fields(filter_query)
+
+                mongo_collection = self._original_model.get_pymongo_collection()
+                session = self._filter_kwargs.get("session", None)
+                lite_doc = await mongo_collection.find_one(filter_query, {"_id": 1}, session=session)
+            else:
+                # Beanie 操作符语法
+                lite_doc = await self._original_model.find_one(
+                    *self._filter_args,
+                    projection_model=IdOnlyProjection,
+                    **self._filter_kwargs
+                )
+                if lite_doc:
+                    lite_doc = {"_id": lite_doc.id}
+
+            if not lite_doc:
+                # No document found
+                class DeleteResult:
+                    deleted_count = 0
+                return DeleteResult()
+
+            doc_id = str(lite_doc["_id"])
+
+            # 2. Delete from MongoDB
+            if is_dict_syntax:
+                from bson import ObjectId
+                delete_result = await mongo_collection.delete_one(
+                    {"_id": ObjectId(doc_id)},
+                    session=self._filter_kwargs.get("session", None)
+                )
+            else:
+                # Use Beanie's find_one().delete()
+                delete_query = self._original_model.find_one(*self._filter_args, **self._filter_kwargs)
+                delete_result = await delete_query.delete(*args, **kwargs)
+
+            # 3. Delete from KV-Storage
+            if delete_result and hasattr(delete_result, 'deleted_count') and delete_result.deleted_count > 0:
+                try:
+                    await self._kv_storage.delete(key=doc_id)
+                    logger.debug(f"✅ Deleted document {doc_id} from KV-Storage via find_one().delete()")
+                except Exception as e:
+                    logger.warning(f"⚠️  Failed to delete from KV-Storage: {e}")
+
+            return delete_result
+
+        except Exception as e:
+            logger.error(f"❌ Failed to delete via find_one: {e}")
+            raise
+
+
 class DualStorageQueryProxy:
     """
     Query Cursor Proxy - 拦截 MongoDB 查询游标操作
@@ -375,75 +591,36 @@ class DualStorageModelProxy:
             logger.error(f"❌ Failed to get document: {e}")
             return None
 
-    async def find_one(self, *args, **kwargs):
+    def find_one(self, *args, **kwargs):
         """
-        Intercept find_one() - Lite 存储模式下使用 PyMongo 或 Beanie 查询
+        Intercept find_one() - 返回 FindOneQueryProxy 支持链式调用
 
         Supports both:
         - Dict syntax: find_one({"user_id": "123", "group_id": "456"})
         - Beanie operator syntax: find_one(Model.user_id == "123", Model.group_id == "456")
 
-        Lite 存储模式：
-        1. 查询 MongoDB 获取 Lite 数据（ID + 索引字段）
-        2. 从 KV-Storage 加载完整数据
+        Returns FindOneQueryProxy that supports:
+        1. Direct await: doc = await find_one(...)
+        2. Chained delete: await find_one(...).delete()
 
         Args:
             *args: filter query (dict or Beanie operators)
             **kwargs: additional options
 
         Returns:
-            Document or None
+            FindOneQueryProxy (can be awaited or chained with .delete())
 
         Raises:
             LiteStorageQueryError: 如果查询字段不在 Lite 存储中（仅字典语法）
         """
-        try:
-            # 检测是否使用字典语法
-            is_dict_syntax = args and isinstance(args[0], dict)
-
-            if is_dict_syntax:
-                # 字典语法：验证查询字段并使用 PyMongo
-                filter_query = args[0]
-                self._validate_query_fields(filter_query)
-
-                mongo_collection = self._original_model.get_pymongo_collection()
-                session = kwargs.get("session", None)
-                lite_doc = await mongo_collection.find_one(filter_query, session=session)
-            else:
-                # Beanie 操作符语法：使用 Beanie 的原生 find_one
-                # 注意：projection_model 设置为 IdOnlyProjection 只获取 ID
-                lite_doc = await self._original_model.find_one(
-                    *args,
-                    projection_model=IdOnlyProjection,
-                    **kwargs
-                )
-
-                # 转换 IdOnlyProjection 对象为字典格式
-                if lite_doc:
-                    lite_doc = {"_id": lite_doc.id}
-
-            if not lite_doc:
-                return None
-
-            # 从 KV-Storage 加载完整数据
-            doc_id = str(lite_doc["_id"])
-            kv_value = await self._kv_storage.get(key=doc_id)
-
-            if kv_value:
-                full_doc = self._full_model_class.model_validate_json(kv_value)
-                logger.debug(f"✅ find_one loaded from KV: {doc_id}")
-                return full_doc
-            else:
-                # KV miss - 无法恢复完整数据
-                logger.warning(f"⚠️  KV miss in find_one for {doc_id}")
-                return None
-
-        except LiteStorageQueryError:
-            # 重新抛出查询字段验证错误
-            raise
-        except Exception as e:
-            logger.error(f"❌ Failed in find_one: {e}")
-            return None
+        return FindOneQueryProxy(
+            original_model=self._original_model,
+            kv_storage=self._kv_storage,
+            full_model_class=self._full_model_class,
+            indexed_fields=self._indexed_fields,
+            filter_args=args,
+            filter_kwargs=kwargs,
+        )
 
     async def delete_many(self, *args, **kwargs):
         """
@@ -884,6 +1061,7 @@ class DocumentInstanceWrapper:
 __all__ = [
     "DualStorageModelProxy",
     "DualStorageQueryProxy",
+    "FindOneQueryProxy",
     "DocumentInstanceWrapper",
     "LiteStorageQueryError",
 ]
