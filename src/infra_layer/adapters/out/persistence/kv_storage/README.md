@@ -74,20 +74,21 @@ class DualStorageMixin(Generic[TDocument]):
     3. Monkey Patch Document 实例方法 (insert, save, delete)
     """
 
-    def __init__(self, document_class: Type[TDocument], *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         # 调用父类（BaseRepository）的 __init__
-        super().__init__(document_class, *args, **kwargs)
+        # BaseRepository 会设置 self.model = MemCell
+        super().__init__(*args, **kwargs)
 
         # 核心操作：替换 self.model
-        original_model = self.model
+        original_model = self.model  # 此时 self.model 已被 BaseRepository 设置
         self.model = DualStorageModelProxy(
             original_model=original_model,
-            kv_storage=self._get_kv_storage(),
-            full_model_class=document_class,
+            kv_storage=self._kv_storage,
+            full_model_class=original_model,  # ← 使用 original_model（即 MemCell）
         )
 
         # Monkey Patch 实例方法
-        DocumentInstanceWrapper.patch_document_class(document_class, kv_storage)
+        self._patch_document_methods(original_model, self.model._indexed_fields)
 ```
 
 **关键点**:
@@ -231,23 +232,27 @@ class MemCellRawRepository(
 **时序图**:
 
 ```
-Repository.__init__(MemCell)
+Repository.__init__(self)
     ↓
-DualStorageMixin.__init__(MemCell)
+super().__init__(MemCell)  # 传入 MemCell
     ↓
-BaseRepository.__init__(MemCell)
-    ├─ 设置 self.model = MemCell
+DualStorageMixin.__init__(self, MemCell)
+    ↓ super().__init__(MemCell)
+    ↓
+BaseRepository.__init__(self, MemCell)
+    ├─ self.model = MemCell  # 设置 self.model
     └─ 返回到 DualStorageMixin
     ↓
-DualStorageMixin 继续执行：
-    ├─ 获取 KV-Storage 实例
-    ├─ 用 DualStorageModelProxy 包装 self.model
+DualStorageMixin._setup_dual_storage():
+    ├─ self._kv_storage = self._get_kv_storage()  # 获取 KV-Storage 实例
+    ├─ original_model = self.model  # 保存原始 Model（MemCell）
     ├─ self.model = DualStorageModelProxy(
-    │      original_model=MemCell,
-    │      kv_storage=kv_storage,
-    │      full_model_class=MemCell
+    │      original_model=original_model,  # MemCell 类
+    │      kv_storage=self._kv_storage,
+    │      full_model_class=original_model  # MemCell 类（与 original_model 相同）
     │  )
-    └─ Monkey Patch MemCell 实例方法
+    └─ self._patch_document_methods(original_model, indexed_fields)
+        # Monkey Patch MemCell 实例方法
 ```
 
 ### 步骤 2: Model 代理创建
@@ -271,26 +276,39 @@ class DualStorageModelProxy:
 ### 步骤 3: Monkey Patch 实例方法
 
 ```python
-DocumentInstanceWrapper.patch_document_class(MemCell, kv_storage)
+self._patch_document_methods(original_model, self.model._indexed_fields)
 ```
 
 **Patch 的方法**:
 - `insert()` → `wrap_insert()` - 插入时同步 KV
 - `save()` → `wrap_save()` - 保存时同步 KV
 - `delete()` → `wrap_delete()` - 删除时同步 KV
+- `restore()` → `wrap_restore()` - 恢复时同步 KV（如果存在）
+- `hard_delete()` → `wrap_hard_delete()` - 硬删除时同步 KV（如果存在）
 
 **Monkey Patch 原理**:
 
 ```python
-# 保存原始方法
-original_insert = MemCell.insert
-original_save = MemCell.save
-original_delete = MemCell.delete
+def _patch_document_methods(self, document_class, indexed_fields):
+    """Monkey Patch Document 类的实例方法"""
+    kv_storage = self._kv_storage
 
-# 替换为包装方法
-MemCell.insert = wrap_insert(original_insert, kv_storage, MemCell)
-MemCell.save = wrap_save(original_save, kv_storage, MemCell)
-MemCell.delete = wrap_delete(original_delete, kv_storage, MemCell)
+    # 保存原始方法（仅首次 patch）
+    if not hasattr(document_class, "_original_insert"):
+        document_class._original_insert = document_class.insert
+        document_class._original_save = document_class.save
+        document_class._original_delete = document_class.delete
+
+        # 替换为包装方法（传入 indexed_fields）
+        document_class.insert = DocumentInstanceWrapper.wrap_insert(
+            document_class._original_insert, kv_storage, indexed_fields
+        )
+        document_class.save = DocumentInstanceWrapper.wrap_save(
+            document_class._original_save, kv_storage, indexed_fields
+        )
+        document_class.delete = DocumentInstanceWrapper.wrap_delete(
+            document_class._original_delete, kv_storage
+        )
 ```
 
 **初始化完成后的状态**:
