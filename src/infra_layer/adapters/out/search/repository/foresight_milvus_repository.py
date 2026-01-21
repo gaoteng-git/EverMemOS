@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import List, Optional, Dict, Any
 import json
 from core.oxm.milvus.base_repository import BaseMilvusRepository
+from core.oxm.milvus.milvus_dual_storage_mixin import MilvusDualStorageMixin
 from core.oxm.constants import MAGIC_ALL
 from infra_layer.adapters.out.search.milvus.memory.foresight_collection import (
     ForesightCollection,
@@ -26,7 +27,9 @@ MILVUS_SIMILARITY_RADIUS = None  # COSINE similarity threshold, optional range [
 
 
 @repository("foresight_milvus_repository", primary=False)
-class ForesightMilvusRepository(BaseMilvusRepository[ForesightCollection]):
+class ForesightMilvusRepository(
+    MilvusDualStorageMixin, BaseMilvusRepository[ForesightCollection]
+):
     """
     Foresight Milvus Repository
 

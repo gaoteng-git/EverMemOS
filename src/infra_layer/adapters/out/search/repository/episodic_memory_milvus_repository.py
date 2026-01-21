@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import List, Optional, Dict, Any, Union
 import json
 from core.oxm.milvus.base_repository import BaseMilvusRepository
+from core.oxm.milvus.milvus_dual_storage_mixin import MilvusDualStorageMixin
 from core.oxm.constants import MAGIC_ALL
 from infra_layer.adapters.out.search.milvus.memory.episodic_memory_collection import (
     EpisodicMemoryCollection,
@@ -24,7 +25,9 @@ MILVUS_SIMILARITY_RADIUS = None  # COSINE similarity threshold, optional range [
 
 
 @repository("episodic_memory_milvus_repository", primary=False)
-class EpisodicMemoryMilvusRepository(BaseMilvusRepository[EpisodicMemoryCollection]):
+class EpisodicMemoryMilvusRepository(
+    MilvusDualStorageMixin, BaseMilvusRepository[EpisodicMemoryCollection]
+):
     """
     Episodic Memory Milvus Repository
 
