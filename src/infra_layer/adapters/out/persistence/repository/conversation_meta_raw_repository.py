@@ -14,7 +14,7 @@ from core.constants.exceptions import ValidationException
 from infra_layer.adapters.out.persistence.document.memory.conversation_meta import (
     ConversationMeta,
 )
-from infra_layer.adapters.out.persistence.repository.dual_storage_mixin import (
+from infra_layer.adapters.out.persistence.kv_storage.dual_storage_mixin import (
     DualStorageMixin,
 )
 from memory_layer.profile_manager.config import ScenarioType

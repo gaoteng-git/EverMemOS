@@ -4,7 +4,7 @@ from core.observation.logger import get_logger
 from core.di.decorators import repository
 from core.oxm.mongo.base_repository import BaseRepository
 from infra_layer.adapters.out.persistence.document.memory.core_memory import CoreMemory
-from infra_layer.adapters.out.persistence.repository.dual_storage_mixin import (
+from infra_layer.adapters.out.persistence.kv_storage.dual_storage_mixin import (
     DualStorageMixin,
 )
 

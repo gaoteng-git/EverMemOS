@@ -25,7 +25,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from beanie import PydanticObjectId
 
 from core.observation.logger import get_logger
-from infra_layer.adapters.out.persistence.repository.lite_model_extractor import (
+from infra_layer.adapters.out.persistence.kv_storage.lite_model_extractor import (
     LiteModelExtractor,
 )
 

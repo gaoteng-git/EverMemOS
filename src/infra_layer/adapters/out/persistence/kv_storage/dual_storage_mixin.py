@@ -27,7 +27,7 @@ from core.observation.logger import get_logger
 from infra_layer.adapters.out.persistence.kv_storage.kv_storage_interface import (
     KVStorageInterface,
 )
-from infra_layer.adapters.out.persistence.repository.dual_storage_model_proxy import (
+from infra_layer.adapters.out.persistence.kv_storage.dual_storage_model_proxy import (
     DualStorageModelProxy,
     DocumentInstanceWrapper,
 )

@@ -14,7 +14,7 @@ from core.oxm.constants import MAGIC_ALL
 from infra_layer.adapters.out.persistence.document.memory.user_profile import (
     UserProfile,
 )
-from infra_layer.adapters.out.persistence.repository.dual_storage_mixin import (
+from infra_layer.adapters.out.persistence.kv_storage.dual_storage_mixin import (
     DualStorageMixin,
 )
 

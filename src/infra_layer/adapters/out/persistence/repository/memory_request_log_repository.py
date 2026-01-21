@@ -16,7 +16,7 @@ from core.oxm.constants import MAGIC_ALL
 from infra_layer.adapters.out.persistence.document.request.memory_request_log import (
     MemoryRequestLog,
 )
-from infra_layer.adapters.out.persistence.repository.dual_storage_mixin import (
+from infra_layer.adapters.out.persistence.kv_storage.dual_storage_mixin import (
     DualStorageMixin,
 )
 

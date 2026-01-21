@@ -13,7 +13,7 @@ from core.oxm.mongo.base_repository import BaseRepository
 from infra_layer.adapters.out.persistence.document.memory.cluster_state import (
     ClusterState,
 )
-from infra_layer.adapters.out.persistence.repository.dual_storage_mixin import (
+from infra_layer.adapters.out.persistence.kv_storage.dual_storage_mixin import (
     DualStorageMixin,
 )
 

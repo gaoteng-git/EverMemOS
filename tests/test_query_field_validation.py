@@ -9,7 +9,7 @@ import pytest_asyncio
 import uuid
 from datetime import datetime
 
-from infra_layer.adapters.out.persistence.repository.dual_storage_model_proxy import (
+from infra_layer.adapters.out.persistence.kv_storage.dual_storage_model_proxy import (
     LiteStorageQueryError,
 )
 

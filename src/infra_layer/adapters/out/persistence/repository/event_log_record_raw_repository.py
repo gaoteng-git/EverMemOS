@@ -16,7 +16,7 @@ from infra_layer.adapters.out.persistence.document.memory.event_log_record impor
     EventLogRecord,
     EventLogRecordProjection,
 )
-from infra_layer.adapters.out.persistence.repository.dual_storage_mixin import (
+from infra_layer.adapters.out.persistence.kv_storage.dual_storage_mixin import (
     DualStorageMixin,
 )
 

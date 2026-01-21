@@ -9,7 +9,7 @@ from core.oxm.constants import MAGIC_ALL
 from infra_layer.adapters.out.persistence.document.memory.episodic_memory import (
     EpisodicMemory,
 )
-from infra_layer.adapters.out.persistence.repository.dual_storage_mixin import (
+from infra_layer.adapters.out.persistence.kv_storage.dual_storage_mixin import (
     DualStorageMixin,
 )
 from agentic_layer.vectorize_service import get_vectorize_service

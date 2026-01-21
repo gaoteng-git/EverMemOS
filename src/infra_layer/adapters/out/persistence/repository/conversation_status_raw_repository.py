@@ -6,7 +6,7 @@ from infra_layer.adapters.out.persistence.document.memory.conversation_status im
 )
 from core.observation.logger import get_logger
 from core.di.decorators import repository
-from infra_layer.adapters.out.persistence.repository.dual_storage_mixin import (
+from infra_layer.adapters.out.persistence.kv_storage.dual_storage_mixin import (
     DualStorageMixin,
 )
 
