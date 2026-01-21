@@ -112,7 +112,7 @@ class DualStorageMixin(Generic[TDocument]):
         """
         Monkey patch Document 类的实例方法
 
-        Wrap insert(), save(), delete() 以实现 Lite 存储：
+        Wrap insert(), create(), save(), delete() 以实现 Lite 存储：
         - MongoDB 只存索引字段（Lite）
         - KV-Storage 存完整数据（Full）
 
@@ -139,6 +139,13 @@ class DualStorageMixin(Generic[TDocument]):
                 document_class._original_delete, kv_storage
             )
 
+            # Wrap create() method if it exists (Beanie提供的insert别名)
+            if hasattr(document_class, "create"):
+                document_class._original_create = document_class.create
+                document_class.create = DocumentInstanceWrapper.wrap_insert(
+                    document_class._original_create, kv_storage, indexed_fields
+                )
+
             # Wrap restore() and hard_delete() if they exist (for soft-delete documents)
             if hasattr(document_class, "restore"):
                 document_class._original_restore = document_class.restore
@@ -152,8 +159,18 @@ class DualStorageMixin(Generic[TDocument]):
                     document_class._original_hard_delete, kv_storage
                 )
 
+            # 统计拦截的方法数量
+            patched_methods = ["insert", "save", "delete"]
+            if hasattr(document_class, "_original_create"):
+                patched_methods.append("create")
+            if hasattr(document_class, "_original_restore"):
+                patched_methods.append("restore")
+            if hasattr(document_class, "_original_hard_delete"):
+                patched_methods.append("hard_delete")
+
             logger.debug(
-                f"✅ Patched instance methods for {document_class.__name__} (Lite: {len(indexed_fields)} fields)"
+                f"✅ Patched {len(patched_methods)} instance methods for {document_class.__name__}: "
+                f"{', '.join(patched_methods)} (Lite: {len(indexed_fields)} fields)"
             )
 
 

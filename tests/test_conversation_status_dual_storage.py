@@ -355,6 +355,61 @@ class TestConversationStatusDualStorage:
 
         logger.info("✅ Test passed: Full lifecycle completed")
 
+    async def test_10_create_method_syncs_to_kv(
+        self, repository, kv_storage, test_group_id
+    ):
+        """
+        Test: create() method (Beanie's insert alias) syncs to KV-Storage
+
+        Verifies that the newly intercepted create() method:
+        1. Stores Lite data in MongoDB
+        2. Stores Full data in KV-Storage
+        3. Both storages are in sync
+        """
+        logger = get_logger()
+        logger.info("=" * 60)
+        logger.info("TEST: create() method syncs to KV-Storage")
+
+        # This test verifies the fix for create() method interception
+        # conversation_status_raw_repository.py:116 uses new_doc.create()
+        # Previously unintercepted, now intercepted by wrap_insert
+
+        # Create test data using upsert_by_group_id which internally calls create()
+        update_data = {
+            "old_msg_start_time": datetime.now(timezone.utc) - timedelta(days=3),
+            "new_msg_start_time": datetime.now(timezone.utc),
+        }
+
+        # First call creates a new document using create() method
+        created = await repository.upsert_by_group_id(test_group_id, update_data)
+        assert created is not None
+        doc_id = str(created.id)
+        logger.info(f"Created document using create() method: {doc_id}")
+
+        # Verify MongoDB has Lite data (only indexed fields)
+        from infra_layer.adapters.out.persistence.document.memory.conversation_status import (
+            ConversationStatus,
+        )
+        mongo_collection = ConversationStatus.get_pymongo_collection()
+        mongo_doc = await mongo_collection.find_one({"group_id": test_group_id})
+        assert mongo_doc is not None
+        logger.info(f"✅ MongoDB has Lite data: {len(mongo_doc.keys())} fields")
+
+        # Verify KV-Storage has Full data
+        kv_value = await kv_storage.get(doc_id)
+        assert kv_value is not None
+        kv_doc = ConversationStatus.model_validate_json(kv_value)
+        assert kv_doc.group_id == test_group_id
+        assert kv_doc.old_msg_start_time is not None
+        assert kv_doc.new_msg_start_time is not None
+        logger.info("✅ KV-Storage has Full data with all fields")
+
+        # Verify data consistency
+        assert str(kv_doc.id) == doc_id
+        logger.info("✅ MongoDB and KV-Storage are in sync")
+
+        logger.info("✅ Test passed: create() method interception works correctly")
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "-s"])

@@ -402,6 +402,82 @@ class DualStorageQueryProxy:
         """Proxy count method to original cursor"""
         return await self._mongo_cursor.count(*args, **kwargs)
 
+    async def update_many(self, update_data: dict, **kwargs):
+        """
+        Update documents matching query - Cursor上的批量更新并同步 KV-Storage
+
+        这是在 find() 返回的Cursor上调用的 update_many()，不同于 model.update_many()
+        例如：await model.find({"user_id": "123"}).update_many({"$set": {"field": "value"}})
+
+        Args:
+            update_data: Update operations (e.g., {"$set": {"field": value}})
+            **kwargs: Additional options (e.g., session)
+
+        Returns:
+            Update result with modified_count
+        """
+        try:
+            # 1. 获取要更新的文档IDs（使用project避免Beanie验证）
+            projected_cursor = self._mongo_cursor.project(IdOnlyProjection)
+            id_projections = await projected_cursor.to_list(length=None)
+            doc_ids = [str(proj.id) for proj in id_projections if proj.id]
+
+            if not doc_ids:
+                # No documents to update
+                class UpdateResult:
+                    modified_count = 0
+                return UpdateResult()
+
+            # 2. 执行MongoDB批量更新
+            result = await self._mongo_cursor.update_many(update_data, **kwargs)
+
+            # 3. 同步到KV-Storage
+            if result and result.modified_count > 0:
+                import json
+                from bson import ObjectId
+                from datetime import datetime
+
+                def json_serializer(obj):
+                    """Custom JSON serializer for ObjectId and datetime"""
+                    if isinstance(obj, ObjectId):
+                        return str(obj)
+                    elif isinstance(obj, datetime):
+                        return obj.isoformat()
+                    raise TypeError(f"Type {type(obj)} not serializable")
+
+                # Extract update fields from $set operator
+                update_fields = {}
+                if "$set" in update_data:
+                    update_fields = update_data["$set"]
+                else:
+                    logger.warning(f"⚠️  Cursor.update_many() only supports $set operator, got: {update_data.keys()}")
+
+                # Update each document in KV-Storage
+                for doc_id in doc_ids:
+                    try:
+                        # Load existing full data from KV
+                        kv_value = await self._kv_storage.get(key=doc_id)
+                        if kv_value:
+                            # Parse existing data
+                            full_data = json.loads(kv_value)
+                            # Apply update fields
+                            full_data.update(update_fields)
+                            # Write back to KV
+                            kv_value = json.dumps(full_data, default=json_serializer)
+                            await self._kv_storage.put(key=doc_id, value=kv_value)
+                        else:
+                            logger.warning(f"⚠️  KV miss for {doc_id}, cannot update")
+                    except Exception as e:
+                        logger.warning(f"⚠️  Failed to sync to KV-Storage for {doc_id}: {e}")
+
+                logger.debug(f"✅ Cursor.update_many() updated {result.modified_count} documents in MongoDB and KV-Storage")
+
+            return result
+
+        except Exception as e:
+            logger.error(f"❌ Failed to update_many on cursor with dual storage: {e}")
+            raise
+
     def __getattr__(self, name):
         """Proxy all other methods to original cursor"""
         return getattr(self._mongo_cursor, name)

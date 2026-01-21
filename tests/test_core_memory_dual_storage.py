@@ -417,6 +417,155 @@ class TestCoreMemoryDualStorage:
 
         logger.info("✅ Test passed: get_base() and get_profile() work correctly")
 
+    async def test_09_create_method_syncs_to_kv(
+        self, repository, kv_storage, test_user_id
+    ):
+        """
+        Test: create() method (Beanie's insert alias) syncs to KV-Storage
+
+        Verifies that the newly intercepted create() method:
+        1. Stores Lite data in MongoDB
+        2. Stores Full data in KV-Storage
+        3. Both storages are in sync
+        """
+        logger = get_logger()
+        logger.info("=" * 60)
+        logger.info("TEST: create() method syncs to KV-Storage")
+
+        # This test verifies the fix for create() method interception
+        # core_memory_raw_repository.py:348 uses new_doc.create()
+        # Previously unintercepted, now intercepted by wrap_insert
+
+        # Create test data using upsert_by_user_id which internally calls create()
+        test_data = create_test_core_memory(user_id=test_user_id, version="v1.0")
+        update_data = {
+            "version": test_data.version,
+            "user_name": test_data.user_name,
+            "gender": test_data.gender,
+            "position": test_data.position,
+            "department": test_data.department,
+            "age": test_data.age,
+            "hard_skills": test_data.hard_skills,
+            "soft_skills": test_data.soft_skills,
+        }
+
+        # First call creates a new document using create() method
+        created = await repository.upsert_by_user_id(test_user_id, update_data)
+        assert created is not None
+        doc_id = str(created.id)
+        logger.info(f"Created document using create() method: {doc_id}")
+
+        # Verify MongoDB has Lite data (only indexed fields)
+        from infra_layer.adapters.out.persistence.document.memory.core_memory import (
+            CoreMemory,
+        )
+        mongo_collection = CoreMemory.get_pymongo_collection()
+        mongo_doc = await mongo_collection.find_one({"user_id": test_user_id})
+        assert mongo_doc is not None
+        logger.info(f"✅ MongoDB has Lite data: {len(mongo_doc.keys())} fields")
+
+        # Verify KV-Storage has Full data
+        kv_value = await kv_storage.get(doc_id)
+        assert kv_value is not None
+        kv_doc = CoreMemory.model_validate_json(kv_value)
+        assert kv_doc.user_id == test_user_id
+        assert kv_doc.user_name == "Test User"
+        assert kv_doc.hard_skills == test_data.hard_skills
+        logger.info("✅ KV-Storage has Full data with all fields")
+
+        # Verify data consistency
+        assert str(kv_doc.id) == doc_id
+        logger.info("✅ MongoDB and KV-Storage are in sync")
+
+        logger.info("✅ Test passed: create() method interception works correctly")
+
+    async def test_10_cursor_update_many_syncs_to_kv(
+        self, repository, kv_storage, test_user_id
+    ):
+        """
+        Test: find().update_many() cursor method syncs to KV-Storage
+
+        Verifies that the newly intercepted Cursor.update_many() method:
+        1. Updates documents in MongoDB
+        2. Updates corresponding data in KV-Storage
+        3. Both storages remain in sync
+        """
+        logger = get_logger()
+        logger.info("=" * 60)
+        logger.info("TEST: Cursor.update_many() syncs to KV-Storage")
+
+        # This test verifies the fix for find().update_many() interception
+        # core_memory_raw_repository.py:59-62 uses find().update_many()
+        # Previously unintercepted, now intercepted in DualStorageQueryProxy
+
+        # Create 2 test documents with different users to ensure they are separate
+        test_user_id2 = f"{test_user_id}_2"
+        created1 = await repository.upsert_by_user_id(
+            test_user_id,
+            {
+                "version": "v1.0",
+                "user_name": "Version 1",
+                "is_latest": True,
+            },
+        )
+        created2 = await repository.upsert_by_user_id(
+            test_user_id2,
+            {
+                "version": "v1.0",
+                "user_name": "Version 2",
+                "is_latest": True,
+            },
+        )
+
+        assert created1 is not None
+        assert created2 is not None
+        doc_id1 = str(created1.id)
+        doc_id2 = str(created2.id)
+        logger.info(f"Created 2 documents: {doc_id1}, {doc_id2} with is_latest=True")
+
+        # Directly test find().update_many() - update documents with user_id matching pattern
+        result = await repository.model.find(
+            {"user_id": {"$in": [test_user_id, test_user_id2]}}
+        ).update_many({"$set": {"is_latest": False}})
+
+        logger.info(f"Called find().update_many(), modified_count={result.modified_count}")
+        assert result.modified_count >= 2, f"Expected at least 2, got {result.modified_count}"
+
+        # Verify MongoDB updates
+        from infra_layer.adapters.out.persistence.document.memory.core_memory import (
+            CoreMemory,
+        )
+        mongo_collection = CoreMemory.get_pymongo_collection()
+        mongo_v1 = await mongo_collection.find_one({"user_id": test_user_id})
+        mongo_v2 = await mongo_collection.find_one({"user_id": test_user_id2})
+
+        assert mongo_v1 is not None
+        assert mongo_v2 is not None
+        assert mongo_v1["is_latest"] == False
+        assert mongo_v2["is_latest"] == False
+        logger.info("✅ MongoDB updated correctly - both is_latest=False")
+
+        # Verify KV-Storage updates
+        kv_value1 = await kv_storage.get(doc_id1)
+        kv_value2 = await kv_storage.get(doc_id2)
+
+        assert kv_value1 is not None
+        assert kv_value2 is not None
+
+        kv_doc1 = CoreMemory.model_validate_json(kv_value1)
+        kv_doc2 = CoreMemory.model_validate_json(kv_value2)
+
+        assert kv_doc1.is_latest == False, f"Expected False, got {kv_doc1.is_latest}"
+        assert kv_doc2.is_latest == False, f"Expected False, got {kv_doc2.is_latest}"
+        logger.info("✅ KV-Storage updated correctly - both is_latest=False")
+
+        # Verify data consistency
+        assert str(kv_doc1.id) == doc_id1
+        assert str(kv_doc2.id) == doc_id2
+        logger.info("✅ MongoDB and KV-Storage are in sync")
+
+        logger.info("✅ Test passed: Cursor.update_many() interception works correctly")
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "-s"])
