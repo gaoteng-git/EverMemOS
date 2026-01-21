@@ -479,6 +479,42 @@ class DualStorageModelProxy:
             logger.error(f"❌ Failed to delete_many with dual storage: {e}")
             raise
 
+    async def delete_all(self, **kwargs):
+        """
+        Intercept delete_all() - 删除所有文档并同步 KV-Storage
+
+        为了确保 KV-Storage 同步，需要：
+        1. 获取所有文档
+        2. 逐个调用 delete() 触发 DualStorageMixin 的 wrap_delete
+        3. 返回删除计数
+
+        Returns:
+            DeleteResult with deleted_count
+        """
+        try:
+            # Get all documents first to ensure KV-Storage deletion via DualStorageMixin
+            all_docs = await self.find({}).to_list()
+            count = 0
+
+            for doc in all_docs:
+                try:
+                    await doc.delete()
+                    count += 1
+                except Exception as e:
+                    logger.error(f"❌ Failed to delete document {doc.id}: {e}")
+
+            # Return a result object compatible with Beanie's DeleteResult
+            class DeleteAllResult:
+                def __init__(self, deleted_count):
+                    self.deleted_count = deleted_count
+
+            logger.debug(f"✅ delete_all() removed {count} documents from MongoDB and KV-Storage")
+            return DeleteAllResult(deleted_count=count)
+
+        except Exception as e:
+            logger.error(f"❌ Failed to delete_all with dual storage: {e}")
+            raise
+
     def hard_find_one(self, *args, **kwargs):
         """
         Intercept hard_find_one() - 查询包括已删除的文档，并回填 KV

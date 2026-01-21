@@ -122,15 +122,8 @@ class ClusterStateRawRepository(
 
     async def delete_all(self) -> int:
         try:
-            # Get all documents first to ensure KV-Storage deletion via DualStorageMixin
-            all_docs = await self.model.find({}).to_list()
-            count = 0
-            for doc in all_docs:
-                try:
-                    await doc.delete()
-                    count += 1
-                except Exception as e:
-                    logger.error(f"Failed to delete cluster state {doc.id}: {e}")
+            result = await self.model.delete_all()
+            count = result.deleted_count if result else 0
             logger.info(f"Deleted all cluster states: {count} items")
             return count
         except Exception as e:
