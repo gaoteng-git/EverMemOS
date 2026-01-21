@@ -324,45 +324,13 @@ class MemoryRequestLogRepository(
             Number of updated records
         """
         try:
-            # 1. Find documents to update (get IDs before update)
-            docs_to_update = await self.model.find(
-                {"group_id": group_id, "sync_status": -1}, session=session
-            ).to_list()
-
-            if not docs_to_update:
-                return 0
-
-            # 2. Update MongoDB Lite data
-            collection = self.model.get_pymongo_collection()
-            result = await collection.update_many(
+            # Use framework-level update_many() for automatic KV sync
+            result = await self.model.update_many(
                 {"group_id": group_id, "sync_status": -1},
                 {"$set": {"sync_status": 0}},
                 session=session,
             )
             modified_count = result.modified_count if result else 0
-
-            # 3. Update KV-Storage with full data
-            if modified_count > 0:
-                import json
-
-                for doc in docs_to_update:
-                    try:
-                        kv_key = str(doc.id)
-                        # Load existing full data from KV
-                        kv_value = await self._kv_storage.get(key=kv_key)
-                        if kv_value:
-                            # Parse existing data
-                            full_data = json.loads(kv_value)
-                            # Update sync_status field
-                            full_data["sync_status"] = 0
-                            # Write back to KV
-                            kv_value = json.dumps(full_data)
-                            await self._kv_storage.put(key=kv_key, value=kv_value)
-                        else:
-                            logger.warning(f"⚠️  KV miss for {doc.id}, cannot update")
-                    except Exception as e:
-                        logger.warning(f"⚠️  Failed to sync to KV-Storage for {doc.id}: {e}")
-
             logger.info(
                 "Confirmed window accumulation: group_id=%s, modified=%d",
                 group_id,
@@ -403,22 +371,8 @@ class MemoryRequestLogRepository(
             return 0
 
         try:
-            # 1. Find documents to update
-            docs_to_update = await self.model.find(
-                {
-                    "group_id": group_id,
-                    "message_id": {"$in": message_ids},
-                    "sync_status": -1,
-                },
-                session=session,
-            ).to_list()
-
-            if not docs_to_update:
-                return 0
-
-            # 2. Update MongoDB Lite data
-            collection = self.model.get_pymongo_collection()
-            result = await collection.update_many(
+            # Use framework-level update_many() for automatic KV sync
+            result = await self.model.update_many(
                 {
                     "group_id": group_id,
                     "message_id": {"$in": message_ids},
@@ -428,29 +382,6 @@ class MemoryRequestLogRepository(
                 session=session,
             )
             modified_count = result.modified_count if result else 0
-
-            # 3. Update KV-Storage with full data
-            if modified_count > 0:
-                import json
-
-                for doc in docs_to_update:
-                    try:
-                        kv_key = str(doc.id)
-                        # Load existing full data from KV
-                        kv_value = await self._kv_storage.get(key=kv_key)
-                        if kv_value:
-                            # Parse existing data
-                            full_data = json.loads(kv_value)
-                            # Update sync_status field
-                            full_data["sync_status"] = 0
-                            # Write back to KV
-                            kv_value = json.dumps(full_data)
-                            await self._kv_storage.put(key=kv_key, value=kv_value)
-                        else:
-                            logger.warning(f"⚠️  KV miss for {doc.id}, cannot update")
-                    except Exception as e:
-                        logger.warning(f"⚠️  Failed to sync to KV-Storage for {doc.id}: {e}")
-
             logger.info(
                 "Confirmed window accumulation (precise): group_id=%s, message_ids=%d, modified=%d",
                 group_id,
@@ -489,48 +420,18 @@ class MemoryRequestLogRepository(
             Number of updated records
         """
         try:
-            # 1. Build query
+            # Build query
             query = {"group_id": group_id, "sync_status": {"$in": [-1, 0]}}
 
             # Exclude specific message_ids
             if exclude_message_ids:
                 query["message_id"] = {"$nin": exclude_message_ids}
 
-            # 2. Find documents to update
-            docs_to_update = await self.model.find(query, session=session).to_list()
-
-            if not docs_to_update:
-                return 0
-
-            # 3. Update MongoDB Lite data
-            collection = self.model.get_pymongo_collection()
-            result = await collection.update_many(
+            # Use framework-level update_many() for automatic KV sync
+            result = await self.model.update_many(
                 query, {"$set": {"sync_status": 1}}, session=session
             )
             modified_count = result.modified_count if result else 0
-
-            # 4. Update KV-Storage with full data
-            if modified_count > 0:
-                import json
-
-                for doc in docs_to_update:
-                    try:
-                        kv_key = str(doc.id)
-                        # Load existing full data from KV
-                        kv_value = await self._kv_storage.get(key=kv_key)
-                        if kv_value:
-                            # Parse existing data
-                            full_data = json.loads(kv_value)
-                            # Update sync_status field
-                            full_data["sync_status"] = 1
-                            # Write back to KV
-                            kv_value = json.dumps(full_data)
-                            await self._kv_storage.put(key=kv_key, value=kv_value)
-                        else:
-                            logger.warning(f"⚠️  KV miss for {doc.id}, cannot update")
-                    except Exception as e:
-                        logger.warning(f"⚠️  Failed to sync to KV-Storage for {doc.id}: {e}")
-
             logger.info(
                 "Marked as used: group_id=%s, exclude=%d, modified=%d",
                 group_id,

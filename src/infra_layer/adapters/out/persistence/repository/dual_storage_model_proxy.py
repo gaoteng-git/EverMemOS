@@ -656,6 +656,96 @@ class DualStorageModelProxy:
             logger.error(f"❌ Failed to delete_many with dual storage: {e}")
             raise
 
+    async def update_many(self, filter_query: dict, update_data: dict, **kwargs):
+        """
+        Intercept update_many() - 批量更新并同步 KV-Storage
+
+        为了确保 KV-Storage 同步，需要：
+        1. 查询所有匹配的文档（获取 ID）
+        2. 执行 MongoDB 批量更新
+        3. 遍历文档，更新 KV-Storage 中的对应字段
+
+        Args:
+            filter_query: MongoDB filter query (dict)
+            update_data: Update operations (e.g., {"$set": {"field": value}})
+            **kwargs: Additional options (e.g., session)
+
+        Returns:
+            Update result with modified_count
+
+        Example:
+            await self.model.update_many(
+                {"group_id": "123", "sync_status": -1},
+                {"$set": {"sync_status": 0}}
+            )
+        """
+        try:
+            # 1. Validate query fields
+            self._validate_query_fields(filter_query)
+
+            # 2. Find all documents to update (get IDs before update)
+            # Use self.find() which returns DualStorageQueryProxy
+            session = kwargs.get("session", None)
+            docs_to_update = await self.find(filter_query, session=session).to_list()
+
+            if not docs_to_update:
+                # No documents to update
+                class UpdateResult:
+                    modified_count = 0
+                return UpdateResult()
+
+            # 3. Execute MongoDB batch update using PyMongo
+            collection = self._original_model.get_pymongo_collection()
+            result = await collection.update_many(filter_query, update_data, **kwargs)
+
+            # 4. Sync to KV-Storage
+            if result and result.modified_count > 0:
+                import json
+                from bson import ObjectId
+                from datetime import datetime
+
+                def json_serializer(obj):
+                    """Custom JSON serializer for ObjectId and datetime"""
+                    if isinstance(obj, ObjectId):
+                        return str(obj)
+                    elif isinstance(obj, datetime):
+                        return obj.isoformat()
+                    raise TypeError(f"Type {type(obj)} not serializable")
+
+                # Extract update fields from $set operator
+                update_fields = {}
+                if "$set" in update_data:
+                    update_fields = update_data["$set"]
+                else:
+                    logger.warning(f"⚠️  update_many only supports $set operator, got: {update_data.keys()}")
+
+                # Update each document in KV-Storage
+                for doc in docs_to_update:
+                    try:
+                        kv_key = str(doc.id)
+                        # Load existing full data from KV
+                        kv_value = await self._kv_storage.get(key=kv_key)
+                        if kv_value:
+                            # Parse existing data
+                            full_data = json.loads(kv_value)
+                            # Apply update fields
+                            full_data.update(update_fields)
+                            # Write back to KV
+                            kv_value = json.dumps(full_data, default=json_serializer)
+                            await self._kv_storage.put(key=kv_key, value=kv_value)
+                        else:
+                            logger.warning(f"⚠️  KV miss for {doc.id}, cannot update")
+                    except Exception as e:
+                        logger.warning(f"⚠️  Failed to sync to KV-Storage for {doc.id}: {e}")
+
+                logger.debug(f"✅ update_many() updated {result.modified_count} documents in MongoDB and KV-Storage")
+
+            return result
+
+        except Exception as e:
+            logger.error(f"❌ Failed to update_many with dual storage: {e}")
+            raise
+
     async def delete_all(self, **kwargs):
         """
         Intercept delete_all() - 删除所有文档并同步 KV-Storage
