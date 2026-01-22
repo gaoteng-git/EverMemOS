@@ -9,17 +9,25 @@ from core.oxm.constants import MAGIC_ALL
 from infra_layer.adapters.out.persistence.document.memory.episodic_memory import (
     EpisodicMemory,
 )
+from infra_layer.adapters.out.persistence.kv_storage.dual_storage_mixin import (
+    DualStorageMixin,
+)
 from agentic_layer.vectorize_service import get_vectorize_service
 
 logger = get_logger(__name__)
 
 
 @repository("episodic_memory_raw_repository", primary=True)
-class EpisodicMemoryRawRepository(BaseRepository[EpisodicMemory]):
+class EpisodicMemoryRawRepository(
+    DualStorageMixin,  # 添加双存储支持 - 自动拦截 MongoDB 调用
+    BaseRepository[EpisodicMemory],
+):
     """
     Episodic memory raw data repository
     Generates vectorized text content and saves it to the database
     Provides CRUD operations and basic query functions for episodic memory.
+
+    Dual Storage: DualStorageMixin automatically intercepts all MongoDB operations
     """
 
     def __init__(self):
