@@ -46,6 +46,14 @@ class ForesightMilvusRepository(
         """Initialize foresight repository"""
         super().__init__(ForesightCollection)
 
+    def _get_lite_fields(self):
+        """
+        Get lite fields for ForesightCollection
+
+        Returns collection-specific lite fields (query + index fields only)
+        """
+        return ForesightCollection._LITE_FIELDS
+
     # ==================== Document Creation and Management ====================
     # TODO: add username
     async def create_and_save_foresight_mem(

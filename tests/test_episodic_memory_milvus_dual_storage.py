@@ -490,6 +490,103 @@ class TestEpisodicMemoryMilvusDualStorage:
             await kv_storage.delete(kv_key)
             logger.info("✅ Test passed: Milvus Lite vs KV Full verified")
 
+    async def test_06_kv_only_fields_retrieved_by_vector_search(
+        self, milvus_repo, kv_storage, test_user_id, test_group_id
+    ):
+        """Test: KV-only fields (not in Milvus lite fields) are retrieved by vector_search"""
+        logger = get_logger_instance()
+        logger.info("=" * 60)
+        logger.info("TEST: KV-only fields retrieved by vector_search")
+
+        # According to the new lite field configuration:
+        # Lite fields (in Milvus): id, vector, user_id, group_id, participants, event_type, parent_id, timestamp
+        # KV-only fields (NOT in Milvus): episode, search_content, metadata, parent_type, created_at, updated_at
+
+        entity = create_test_entity(test_user_id, test_group_id, with_extra_fields=False)
+        entity_id = entity["id"]
+        kv_key = f"milvus:episodic_memory:{entity_id}"
+
+        try:
+            # Create test data
+            await milvus_repo.create_and_save_episodic_memory(
+                id=entity["id"],
+                user_id=entity["user_id"],
+                timestamp=datetime.fromtimestamp(entity["timestamp"]),
+                episode=entity["episode"],
+                search_content=json.loads(entity["search_content"]),
+                vector=entity["vector"],
+                group_id=entity["group_id"],
+                participants=entity["participants"],
+                event_type=entity["event_type"],
+                metadata=entity["metadata"],
+                parent_type=entity["parent_type"],
+                parent_id=entity["parent_id"],
+            )
+
+            logger.info(f"✅ Created test data: {entity_id}")
+
+            # Flush to make data searchable immediately
+            await milvus_repo.collection.flush()
+            logger.info("✅ Flushed collection")
+
+            # Verify KV has the full data including KV-only fields
+            kv_value = await kv_storage.get(kv_key)
+            assert kv_value is not None, "KV should have data"
+            full_data = json.loads(kv_value)
+
+            # Verify KV has all fields including KV-only ones
+            assert "episode" in full_data, "KV should have episode"
+            assert "search_content" in full_data, "KV should have search_content"
+            assert "metadata" in full_data, "KV should have metadata"
+            assert "parent_type" in full_data, "KV should have parent_type"
+            assert "created_at" in full_data, "KV should have created_at"
+            assert "updated_at" in full_data, "KV should have updated_at"
+
+            logger.info("✅ KV has full data with KV-only fields")
+
+            # Perform vector search
+            query_vector = [0.1] * 1024
+            results = await milvus_repo.vector_search(
+                query_vector=query_vector,
+                user_id=test_user_id,
+                group_id=test_group_id,
+                limit=10,
+            )
+
+            # Verify search results
+            assert len(results) > 0, "Should find results"
+            result = results[0]
+            assert result["id"] == entity_id, "Should find the correct entity"
+
+            # CRITICAL: Verify KV-only fields are present in vector_search results
+            # These fields are NOT stored in Milvus, but should be auto-loaded from KV
+            assert "episode" in result, "vector_search should return episode (KV-only field)"
+            assert result["episode"] == entity["episode"], "episode should match original value"
+
+            assert "search_content" in result, "vector_search should return search_content (KV-only field)"
+            # search_content is stored as JSON string in Milvus/KV, returned as list in vector_search
+            expected_search_content = json.loads(entity["search_content"])
+            assert result["search_content"] == expected_search_content, "search_content should match"
+
+            assert "metadata" in result, "vector_search should return metadata (KV-only field)"
+            expected_metadata = json.loads(entity["metadata"])
+            assert result["metadata"] == expected_metadata, "metadata should match"
+
+            assert "parent_type" in result, "vector_search should return parent_type (KV-only field)"
+            assert result["parent_type"] == entity["parent_type"], "parent_type should match"
+
+            # Note: created_at and updated_at might not be in vector_search output fields
+            # depending on repository implementation, but they should be in KV
+
+            logger.info("✅ All KV-only fields are present in vector_search results")
+            logger.info("✅ Dual storage KV enhancement is working correctly")
+
+        finally:
+            # Cleanup
+            await milvus_repo.delete_by_event_id(entity_id)
+            await kv_storage.delete(kv_key)
+            logger.info("✅ Test passed: KV-only fields retrieved by vector_search")
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "-s"])

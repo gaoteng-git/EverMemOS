@@ -42,6 +42,14 @@ class EventLogMilvusRepository(
         """Initialize the event log repository"""
         super().__init__(EventLogCollection)
 
+    def _get_lite_fields(self):
+        """
+        Get lite fields for EventLogCollection
+
+        Returns collection-specific lite fields (query + index fields only)
+        """
+        return EventLogCollection._LITE_FIELDS
+
     # ==================== Document Creation and Management ====================
 
     async def create_and_save_event_log(

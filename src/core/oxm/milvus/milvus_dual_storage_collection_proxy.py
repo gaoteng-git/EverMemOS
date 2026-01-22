@@ -126,22 +126,66 @@ class MilvusCollectionProxy:
         """
         Extract Lite fields from Full data
 
+        Strategy:
+        1. For lite fields: copy actual values from full_data
+        2. For non-lite fields that exist in full_data: provide minimal/empty values to save Milvus storage
+           - This satisfies Milvus schema requirements (all fields must be present)
+           - But minimizes storage usage for non-indexed, non-queried fields
+           - Full data is preserved in KV-Storage
+
         Args:
             full_data: Complete entity dict
 
         Returns:
-            Lite entity dict (only containing lite_fields)
+            Lite entity dict with actual values for lite fields, empty values for non-lite fields
         """
         if not self._lite_fields:
             # If no lite_fields specified, keep all data
             return full_data
 
         lite_data = {}
-        for field in self._lite_fields:
-            if field in full_data:
-                lite_data[field] = full_data[field]
+
+        # Process all fields in full_data
+        for field, value in full_data.items():
+            if field in self._lite_fields:
+                # Lite field: copy actual value
+                lite_data[field] = value
+            else:
+                # Non-lite field: provide minimal/empty value to satisfy Milvus schema
+                # while saving storage space
+                lite_data[field] = self._get_empty_value_for_field(field, value)
 
         return lite_data
+
+    def _get_empty_value_for_field(self, field_name: str, original_value: Any) -> Any:
+        """
+        Get minimal/empty value for a non-lite field to save Milvus storage
+
+        Args:
+            field_name: Name of the field
+            original_value: Original value (used to infer type)
+
+        Returns:
+            Minimal value appropriate for the field type
+        """
+        # For string fields, return empty string
+        if isinstance(original_value, str):
+            return ""
+
+        # For numeric fields, return 0
+        if isinstance(original_value, (int, float)):
+            return 0
+
+        # For list/array fields, return empty list
+        if isinstance(original_value, list):
+            return []
+
+        # For dict fields, return empty dict
+        if isinstance(original_value, dict):
+            return {}
+
+        # For None or unknown types, return the original value
+        return original_value
 
     def _get_kv_key(self, doc_id: str) -> str:
         """

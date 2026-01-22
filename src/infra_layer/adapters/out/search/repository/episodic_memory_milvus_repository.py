@@ -42,6 +42,14 @@ class EpisodicMemoryMilvusRepository(
         """Initialize episodic memory repository"""
         super().__init__(EpisodicMemoryCollection)
 
+    def _get_lite_fields(self):
+        """
+        Get lite fields for EpisodicMemoryCollection
+
+        Returns collection-specific lite fields (query + index fields only)
+        """
+        return EpisodicMemoryCollection._LITE_FIELDS
+
     # ==================== Document Creation and Management ====================
 
     async def create_and_save_episodic_memory(
@@ -297,7 +305,22 @@ class EpisodicMemoryMilvusRepository(
                             "episode": hit.entity.get("episode"),
                             "search_content": search_content,
                             "metadata": metadata,
+                            # Include additional fields that may be loaded from KV
+                            "parent_type": hit.entity.get("parent_type"),
+                            "parent_id": hit.entity.get("parent_id"),
                         }
+
+                        # Include created_at and updated_at if present
+                        if "created_at" in hit.entity:
+                            created_at_ts = hit.entity.get("created_at")
+                            if created_at_ts and created_at_ts > 0:
+                                result["created_at"] = datetime.fromtimestamp(created_at_ts)
+
+                        if "updated_at" in hit.entity:
+                            updated_at_ts = hit.entity.get("updated_at")
+                            if updated_at_ts and updated_at_ts > 0:
+                                result["updated_at"] = datetime.fromtimestamp(updated_at_ts)
+
                         search_results.append(result)
 
             logger.debug(
