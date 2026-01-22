@@ -56,7 +56,7 @@ class MilvusCollectionProxy:
         original_collection: AsyncCollection,
         kv_storage: 'KVStorageInterface',
         collection_name: str,
-        lite_fields: Optional[Set[str]] = None,
+        lite_fields: Set[str],
     ):
         """
         Initialize proxy
@@ -65,62 +65,22 @@ class MilvusCollectionProxy:
             original_collection: Original AsyncCollection instance
             kv_storage: KV-Storage instance
             collection_name: Milvus collection name (for KV key generation)
-            lite_fields: Fields to keep in Milvus (if None, keep all fields)
-                        Typically: {id, vector, user_id, group_id, event_type,
-                                   timestamp, episode, search_content, metadata,
-                                   parent_type, parent_id, created_at, updated_at}
+            lite_fields: Fields to keep in Milvus (REQUIRED, must be provided by caller)
+                        Should contain query + index fields specific to the collection
+                        Example: {id, vector, user_id, group_id, event_type, timestamp, ...}
         """
+        if not lite_fields:
+            raise ValueError(f"lite_fields is required for {collection_name}, cannot be None or empty")
+
         self._original_collection = original_collection
         self._kv_storage = kv_storage
         self._collection_name = collection_name
-        self._lite_fields = lite_fields or self._default_lite_fields()
+        self._lite_fields = lite_fields
 
         logger.debug(
             f"✅ MilvusCollectionProxy initialized for {collection_name}, "
             f"lite_fields count: {len(self._lite_fields)}"
         )
-
-    @staticmethod
-    def _default_lite_fields() -> Set[str]:
-        """
-        Default Lite fields to keep in Milvus
-
-        Includes:
-        - Required: id, vector (for vector search)
-        - Index fields: user_id, group_id, event_type, timestamp, parent_id
-        - Content fields: episode, search_content, metadata
-        - Audit fields: created_at, updated_at
-        """
-        return {
-            # Required fields
-            "id",
-            "vector",
-            # Index fields
-            "user_id",
-            "group_id",
-            "event_type",
-            "timestamp",
-            "parent_type",
-            "parent_id",
-            # Content fields
-            "episode",  # or "atomic_fact" for EventLog, "content" for Foresight
-            "search_content",
-            "metadata",
-            # Audit fields
-            "created_at",
-            "updated_at",
-            # Array fields
-            "participants",
-            # Foresight-specific
-            "start_time",
-            "end_time",
-            "duration_days",
-            "evidence",
-            # EventLog-specific
-            "atomic_fact",
-            # Foresight-specific
-            "content",
-        }
 
     def _extract_lite_data(self, full_data: Dict[str, Any]) -> Dict[str, Any]:
         """

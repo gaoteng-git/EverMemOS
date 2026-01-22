@@ -165,29 +165,30 @@ class MilvusDualStorageMixin:
             logger.warning(f"Failed to get collection name: {e}")
             return "unknown_collection"
 
-    def _get_lite_fields(self) -> Optional[Set[str]]:
+    def _get_lite_fields(self) -> Set[str]:
         """
         Get Lite fields to keep in Milvus
 
-        Subclasses can override this method to customize Lite fields.
-
-        Default: Use MilvusCollectionProxy._default_lite_fields()
-                 Includes: id, vector, user_id, group_id, event_type,
-                          timestamp, episode, search_content, metadata, etc.
+        Subclasses MUST override this method to provide collection-specific lite fields.
+        Lite fields should include only query fields + indexed fields.
 
         Returns:
-            Set of field names, or None to keep all fields
+            Set of field names (must not be None or empty)
 
         Example override:
             def _get_lite_fields(self) -> Set[str]:
-                return {
-                    "id", "vector",
-                    "user_id", "group_id",
-                    "timestamp", "episode", "metadata"
-                }
+                return EpisodicMemoryCollection._LITE_FIELDS
+                # or directly:
+                # return {
+                #     "id", "vector",
+                #     "user_id", "group_id",
+                #     "event_type", "timestamp", "parent_id"
+                # }
         """
-        # Default: None means use MilvusCollectionProxy's default
-        return None
+        raise NotImplementedError(
+            f"{self.__class__.__name__} must implement _get_lite_fields() method. "
+            f"Return the collection-specific lite fields (query + index fields only)."
+        )
 
     # Note: load_full_data_from_kv() method removed
     # Full data is now automatically loaded by MilvusCollectionProxy.search()/query()
