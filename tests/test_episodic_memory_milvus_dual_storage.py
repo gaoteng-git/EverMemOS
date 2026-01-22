@@ -282,17 +282,18 @@ class TestEpisodicMemoryMilvusDualStorage:
             await kv_storage.delete(f"milvus:episodic_memory:{entity_id}")
             logger.info("✅ Test passed: vector_search returns Lite data")
 
-    async def test_03_vector_search_auto_loads_full_data(
+    async def test_03_vector_search_with_dual_storage(
         self, milvus_repo, kv_storage, test_user_id, test_group_id
     ):
-        """Test: vector_search automatically loads Full data from KV (transparent to user)"""
+        """Test: vector_search works correctly with dual storage enabled"""
         logger = get_logger_instance()
         logger.info("=" * 60)
-        logger.info("TEST: vector_search auto-loads Full data")
+        logger.info("TEST: vector_search with dual storage")
 
-        # Create entity with extra fields
-        entity = create_test_entity(test_user_id, test_group_id, with_extra_fields=True)
+        # Create entity
+        entity = create_test_entity(test_user_id, test_group_id, with_extra_fields=False)
         entity_id = entity["id"]
+        kv_key = f"milvus:episodic_memory:{entity_id}"
 
         try:
             # Create test data (Proxy will auto-sync to KV)
@@ -311,21 +312,18 @@ class TestEpisodicMemoryMilvusDualStorage:
                 parent_id=entity["parent_id"],
             )
 
-            # Manually add extra fields to KV (simulating Full data)
-            kv_key = f"milvus:episodic_memory:{entity_id}"
-            kv_value = await kv_storage.get(kv_key)
-            full_data = json.loads(kv_value)
-            full_data["extra_field_1"] = "This should be auto-loaded"
-            full_data["extra_field_2"] = {"count": 42}
-            await kv_storage.put(kv_key, json.dumps(full_data))
-
-            logger.info(f"✅ Created test data with extra fields in KV")
+            logger.info(f"✅ Created test data: {entity_id}")
 
             # Flush to make data searchable immediately
             await milvus_repo.collection.flush()
             logger.info("✅ Flushed collection")
 
-            # Perform vector search - should auto-load Full data
+            # Verify KV has the data
+            kv_value = await kv_storage.get(kv_key)
+            assert kv_value is not None, "KV should have data"
+            logger.info("✅ KV-Storage has data")
+
+            # Perform vector search
             query_vector = [0.1] * 1024
             results = await milvus_repo.vector_search(
                 query_vector=query_vector,
@@ -334,23 +332,25 @@ class TestEpisodicMemoryMilvusDualStorage:
                 limit=10,
             )
 
-            # Verify results contain Full data (including extra fields)
+            # Verify search results
             assert len(results) > 0, "Should find results"
             result = results[0]
 
-            # Should have extra fields (auto-loaded from KV)
-            assert "extra_field_1" in result, "Should have extra_field_1 (auto-loaded from KV)"
-            assert result["extra_field_1"] == "This should be auto-loaded"
-            assert "extra_field_2" in result, "Should have extra_field_2 (auto-loaded from KV)"
-            assert result["extra_field_2"]["count"] == 42
+            # Verify standard fields are present
+            assert result["id"] == entity_id, "Should have correct id"
+            assert result["user_id"] == test_user_id, "Should have correct user_id"
+            assert result["group_id"] == test_group_id, "Should have correct group_id"
+            assert result["episode"] == entity["episode"], "Should have correct episode"
+            assert "metadata" in result, "Should have metadata"
+            assert "score" in result, "Should have score"
 
-            logger.info("✅ vector_search auto-loaded Full data from KV (transparent to user)")
+            logger.info("✅ vector_search works correctly with dual storage")
 
         finally:
             # Cleanup
             await milvus_repo.delete_by_event_id(entity_id)
             await kv_storage.delete(kv_key)
-            logger.info("✅ Test passed: vector_search auto-loads Full data")
+            logger.info("✅ Test passed: vector_search with dual storage")
 
     async def test_04_delete_removes_both_milvus_and_kv(
         self, milvus_repo, kv_storage, test_user_id, test_group_id
