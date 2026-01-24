@@ -12,7 +12,7 @@ from infra_layer.adapters.out.persistence.kv_storage.kv_storage_interface import
 from core.di.decorators import component
 
 
-@component("in_memory_kv_storage", primary=True)
+@component("in_memory_kv_storage", primary=False)  # 改为 False，使用 Redis 作为主存储
 class InMemoryKVStorage(KVStorageInterface):
     """In-memory KV-Storage implementation using dict"""
 
