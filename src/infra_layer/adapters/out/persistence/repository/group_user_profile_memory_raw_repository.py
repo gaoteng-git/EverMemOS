@@ -15,12 +15,18 @@ from core.oxm.mongo.base_repository import BaseRepository
 from infra_layer.adapters.out.persistence.document.memory.group_user_profile_memory import (
     GroupUserProfileMemory,
 )
+from infra_layer.adapters.out.persistence.kv_storage.dual_storage_mixin import (
+    DualStorageMixin,
+)
 
 logger = get_logger(__name__)
 
 
 @repository("group_user_profile_memory_raw_repository", primary=True)
-class GroupUserProfileMemoryRawRepository(BaseRepository[GroupUserProfileMemory]):
+class GroupUserProfileMemoryRawRepository(
+    DualStorageMixin,  # 添加双存储支持 - 自动拦截 MongoDB 调用
+    BaseRepository[GroupUserProfileMemory],
+):
     """
     Native CRUD repository for GroupUserProfileMemory
 
@@ -28,6 +34,8 @@ class GroupUserProfileMemoryRawRepository(BaseRepository[GroupUserProfileMemory]
     - Basic CRUD operations (inherited from BaseRepository)
     - Joint queries based on user_id and group_id
     - Individual queries based on user_id or group_id
+
+    Dual Storage: DualStorageMixin automatically intercepts all MongoDB operations
     - Batch queries and operations
     - Specialized methods related to profiles
     - Transaction management (inherited from BaseRepository)

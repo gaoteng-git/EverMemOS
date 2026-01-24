@@ -42,6 +42,43 @@ class LiteStorageQueryError(Exception):
     pass
 
 
+def get_kv_key(document_class_or_instance, doc_id: str) -> str:
+    """
+    Generate KV-Storage key with collection_name prefix
+
+    Key Format: {collection_name}:{document_id}
+    Example: "episodic_memories:6979da5797f9041fc0aa063f"
+
+    Args:
+        document_class_or_instance: Document class or instance (Beanie Document)
+        doc_id: Document ID (ObjectId as string)
+
+    Returns:
+        Full key with collection prefix
+    """
+    try:
+        # Check if it's a class or instance
+        # NOTE: Can't use hasattr(..., '__class__') because classes also have __class__ (their metaclass)!
+        import inspect
+        if inspect.isclass(document_class_or_instance):
+            # Already a class
+            doc_class = document_class_or_instance
+        else:
+            # Instance: get class
+            doc_class = document_class_or_instance.__class__
+
+        # Get collection name from Settings
+        collection_name = doc_class.Settings.name
+
+        # Generate prefixed key
+        kv_key = f"{collection_name}:{doc_id}"
+        return kv_key
+    except Exception as e:
+        # Fallback: use doc_id only (backward compatible)
+        logger.warning(f"Failed to get collection name, using doc_id only: {e}")
+        return doc_id
+
+
 # Minimal projection model for queries - only returns _id
 class IdOnlyProjection(BaseModel):
     """Minimal projection to only retrieve document IDs from MongoDB"""
@@ -133,7 +170,8 @@ class FindOneQueryProxy:
 
             # 从 KV-Storage 加载完整数据
             doc_id = str(lite_doc["_id"])
-            kv_value = await self._kv_storage.get(key=doc_id)
+            kv_key = get_kv_key(self._full_model_class, doc_id)
+            kv_value = await self._kv_storage.get(key=kv_key)
 
             if kv_value:
                 full_doc = self._full_model_class.model_validate_json(kv_value)
@@ -240,6 +278,7 @@ class FindOneQueryProxy:
                 return DeleteResult()
 
             doc_id = str(lite_doc["_id"])
+            kv_key = get_kv_key(self._original_model, doc_id)
 
             # 2. Delete from MongoDB
             if is_dict_syntax:
@@ -256,8 +295,8 @@ class FindOneQueryProxy:
             # 3. Delete from KV-Storage
             if delete_result and hasattr(delete_result, 'deleted_count') and delete_result.deleted_count > 0:
                 try:
-                    await self._kv_storage.delete(key=doc_id)
-                    logger.debug(f"✅ Deleted document {doc_id} from KV-Storage via find_one().delete()")
+                    await self._kv_storage.delete(key=kv_key)
+                    logger.debug(f"✅ Deleted document {kv_key} from KV-Storage via find_one().delete()")
                 except Exception as e:
                     logger.warning(f"⚠️  Failed to delete from KV-Storage: {e}")
 
@@ -347,7 +386,8 @@ class DualStorageQueryProxy:
             full_docs = []
             for doc_id in doc_ids:
                 try:
-                    kv_value = await self._kv_storage.get(key=doc_id)
+                    kv_key = get_kv_key(self._full_model_class, doc_id)
+                    kv_value = await self._kv_storage.get(key=kv_key)
                     if kv_value:
                         # 从 KV 反序列化完整数据
                         full_doc = self._full_model_class.model_validate_json(kv_value)
@@ -428,6 +468,14 @@ class DualStorageQueryProxy:
                     modified_count = 0
                 return UpdateResult()
 
+            # 1.5. Auto-set updated_at if document has this field (AuditBase)
+            from common_utils.datetime_utils import get_now_with_timezone
+            if hasattr(self._full_model_class, 'model_fields') and 'updated_at' in self._full_model_class.model_fields:
+                # Add updated_at to $set operator
+                if "$set" not in update_data:
+                    update_data = {"$set": {}}
+                update_data["$set"]["updated_at"] = get_now_with_timezone()
+
             # 2. 执行MongoDB批量更新
             result = await self._mongo_cursor.update_many(update_data, **kwargs)
 
@@ -455,8 +503,10 @@ class DualStorageQueryProxy:
                 # Update each document in KV-Storage
                 for doc_id in doc_ids:
                     try:
+                        # Generate KV key with collection prefix
+                        kv_key = get_kv_key(self._full_model_class, doc_id)
                         # Load existing full data from KV
-                        kv_value = await self._kv_storage.get(key=doc_id)
+                        kv_value = await self._kv_storage.get(key=kv_key)
                         if kv_value:
                             # Parse existing data
                             full_data = json.loads(kv_value)
@@ -464,7 +514,7 @@ class DualStorageQueryProxy:
                             full_data.update(update_fields)
                             # Write back to KV
                             kv_value = json.dumps(full_data, default=json_serializer)
-                            await self._kv_storage.put(key=doc_id, value=kv_value)
+                            await self._kv_storage.put(key=kv_key, value=kv_value)
                         else:
                             logger.warning(f"⚠️  KV miss for {doc_id}, cannot update")
                     except Exception as e:
@@ -650,7 +700,8 @@ class DualStorageModelProxy:
         try:
             # 必须从 KV-Storage 读取完整数据
             doc_id_str = str(doc_id)
-            kv_value = await self._kv_storage.get(key=doc_id_str)
+            kv_key = get_kv_key(self._full_model_class, doc_id_str)
+            kv_value = await self._kv_storage.get(key=kv_key)
 
             if kv_value:
                 # KV hit - 返回完整数据
@@ -770,6 +821,14 @@ class DualStorageModelProxy:
                     modified_count = 0
                 return UpdateResult()
 
+            # 2.5. Auto-set updated_at if document has this field (AuditBase)
+            from common_utils.datetime_utils import get_now_with_timezone
+            if hasattr(self._full_model_class, 'model_fields') and 'updated_at' in self._full_model_class.model_fields:
+                # Add updated_at to $set operator
+                if "$set" not in update_data:
+                    update_data = {"$set": {}}
+                update_data["$set"]["updated_at"] = get_now_with_timezone()
+
             # 3. Execute MongoDB batch update using PyMongo
             collection = self._original_model.get_pymongo_collection()
             result = await collection.update_many(filter_query, update_data, **kwargs)
@@ -798,7 +857,8 @@ class DualStorageModelProxy:
                 # Update each document in KV-Storage
                 for doc in docs_to_update:
                     try:
-                        kv_key = str(doc.id)
+                        doc_id = str(doc.id)
+                        kv_key = get_kv_key(doc, doc_id)
                         # Load existing full data from KV
                         kv_value = await self._kv_storage.get(key=kv_key)
                         if kv_value:
@@ -949,6 +1009,110 @@ class DualStorageModelProxy:
             logger.error(f"❌ Failed to restore_many with dual storage: {e}")
             raise
 
+    async def insert_many(
+        self,
+        documents: List[Any],
+        session: Optional[AsyncClientSession] = None,
+        **kwargs
+    ):
+        """
+        Intercept insert_many() - 批量插入并同步 KV-Storage（Lite 存储模式）
+
+        Lite 模式下的批量插入：
+        - MongoDB：只存储 Lite 数据（索引字段）
+        - KV-Storage：存储完整数据（全部字段）
+
+        Args:
+            documents: 要插入的文档列表
+            session: Optional MongoDB session
+            **kwargs: 其他参数
+
+        Returns:
+            InsertManyResult
+        """
+        try:
+            from bson import ObjectId
+            from datetime import datetime
+            import json
+
+            def json_serializer(obj):
+                """Custom JSON serializer for ObjectId and datetime"""
+                if isinstance(obj, ObjectId):
+                    return str(obj)
+                elif isinstance(obj, datetime):
+                    return obj.isoformat()
+                raise TypeError(f"Type {type(obj)} not serializable")
+
+            # 1. 触发 before_event 钩子（批量设置审计字段）
+            if hasattr(self._full_model_class, 'prepare_for_insert_many'):
+                self._full_model_class.prepare_for_insert_many(documents)
+            else:
+                # 手动设置审计字段
+                from common_utils.datetime_utils import get_now_with_timezone
+                now = get_now_with_timezone()
+                for doc in documents:
+                    if hasattr(doc, 'created_at') and doc.created_at is None:
+                        doc.created_at = now
+                    if hasattr(doc, 'updated_at') and doc.updated_at is None:
+                        doc.updated_at = now
+
+            # 2. 提取所有文档的 Lite 数据
+            lite_data_list = []
+            full_data_list = []
+
+            for doc in documents:
+                # 提取 Lite 数据
+                lite_data = LiteModelExtractor.extract_lite_data(doc, self._indexed_fields)
+                lite_data_list.append(lite_data)
+
+                # 保存完整数据（用于 KV-Storage）
+                full_data = doc.model_dump(mode="python", exclude={'_id', 'id', 'revision_id'})
+                full_data_list.append(full_data)
+
+            # 3. 使用 PyMongo 批量插入 Lite 数据到 MongoDB
+            mongo_collection = self._original_model.get_pymongo_collection()
+            insert_result = await mongo_collection.insert_many(lite_data_list, session=session)
+
+            # 4. 将生成的 IDs 赋值给 document 对象
+            for doc, inserted_id in zip(documents, insert_result.inserted_ids):
+                doc.id = inserted_id
+
+            # 5. 批量存储完整数据到 KV-Storage
+            for doc, full_data in zip(documents, full_data_list):
+                try:
+                    doc_id = str(doc.id)
+                    kv_key = get_kv_key(doc, doc_id)
+                    full_data["id"] = doc.id  # 添加生成的 ID
+                    kv_value = json.dumps(full_data, default=json_serializer)
+                    await self._kv_storage.put(key=kv_key, value=kv_value)
+                except Exception as e:
+                    logger.warning(f"⚠️  Failed to sync to KV-Storage for {doc.id}: {e}")
+
+            # 6. CRITICAL: 确保返回的 documents 对象包含完整数据
+            # 因为 PyMongo 直接插入 lite_data 后，documents 对象可能被 Beanie 修改
+            # 需要将 full_data 的所有字段重新设置回 doc 对象
+            for doc, full_data in zip(documents, full_data_list):
+                for field_name, field_value in full_data.items():
+                    # 只设置非特殊字段（排除 _id 等）
+                    if not field_name.startswith('_') and field_name != 'id':
+                        try:
+                            setattr(doc, field_name, field_value)
+                        except Exception:
+                            pass  # 忽略只读字段
+
+            logger.debug(
+                f"💾 insert_many: MongoDB Lite ({len(lite_data_list)} docs), "
+                f"KV Full ({len(full_data_list)} docs), restored full data to documents"
+            )
+
+            # IMPORTANT: Return InsertManyResult, NOT documents
+            # BaseRepository.create_batch expects InsertManyResult and will handle assigning IDs
+            return insert_result
+
+        except Exception as e:
+            logger.error(f"❌ Failed to insert_many with dual storage: {e}")
+            raise
+
     def __getattr__(self, name):
         """Proxy all other methods to original model"""
         return getattr(self._original_model, name)
@@ -976,6 +1140,14 @@ class DocumentInstanceWrapper:
         async def wrapped_insert(self, **kwargs):
             # Debug: Check self's fields
             logger.debug(f"🔍 Inserting {self.__class__.__name__}, fields: {self.model_fields.keys()}")
+
+            # 0. Trigger Beanie's before_event hooks (e.g., AuditBase.set_created_at)
+            # Since we're using PyMongo directly, we need to manually trigger these hooks
+            if hasattr(self, 'set_created_at'):
+                try:
+                    await self.set_created_at()
+                except Exception as e:
+                    logger.warning(f"⚠️  Failed to call set_created_at hook: {e}")
 
             try:
                 # 1. 提取 Lite 数据（只包含索引字段）
@@ -1017,7 +1189,8 @@ class DocumentInstanceWrapper:
 
             # 5. 将完整数据存入 KV-Storage
             try:
-                kv_key = str(self.id)
+                doc_id = str(self.id)
+                kv_key = get_kv_key(self, doc_id)
 
                 # 更新 full_data 的 ID
                 full_data_for_kv["id"] = self.id
@@ -1065,6 +1238,14 @@ class DocumentInstanceWrapper:
                 logger.warning("save() called on document without ID, should use insert()")
                 return await self.insert(**kwargs)
 
+            # 0. Trigger Beanie's before_event hooks (e.g., AuditBase.set_updated_at)
+            # Since we're using PyMongo directly, we need to manually trigger these hooks
+            if hasattr(self, 'set_updated_at'):
+                try:
+                    await self.set_updated_at()
+                except Exception as e:
+                    logger.warning(f"⚠️  Failed to call set_updated_at hook: {e}")
+
             try:
                 # 1. 提取 Lite 数据
                 lite_data = LiteModelExtractor.extract_lite_data(self, indexed_fields)
@@ -1083,7 +1264,8 @@ class DocumentInstanceWrapper:
 
                 # 3. 将完整数据存入 KV-Storage
                 try:
-                    kv_key = str(self.id)
+                    doc_id = str(self.id)
+                    kv_key = get_kv_key(self, doc_id)
 
                     # 使用 model_dump + json.dumps 避免 ExpressionField 问题
                     # model_dump_json() 可能失败，因为从 KV 恢复的对象可能有 lazy_model 的 ExpressionField
@@ -1135,6 +1317,7 @@ class DocumentInstanceWrapper:
         """
         async def wrapped_delete(self, **kwargs):
             doc_id = str(self.id) if self.id else None
+            kv_key = get_kv_key(self, doc_id) if doc_id else None
 
             # 调用原始 delete
             result = await original_delete(self, **kwargs)
@@ -1147,10 +1330,10 @@ class DocumentInstanceWrapper:
                 logger.debug(f"✅ Soft deleted in MongoDB (KV data preserved): {self.id}")
             else:
                 # 硬删除文档：删除 KV 数据
-                if doc_id:
+                if kv_key:
                     try:
-                        await kv_storage.delete(key=doc_id)
-                        logger.debug(f"✅ Hard deleted from KV-Storage: {doc_id}")
+                        await kv_storage.delete(key=kv_key)
+                        logger.debug(f"✅ Hard deleted from KV-Storage: {kv_key}")
                     except Exception as e:
                         logger.warning(f"⚠️  Failed to delete from KV-Storage: {e}")
 
@@ -1191,7 +1374,8 @@ class DocumentInstanceWrapper:
             # 恢复后同步回 KV-Storage
             if self.id:
                 try:
-                    kv_key = str(self.id)
+                    doc_id = str(self.id)
+                    kv_key = get_kv_key(self, doc_id)
                     kv_value = self.model_dump_json()
                     await kv_storage.put(key=kv_key, value=kv_value)
                     logger.debug(f"✅ Synced to KV-Storage after restore: {kv_key}")
@@ -1207,15 +1391,16 @@ class DocumentInstanceWrapper:
         """Wrap document.hard_delete() to remove from KV-Storage"""
         async def wrapped_hard_delete(self, **kwargs):
             doc_id = str(self.id) if self.id else None
+            kv_key = get_kv_key(self, doc_id) if doc_id else None
 
             # 调用原始 hard_delete (传递 self)
             result = await original_hard_delete(self, **kwargs)
 
             # 从 KV-Storage 删除
-            if doc_id:
+            if kv_key:
                 try:
-                    await kv_storage.delete(key=doc_id)
-                    logger.debug(f"✅ Deleted from KV-Storage after hard_delete: {doc_id}")
+                    await kv_storage.delete(key=kv_key)
+                    logger.debug(f"✅ Deleted from KV-Storage after hard_delete: {kv_key}")
                 except Exception as e:
                     logger.warning(f"⚠️  Failed to delete from KV-Storage after hard_delete: {e}")
 

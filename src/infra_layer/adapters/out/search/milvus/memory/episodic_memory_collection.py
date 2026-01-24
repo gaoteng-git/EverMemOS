@@ -26,19 +26,6 @@ class EpisodicMemoryCollection(TenantAwareMilvusCollectionWithSuffix):
     # Base name for the Collection
     _COLLECTION_NAME = "episodic_memory"
 
-    # Lite fields for dual storage (fields used in queries + indexed fields)
-    # These fields will be stored in Milvus, while all fields are stored in KV-Storage
-    _LITE_FIELDS = {
-        "id",            # Primary key, used for queries
-        "vector",        # Vector search (indexed)
-        "user_id",       # User filter (indexed)
-        "group_id",      # Group filter (indexed)
-        "participants",  # Participants filter (used in queries)
-        "event_type",    # Event type filter (indexed)
-        "parent_id",     # Parent ID (indexed)
-        "timestamp",     # Time range filter (indexed)
-    }
-
     # Collection Schema definition
     _SCHEMA = CollectionSchema(
         fields=[
