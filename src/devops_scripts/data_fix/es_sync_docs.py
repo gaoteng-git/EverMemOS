@@ -35,6 +35,22 @@ async def run(
             await sync_episodic_memory_docs(
                 batch_size=batch_size, limit=limit_, days=days
             )
+        elif "event-log" in str(doc_alias):
+            from devops_scripts.data_fix.es_sync_event_log_docs import (
+                sync_event_log_docs,
+            )
+
+            await sync_event_log_docs(
+                batch_size=batch_size, limit=limit_, days=days
+            )
+        elif "foresight" in str(doc_alias):
+            from devops_scripts.data_fix.es_sync_foresight_docs import (
+                sync_foresight_docs,
+            )
+
+            await sync_foresight_docs(
+                batch_size=batch_size, limit=limit_, days=days
+            )
         else:
             raise ValueError(f"Unsupported index type: {doc_alias}")
     except Exception as exc:  # noqa: BLE001
@@ -48,7 +64,7 @@ def main(argv: list[str] | None = None) -> int:
         description="Synchronize MongoDB data to Elasticsearch"
     )
     parser.add_argument(
-        "--index-name", "-i", required=True, help="Index alias, e.g.: episodic-memory"
+        "--index-name", "-i", required=True, help="Index alias, e.g.: episodic-memory, event-log, foresight"
     )
     parser.add_argument(
         "--batch-size", "-b", type=int, default=500, help="Batch size, default 500"
