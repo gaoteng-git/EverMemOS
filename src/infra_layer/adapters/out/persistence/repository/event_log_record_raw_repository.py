@@ -5,7 +5,7 @@ Provides CRUD operations and query capabilities for generic event logs.
 """
 
 from datetime import datetime
-from typing import List, Optional, Type, TypeVar, Union
+from typing import Any, Dict, List, Optional, Type, TypeVar, Union
 from pymongo.asynchronous.client_session import AsyncClientSession
 from bson import ObjectId
 from core.observation.logger import get_logger
@@ -330,6 +330,54 @@ class EventLogRecordRawRepository(
                 "❌ Failed to delete event logs by parent episodic memory ID: %s", e
             )
             return 0
+
+    async def find_by_filter_paginated(
+        self,
+        query_filter: Optional[Dict[str, Any]] = None,
+        skip: int = 0,
+        limit: int = 100,
+        sort_field: str = "timestamp",
+        sort_desc: bool = False,
+    ) -> List[EventLogRecord]:
+        """
+        Paginated query of EventLogRecord by filter conditions, used for data synchronization scenarios
+
+        Args:
+            query_filter: Query filter conditions, query all if None
+            skip: Number of results to skip
+            limit: Limit number of returned results
+            sort_field: Sort field, default is timestamp
+            sort_desc: Whether to sort in descending order, default False (ascending)
+
+        Returns:
+            List of EventLogRecord
+        """
+        try:
+            # Build query
+            filter_dict = query_filter if query_filter else {}
+            query = self.model.find(filter_dict)
+
+            # Sort
+            if sort_desc:
+                query = query.sort(f"-{sort_field}")
+            else:
+                query = query.sort(sort_field)
+
+            # Paginate
+            query = query.skip(skip).limit(limit)
+
+            results = await query.to_list()
+            logger.debug(
+                "✅ Successfully paginated query of EventLogRecord: filter=%s, skip=%d, limit=%d, found %d records",
+                filter_dict,
+                skip,
+                limit,
+                len(results),
+            )
+            return results
+        except Exception as e:
+            logger.error("❌ Failed to paginate query of EventLogRecord: %s", e)
+            return []
 
 
 # Export
