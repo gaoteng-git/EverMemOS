@@ -46,20 +46,15 @@ def get_kv_key(document_class_or_instance, doc_id: str) -> str:
     """
     Generate KV-Storage key
 
-    TEMPORARY: Returns doc_id only (no collection prefix) to match old behavior
-
-    This is a compatibility wrapper to maintain old behavior while we investigate
-    why collection name extraction is failing.
+    Returns doc_id only (no collection prefix) to match old working behavior.
 
     Args:
-        document_class_or_instance: Document class or instance (unused for now)
+        document_class_or_instance: Document class or instance (unused)
         doc_id: Document ID (ObjectId as string)
 
     Returns:
-        doc_id as key (backward compatible with commit 0b1d8474a88)
+        doc_id as key (matches commit 0b1d8474a88 and 2f526c03)
     """
-    # TEMPORARY FIX: Just return doc_id to match old behavior
-    # TODO: Fix collection name extraction logic properly
     return doc_id
 
 
@@ -545,11 +540,6 @@ class DualStorageModelProxy:
         self._original_model = original_model
         self._kv_storage = kv_storage
         self._full_model_class = full_model_class
-
-        # Proxy Settings from original model to support get_kv_key()
-        # This allows code to access proxy.Settings or proxy.__class__.Settings
-        if hasattr(original_model, 'Settings'):
-            self.Settings = original_model.Settings
 
         # 运行时自动提取索引字段（无需手动维护 Lite 类）
         self._indexed_fields = LiteModelExtractor.extract_indexed_fields(full_model_class)
@@ -1104,9 +1094,6 @@ class DualStorageModelProxy:
 
     def __getattr__(self, name):
         """Proxy all other methods to original model"""
-        # Special handling for Settings to support get_kv_key()
-        if name == 'Settings' and hasattr(self, '_original_model'):
-            return getattr(self._original_model, 'Settings')
         return getattr(self._original_model, name)
 
 
