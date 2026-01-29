@@ -44,37 +44,23 @@ class LiteStorageQueryError(Exception):
 
 def get_kv_key(document_class_or_instance, doc_id: str) -> str:
     """
-    Generate KV-Storage key with collection_name prefix
+    Generate KV-Storage key
 
-    Key Format: {collection_name}:{document_id}
-    Example: "episodic_memories:6979da5797f9041fc0aa063f"
+    TEMPORARY: Returns doc_id only (no collection prefix) to match old behavior
+
+    This is a compatibility wrapper to maintain old behavior while we investigate
+    why collection name extraction is failing.
 
     Args:
-        document_class_or_instance: Document class or instance (Beanie Document)
+        document_class_or_instance: Document class or instance (unused for now)
         doc_id: Document ID (ObjectId as string)
 
     Returns:
-        Full key with collection prefix
+        doc_id as key (backward compatible with commit 0b1d8474a88)
     """
-    try:
-        # Get collection name from Settings
-        if hasattr(document_class_or_instance, '__class__'):
-            # Instance: get class first
-            doc_class = document_class_or_instance.__class__
-        else:
-            # Already a class
-            doc_class = document_class_or_instance
-
-        # Get collection name
-        collection_name = doc_class.Settings.name
-
-        # Generate prefixed key
-        kv_key = f"{collection_name}:{doc_id}"
-        return kv_key
-    except Exception as e:
-        # Fallback: use doc_id only (backward compatible)
-        logger.warning(f"Failed to get collection name, using doc_id only: {e}")
-        return doc_id
+    # TEMPORARY FIX: Just return doc_id to match old behavior
+    # TODO: Fix collection name extraction logic properly
+    return doc_id
 
 
 # Minimal projection model for queries - only returns _id
@@ -559,6 +545,11 @@ class DualStorageModelProxy:
         self._original_model = original_model
         self._kv_storage = kv_storage
         self._full_model_class = full_model_class
+
+        # Proxy Settings from original model to support get_kv_key()
+        # This allows code to access proxy.Settings or proxy.__class__.Settings
+        if hasattr(original_model, 'Settings'):
+            self.Settings = original_model.Settings
 
         # 运行时自动提取索引字段（无需手动维护 Lite 类）
         self._indexed_fields = LiteModelExtractor.extract_indexed_fields(full_model_class)
@@ -1113,6 +1104,9 @@ class DualStorageModelProxy:
 
     def __getattr__(self, name):
         """Proxy all other methods to original model"""
+        # Special handling for Settings to support get_kv_key()
+        if name == 'Settings' and hasattr(self, '_original_model'):
+            return getattr(self._original_model, 'Settings')
         return getattr(self._original_model, name)
 
 
