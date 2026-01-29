@@ -44,18 +44,39 @@ class LiteStorageQueryError(Exception):
 
 def get_kv_key(document_class_or_instance, doc_id: str) -> str:
     """
-    Generate KV-Storage key
+    Generate KV-Storage key with collection_name prefix
 
-    Returns doc_id only (no collection prefix) to match old working behavior.
+    Key Format: {collection_name}:{document_id}
+    Example: "episodic_memories:6979da5797f9041fc0aa063f"
 
     Args:
-        document_class_or_instance: Document class or instance (unused)
+        document_class_or_instance: Document class or instance (Beanie Document)
         doc_id: Document ID (ObjectId as string)
 
     Returns:
-        doc_id as key (matches commit 0b1d8474a88 and 2f526c03)
+        Full key with collection prefix
     """
-    return doc_id
+    try:
+        # Check if it's a class or instance
+        # NOTE: Can't use hasattr(..., '__class__') because classes also have __class__ (their metaclass)!
+        import inspect
+        if inspect.isclass(document_class_or_instance):
+            # Already a class
+            doc_class = document_class_or_instance
+        else:
+            # Instance: get class
+            doc_class = document_class_or_instance.__class__
+
+        # Get collection name from Settings
+        collection_name = doc_class.Settings.name
+
+        # Generate prefixed key
+        kv_key = f"{collection_name}:{doc_id}"
+        return kv_key
+    except Exception as e:
+        # Fallback: use doc_id only (backward compatible)
+        logger.warning(f"Failed to get collection name, using doc_id only: {e}")
+        return doc_id
 
 
 # Minimal projection model for queries - only returns _id
