@@ -230,6 +230,11 @@ class MemCell(DocumentBaseWithSoftDelete, AuditBase):
             IndexModel([("updated_at", DESCENDING)], name="idx_updated_at"),
         ]
 
+        # Query fields: 没有建索引但在查询中使用的字段
+        # 这些字段会被Lite存储保存到MongoDB，以支持查询
+        # 注意：如果某字段频繁查询，建议添加索引以提升性能
+        query_fields = ["keywords"]
+
         # Validation settings
         validate_on_save = True
         use_state_management = True

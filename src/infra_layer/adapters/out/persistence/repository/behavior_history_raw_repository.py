@@ -4,6 +4,9 @@ from core.oxm.mongo.base_repository import BaseRepository
 from infra_layer.adapters.out.persistence.document.memory.behavior_history import (
     BehaviorHistory,
 )
+from infra_layer.adapters.out.persistence.kv_storage.dual_storage_mixin import (
+    DualStorageMixin,
+)
 from core.observation.logger import get_logger
 from core.di.decorators import repository
 from common_utils.datetime_utils import get_now_with_timezone
@@ -12,11 +15,16 @@ logger = get_logger(__name__)
 
 
 @repository("behavior_history_raw_repository", primary=True)
-class BehaviorHistoryRawRepository(BaseRepository[BehaviorHistory]):
+class BehaviorHistoryRawRepository(
+    DualStorageMixin,  # 添加双存储支持 - 自动拦截 MongoDB 调用
+    BaseRepository[BehaviorHistory],
+):
     """
     Behavior history raw data repository
 
     Provides CRUD operations and query capabilities for user behavior history data.
+
+    Dual Storage: DualStorageMixin automatically intercepts all MongoDB operations
     """
 
     def __init__(self):

@@ -5,7 +5,7 @@ Provides generic CRUD operations and query capabilities for foresight records.
 """
 
 from datetime import datetime
-from typing import List, Optional, Type, TypeVar, Union
+from typing import Any, Dict, List, Optional, Type, TypeVar, Union
 from pymongo.asynchronous.client_session import AsyncClientSession
 from bson import ObjectId
 from core.observation.logger import get_logger
@@ -17,6 +17,9 @@ from infra_layer.adapters.out.persistence.document.memory.foresight_record impor
     ForesightRecord,
     ForesightRecordProjection,
 )
+from infra_layer.adapters.out.persistence.kv_storage.dual_storage_mixin import (
+    DualStorageMixin,
+)
 
 # Define generic type variable
 T = TypeVar('T', ForesightRecord, ForesightRecordProjection)
@@ -25,12 +28,17 @@ logger = get_logger(__name__)
 
 
 @repository("foresight_record_repository", primary=True)
-class ForesightRecordRawRepository(BaseRepository[ForesightRecord]):
+class ForesightRecordRawRepository(
+    DualStorageMixin,  # 添加双存储支持 - 自动拦截 MongoDB 调用
+    BaseRepository[ForesightRecord],
+):
     """
     Raw repository for personal foresight data
 
     Provides CRUD operations and basic query functions for personal foresight records.
     Note: Vectors should be generated during extraction; this Repository is not responsible for vector generation.
+
+    Dual Storage: DualStorageMixin automatically intercepts all MongoDB operations
     """
 
     def __init__(self):
@@ -332,6 +340,54 @@ class ForesightRecordRawRepository(BaseRepository[ForesightRecord]):
                 "❌ Failed to delete foresights by parent episodic memory ID: %s", e
             )
             return 0
+
+    async def find_by_filter_paginated(
+        self,
+        query_filter: Optional[Dict[str, Any]] = None,
+        skip: int = 0,
+        limit: int = 100,
+        sort_field: str = "created_at",
+        sort_desc: bool = False,
+    ) -> List[ForesightRecord]:
+        """
+        Paginated query of ForesightRecord by filter conditions, used for data synchronization scenarios
+
+        Args:
+            query_filter: Query filter conditions, query all if None
+            skip: Number of results to skip
+            limit: Limit number of returned results
+            sort_field: Sort field, default is created_at
+            sort_desc: Whether to sort in descending order, default False (ascending)
+
+        Returns:
+            List of ForesightRecord
+        """
+        try:
+            # Build query
+            filter_dict = query_filter if query_filter else {}
+            query = self.model.find(filter_dict)
+
+            # Sort
+            if sort_desc:
+                query = query.sort(f"-{sort_field}")
+            else:
+                query = query.sort(sort_field)
+
+            # Paginate
+            query = query.skip(skip).limit(limit)
+
+            results = await query.to_list()
+            logger.debug(
+                "✅ Successfully paginated query of ForesightRecord: filter=%s, skip=%d, limit=%d, found %d records",
+                filter_dict,
+                skip,
+                limit,
+                len(results),
+            )
+            return results
+        except Exception as e:
+            logger.error("❌ Failed to paginate query of ForesightRecord: %s", e)
+            return []
 
 
 # Export

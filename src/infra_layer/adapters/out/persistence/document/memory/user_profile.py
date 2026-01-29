@@ -15,8 +15,8 @@ class UserProfile(DocumentBase, AuditBase):
     """
 
     # Composite primary key
-    user_id: Indexed(str) = Field(..., description="User ID")
-    group_id: Indexed(str) = Field(..., description="Group ID")
+    user_id: str = Field(..., description="User ID")
+    group_id: str = Field(..., description="Group ID")
 
     # Profile content (stored in JSON format)
     profile_data: Dict[str, Any] = Field(

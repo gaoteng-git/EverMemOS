@@ -6,6 +6,9 @@ from core.oxm.mongo.base_repository import BaseRepository
 from infra_layer.adapters.out.persistence.document.memory.relationship import (
     Relationship,
 )
+from infra_layer.adapters.out.persistence.kv_storage.dual_storage_mixin import (
+    DualStorageMixin,
+)
 from core.observation.logger import get_logger
 from core.di.decorators import repository
 
@@ -13,11 +16,16 @@ logger = get_logger(__name__)
 
 
 @repository("relationship_raw_repository", primary=True)
-class RelationshipRawRepository(BaseRepository[Relationship]):
+class RelationshipRawRepository(
+    DualStorageMixin,  # 添加双存储支持 - 自动拦截 MongoDB 调用
+    BaseRepository[Relationship],
+):
     """
     Relationship repository for raw data
 
     Provides CRUD operations and query capabilities for entity relationship data.
+
+    Dual Storage: DualStorageMixin automatically intercepts all MongoDB operations
     """
 
     def __init__(self):
