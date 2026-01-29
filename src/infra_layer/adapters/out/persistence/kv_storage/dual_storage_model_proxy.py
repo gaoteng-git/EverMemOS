@@ -42,6 +42,41 @@ class LiteStorageQueryError(Exception):
     pass
 
 
+def get_kv_key(document_class_or_instance, doc_id: str) -> str:
+    """
+    Generate KV-Storage key with collection_name prefix
+
+    Key Format: {collection_name}:{document_id}
+    Example: "episodic_memories:6979da5797f9041fc0aa063f"
+
+    Args:
+        document_class_or_instance: Document class or instance (Beanie Document)
+        doc_id: Document ID (ObjectId as string)
+
+    Returns:
+        Full key with collection prefix
+    """
+    try:
+        # Get collection name from Settings
+        if hasattr(document_class_or_instance, '__class__'):
+            # Instance: get class first
+            doc_class = document_class_or_instance.__class__
+        else:
+            # Already a class
+            doc_class = document_class_or_instance
+
+        # Get collection name
+        collection_name = doc_class.Settings.name
+
+        # Generate prefixed key
+        kv_key = f"{collection_name}:{doc_id}"
+        return kv_key
+    except Exception as e:
+        # Fallback: use doc_id only (backward compatible)
+        logger.warning(f"Failed to get collection name, using doc_id only: {e}")
+        return doc_id
+
+
 # Minimal projection model for queries - only returns _id
 class IdOnlyProjection(BaseModel):
     """Minimal projection to only retrieve document IDs from MongoDB"""
@@ -133,7 +168,8 @@ class FindOneQueryProxy:
 
             # 从 KV-Storage 加载完整数据
             doc_id = str(lite_doc["_id"])
-            kv_value = await self._kv_storage.get(key=doc_id)
+            kv_key = get_kv_key(self._full_model_class, doc_id)
+            kv_value = await self._kv_storage.get(key=kv_key)
 
             if kv_value:
                 full_doc = self._full_model_class.model_validate_json(kv_value)
@@ -240,6 +276,7 @@ class FindOneQueryProxy:
                 return DeleteResult()
 
             doc_id = str(lite_doc["_id"])
+            kv_key = get_kv_key(self._original_model, doc_id)
 
             # 2. Delete from MongoDB
             if is_dict_syntax:
@@ -256,8 +293,8 @@ class FindOneQueryProxy:
             # 3. Delete from KV-Storage
             if delete_result and hasattr(delete_result, 'deleted_count') and delete_result.deleted_count > 0:
                 try:
-                    await self._kv_storage.delete(key=doc_id)
-                    logger.debug(f"✅ Deleted document {doc_id} from KV-Storage via find_one().delete()")
+                    await self._kv_storage.delete(key=kv_key)
+                    logger.debug(f"✅ Deleted document {kv_key} from KV-Storage via find_one().delete()")
                 except Exception as e:
                     logger.warning(f"⚠️  Failed to delete from KV-Storage: {e}")
 
@@ -347,7 +384,8 @@ class DualStorageQueryProxy:
             full_docs = []
             for doc_id in doc_ids:
                 try:
-                    kv_value = await self._kv_storage.get(key=doc_id)
+                    kv_key = get_kv_key(self._full_model_class, doc_id)
+                    kv_value = await self._kv_storage.get(key=kv_key)
                     if kv_value:
                         # 从 KV 反序列化完整数据
                         full_doc = self._full_model_class.model_validate_json(kv_value)
@@ -463,8 +501,10 @@ class DualStorageQueryProxy:
                 # Update each document in KV-Storage
                 for doc_id in doc_ids:
                     try:
+                        # Generate KV key with collection prefix
+                        kv_key = get_kv_key(self._full_model_class, doc_id)
                         # Load existing full data from KV
-                        kv_value = await self._kv_storage.get(key=doc_id)
+                        kv_value = await self._kv_storage.get(key=kv_key)
                         if kv_value:
                             # Parse existing data
                             full_data = json.loads(kv_value)
@@ -472,7 +512,7 @@ class DualStorageQueryProxy:
                             full_data.update(update_fields)
                             # Write back to KV
                             kv_value = json.dumps(full_data, default=json_serializer)
-                            await self._kv_storage.put(key=doc_id, value=kv_value)
+                            await self._kv_storage.put(key=kv_key, value=kv_value)
                         else:
                             logger.warning(f"⚠️  KV miss for {doc_id}, cannot update")
                     except Exception as e:
@@ -658,7 +698,8 @@ class DualStorageModelProxy:
         try:
             # 必须从 KV-Storage 读取完整数据
             doc_id_str = str(doc_id)
-            kv_value = await self._kv_storage.get(key=doc_id_str)
+            kv_key = get_kv_key(self._full_model_class, doc_id_str)
+            kv_value = await self._kv_storage.get(key=kv_key)
 
             if kv_value:
                 # KV hit - 返回完整数据
@@ -814,7 +855,8 @@ class DualStorageModelProxy:
                 # Update each document in KV-Storage
                 for doc in docs_to_update:
                     try:
-                        kv_key = str(doc.id)
+                        doc_id = str(doc.id)
+                        kv_key = get_kv_key(doc, doc_id)
                         # Load existing full data from KV
                         kv_value = await self._kv_storage.get(key=kv_key)
                         if kv_value:
@@ -1036,7 +1078,8 @@ class DualStorageModelProxy:
             # 5. 批量存储完整数据到 KV-Storage
             for doc, full_data in zip(documents, full_data_list):
                 try:
-                    kv_key = str(doc.id)
+                    doc_id = str(doc.id)
+                    kv_key = get_kv_key(doc, doc_id)
                     full_data["id"] = doc.id  # 添加生成的 ID
                     kv_value = json.dumps(full_data, default=json_serializer)
                     await self._kv_storage.put(key=kv_key, value=kv_value)
@@ -1144,7 +1187,8 @@ class DocumentInstanceWrapper:
 
             # 5. 将完整数据存入 KV-Storage
             try:
-                kv_key = str(self.id)
+                doc_id = str(self.id)
+                kv_key = get_kv_key(self, doc_id)
 
                 # 更新 full_data 的 ID
                 full_data_for_kv["id"] = self.id
@@ -1218,7 +1262,8 @@ class DocumentInstanceWrapper:
 
                 # 3. 将完整数据存入 KV-Storage
                 try:
-                    kv_key = str(self.id)
+                    doc_id = str(self.id)
+                    kv_key = get_kv_key(self, doc_id)
 
                     # 使用 model_dump + json.dumps 避免 ExpressionField 问题
                     # model_dump_json() 可能失败，因为从 KV 恢复的对象可能有 lazy_model 的 ExpressionField
@@ -1270,6 +1315,7 @@ class DocumentInstanceWrapper:
         """
         async def wrapped_delete(self, **kwargs):
             doc_id = str(self.id) if self.id else None
+            kv_key = get_kv_key(self, doc_id) if doc_id else None
 
             # 调用原始 delete
             result = await original_delete(self, **kwargs)
@@ -1282,10 +1328,10 @@ class DocumentInstanceWrapper:
                 logger.debug(f"✅ Soft deleted in MongoDB (KV data preserved): {self.id}")
             else:
                 # 硬删除文档：删除 KV 数据
-                if doc_id:
+                if kv_key:
                     try:
-                        await kv_storage.delete(key=doc_id)
-                        logger.debug(f"✅ Hard deleted from KV-Storage: {doc_id}")
+                        await kv_storage.delete(key=kv_key)
+                        logger.debug(f"✅ Hard deleted from KV-Storage: {kv_key}")
                     except Exception as e:
                         logger.warning(f"⚠️  Failed to delete from KV-Storage: {e}")
 
@@ -1326,7 +1372,8 @@ class DocumentInstanceWrapper:
             # 恢复后同步回 KV-Storage
             if self.id:
                 try:
-                    kv_key = str(self.id)
+                    doc_id = str(self.id)
+                    kv_key = get_kv_key(self, doc_id)
                     kv_value = self.model_dump_json()
                     await kv_storage.put(key=kv_key, value=kv_value)
                     logger.debug(f"✅ Synced to KV-Storage after restore: {kv_key}")
@@ -1342,15 +1389,16 @@ class DocumentInstanceWrapper:
         """Wrap document.hard_delete() to remove from KV-Storage"""
         async def wrapped_hard_delete(self, **kwargs):
             doc_id = str(self.id) if self.id else None
+            kv_key = get_kv_key(self, doc_id) if doc_id else None
 
             # 调用原始 hard_delete (传递 self)
             result = await original_hard_delete(self, **kwargs)
 
             # 从 KV-Storage 删除
-            if doc_id:
+            if kv_key:
                 try:
-                    await kv_storage.delete(key=doc_id)
-                    logger.debug(f"✅ Deleted from KV-Storage after hard_delete: {doc_id}")
+                    await kv_storage.delete(key=kv_key)
+                    logger.debug(f"✅ Deleted from KV-Storage after hard_delete: {kv_key}")
                 except Exception as e:
                     logger.warning(f"⚠️  Failed to delete from KV-Storage after hard_delete: {e}")
 

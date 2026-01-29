@@ -16,7 +16,7 @@ from core.observation.logger import get_logger
 logger = get_logger(__name__)
 
 
-@component("redis_kv_storage", primary=True)
+@component("redis_kv_storage")
 class RedisKVStorage(KVStorageInterface):
     """
     Redis-based KV-Storage implementation
@@ -28,7 +28,6 @@ class RedisKVStorage(KVStorageInterface):
     def __init__(self):
         """Initialize Redis KV-Storage"""
         self._redis_provider: Optional[RedisProvider] = None
-        self._key_prefix = "kv:doc:"  # Key prefix to avoid conflicts
 
     async def _get_redis(self):
         """Lazy load Redis connection"""
@@ -42,8 +41,8 @@ class RedisKVStorage(KVStorageInterface):
         return await self._redis_provider.get_client()
 
     def _make_key(self, key: str) -> str:
-        """Add prefix to key"""
-        return f"{self._key_prefix}{key}"
+        """Pass through key without modification for consistency with other implementations"""
+        return key
 
     async def get(self, key: str) -> Optional[str]:
         """
