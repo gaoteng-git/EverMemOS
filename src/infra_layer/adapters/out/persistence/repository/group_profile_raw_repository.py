@@ -6,17 +6,25 @@ from core.oxm.mongo.base_repository import BaseRepository
 from infra_layer.adapters.out.persistence.document.memory.group_profile import (
     GroupProfile,
 )
+from infra_layer.adapters.out.persistence.kv_storage.dual_storage_mixin import (
+    DualStorageMixin,
+)
 
 logger = get_logger(__name__)
 
 
 @repository("group_profile_raw_repository", primary=True)
-class GroupProfileRawRepository(BaseRepository[GroupProfile]):
+class GroupProfileRawRepository(
+    DualStorageMixin,  # 添加双存储支持 - 自动拦截 MongoDB 调用
+    BaseRepository[GroupProfile],
+):
     """
     Group profile raw data repository
 
     Provides CRUD operations and query capabilities for group profiles.
     Supports management of group information, role definitions, user tags, and recent topics.
+
+    Dual Storage: DualStorageMixin automatically intercepts all MongoDB operations
     """
 
     def __init__(self):
