@@ -39,50 +39,78 @@ class DataSyncValidationListener(AppReadyListener):
         # Get configuration
         days = int(os.getenv("STARTUP_SYNC_DAYS", "0"))
         check_milvus = os.getenv("STARTUP_SYNC_MILVUS", "true").lower() == "true"
+        check_es = os.getenv("STARTUP_SYNC_ES", "true").lower() == "true"
 
-        # Skip if Milvus validation is disabled
-        if not check_milvus:
-            logger.info("Milvus validation is disabled (STARTUP_SYNC_MILVUS=false)")
+        # Skip if both validations are disabled
+        if not check_milvus and not check_es:
+            logger.info(
+                "Both Milvus and ES validation are disabled "
+                "(STARTUP_SYNC_MILVUS=false, STARTUP_SYNC_ES=false)"
+            )
             return
 
         # Log appropriate message based on validation mode
         if days == 0:
             logger.warning(
                 "🔥 Starting FULL DATABASE validation (all documents) - "
-                "this may take several minutes. milvus=true"
+                "this may take several minutes. milvus=%s, es=%s",
+                check_milvus,
+                check_es,
             )
         else:
             logger.info(
-                "Starting data sync validation (last %d days, milvus=true)", days
+                "Starting data sync validation (last %d days, milvus=%s, es=%s)",
+                days,
+                check_milvus,
+                check_es,
             )
 
         # Run validation asynchronously (non-blocking)
-        asyncio.create_task(self._run_validation(days))
+        asyncio.create_task(self._run_validation(days, check_milvus, check_es))
 
-    async def _run_validation(self, days: int) -> None:
+    async def _run_validation(
+        self, days: int, check_milvus: bool, check_es: bool
+    ) -> None:
         """
         Run validation and sync process
 
         Args:
             days: Days to check (0 = all documents)
+            check_milvus: Whether to validate Milvus
+            check_es: Whether to validate Elasticsearch
         """
         from core.validation.milvus_data_validator import validate_milvus_data
+        from core.validation.es_data_validator import validate_es_data
 
         doc_types = ["episodic_memory", "event_log", "foresight"]
         all_results = []
 
         try:
             # Validate Milvus for each document type
-            logger.info("Validating Milvus data...")
-            for doc_type in doc_types:
-                try:
-                    result = await validate_milvus_data(doc_type, days)
-                    all_results.append(result)
-                    self._log_result(result, days)
-                except Exception as e:
-                    logger.error(
-                        "Failed to validate %s: %s", doc_type, e, exc_info=True
-                    )
+            if check_milvus:
+                logger.info("Validating Milvus data...")
+                for doc_type in doc_types:
+                    try:
+                        result = await validate_milvus_data(doc_type, days)
+                        all_results.append(result)
+                        self._log_result(result, days)
+                    except Exception as e:
+                        logger.error(
+                            "Failed to validate %s (Milvus): %s", doc_type, e, exc_info=True
+                        )
+
+            # Validate Elasticsearch for each document type
+            if check_es:
+                logger.info("Validating Elasticsearch data...")
+                for doc_type in doc_types:
+                    try:
+                        result = await validate_es_data(doc_type, days)
+                        all_results.append(result)
+                        self._log_result(result, days)
+                    except Exception as e:
+                        logger.error(
+                            "Failed to validate %s (ES): %s", doc_type, e, exc_info=True
+                        )
 
             # Summary
             total_synced = sum(r.synced_count for r in all_results)
