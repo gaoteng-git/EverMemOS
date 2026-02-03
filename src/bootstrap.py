@@ -81,6 +81,10 @@ async def setup_project_context(env_file=".env", mock_mode=False):
     """
     Set up project context environment - exactly copy the loading logic from run.py
     """
+    # Set flag to indicate we're running via bootstrap.py (not actual backend startup)
+    # This prevents startup data sync from running for demo/test scripts
+    os.environ["BOOTSTRAP_MODE"] = "true"
+
     # Copy environment loading logic from run.py
     from import_parent_dir import add_parent_path
 

@@ -21,6 +21,15 @@ class DataSyncValidationListener(AppReadyListener):
 
     def on_app_ready(self) -> None:
         """Called after all lifespan providers have started"""
+        # Check if we're running via bootstrap.py (demo/test script) or run.py (backend)
+        # Only run auto-sync when starting the actual backend, not for demo/test scripts
+        is_bootstrap_mode = os.getenv("BOOTSTRAP_MODE", "false").lower() == "true"
+        if is_bootstrap_mode:
+            logger.info(
+                "Skipping startup data sync (running via bootstrap.py, not backend startup)"
+            )
+            return
+
         # Check if startup sync is enabled
         enabled = os.getenv("STARTUP_SYNC_ENABLED", "true").lower() == "true"
         if not enabled:

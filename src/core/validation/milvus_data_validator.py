@@ -249,10 +249,12 @@ async def _get_mongo_ids(mongo_repo: Any, days: int) -> Set[str]:
         logger.info("Fetching ALL MongoDB IDs (full database)")
 
     # Fetch only IDs (projection for efficiency)
-    cursor = mongo_repo.model.find(query_filter, projection={"_id": 1})
+    # Use get_pymongo_collection() to access raw MongoDB API
+    collection = mongo_repo.model.get_pymongo_collection()
+    cursor = collection.find(query_filter, {"_id": 1})
     docs = await cursor.to_list(length=None)
 
-    return {str(doc.id) for doc in docs}
+    return {str(doc["_id"]) for doc in docs}
 
 
 async def _get_milvus_ids(collection: Any, days: int) -> Set[str]:
@@ -282,8 +284,9 @@ async def _get_milvus_ids(collection: Any, days: int) -> Set[str]:
         logger.info("Fetching ALL Milvus IDs (full database)")
 
         # Query without filter to get all documents
-        # Empty expression matches all
-        results = await collection.query(expr="", output_fields=["id"])
+        # Milvus doesn't allow empty expression without limit
+        # Use an always-true expression: created_at >= 0 (matches all documents)
+        results = await collection.query(expr="created_at >= 0", output_fields=["id"])
 
     return {str(result["id"]) for result in results}
 
