@@ -28,7 +28,7 @@ class DataSyncValidationListener(AppReadyListener):
             return
 
         # Get configuration
-        days = int(os.getenv("STARTUP_SYNC_DAYS", "7"))
+        days = int(os.getenv("STARTUP_SYNC_DAYS", "0"))
         check_milvus = os.getenv("STARTUP_SYNC_MILVUS", "true").lower() == "true"
 
         # Skip if Milvus validation is disabled
