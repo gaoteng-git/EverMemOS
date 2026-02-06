@@ -88,35 +88,6 @@ class SetupManager:
         success, _ = self.run_command(["which", cmd], check=False)
         return success
 
-    def detect_setup_mode(self) -> str:
-        """Detect appropriate setup mode based on system"""
-        self.print_header("Detecting Setup Mode")
-
-        # Check available resources
-        has_docker = self.check_command_exists("docker")
-        has_docker_compose = self.check_command_exists("docker-compose") or self.check_command_exists("docker")
-        has_mongodb = self.check_command_exists("mongod")
-        has_es = self.check_command_exists("elasticsearch")
-
-        self.print_info(f"OS: {platform.system()} {platform.release()}")
-        self.print_info(f"Docker: {'✅' if has_docker else '❌'}")
-        self.print_info(f"Docker Compose: {'✅' if has_docker_compose else '❌'}")
-        self.print_info(f"MongoDB: {'✅' if has_mongodb else '❌'}")
-        self.print_info(f"Elasticsearch: {'✅' if has_es else '❌'}")
-
-        # Recommend mode
-        if has_docker and has_docker_compose:
-            recommended = "standard"
-            self.print_info("Recommended mode: standard (Docker-based)")
-        elif has_mongodb and has_es:
-            recommended = "full"
-            self.print_info("Recommended mode: full (Native services)")
-        else:
-            recommended = "lite"
-            self.print_info("Recommended mode: lite (Minimal dependencies)")
-
-        return recommended
-
     def check_python(self) -> bool:
         """Check Python version"""
         self.print_info("Checking Python version...")
@@ -420,55 +391,6 @@ class SetupManager:
 
         return False
 
-    def setup_lite_mode(self) -> bool:
-        """Setup lite mode (SQLite + DuckDB)"""
-        self.print_header("Setting Up Lite Mode")
-        self.print_info("Lite mode uses SQLite and in-memory storage - no external services needed")
-
-        # Create .env.lite if not exists
-        env_file = self.project_dir / ".env.lite"
-        if not env_file.exists():
-            self.print_info("Creating .env.lite configuration...")
-
-            env_content = """# EverMemOS Lite Configuration
-# Minimal setup with no external services required
-
-# Storage Mode
-STORAGE_MODE=lite
-USE_MONGODB=false
-USE_ELASTICSEARCH=false
-USE_MILVUS=false
-
-# SQLite Database
-SQLITE_DB_PATH=data/evermemos.db
-
-# DuckDB for analytics
-DUCKDB_PATH=data/evermemos_analytics.duckdb
-
-# Server Configuration
-SERVER_HOST=0.0.0.0
-SERVER_PORT=1995
-
-# Memory Configuration
-MEMORY_LIMIT=1000
-ENABLE_VECTOR_SEARCH=false
-
-# Logging
-LOG_LEVEL=INFO
-LOG_FILE=data/evermemos.log
-"""
-            env_file.write_text(env_content)
-            self.print_success("Created .env.lite")
-        else:
-            self.print_info(".env.lite already exists")
-
-        # Create data directory
-        data_dir = self.project_dir / "data"
-        data_dir.mkdir(exist_ok=True)
-        self.print_success("Created data directory")
-
-        return True
-
     def setup_standard_mode(self, non_interactive: bool = False) -> bool:
         """Setup standard mode (Docker-based)"""
         self.print_header("Setting Up Standard Mode (Docker)")
@@ -761,145 +683,6 @@ LOG_FILE=data/evermemos.log
 
         return True
 
-    def setup_full_mode(self) -> bool:
-        """Setup full mode (Native services)"""
-        self.print_header("Setting Up Full Mode (Native Services)")
-        self.print_info("Full mode expects MongoDB, Elasticsearch, and Milvus already running")
-
-        # Check for services
-        has_mongodb = self.check_command_exists("mongod")
-        has_es = self.check_command_exists("elasticsearch")
-
-        if not has_mongodb:
-            self.print_warning("MongoDB not detected")
-            self.print_info("Install MongoDB: https://docs.mongodb.com/manual/installation/")
-
-        if not has_es:
-            self.print_warning("Elasticsearch not detected")
-            self.print_info("Install Elasticsearch: https://www.elastic.co/guide/en/elasticsearch/reference/current/install-elasticsearch.html")
-
-        # Create .env.production
-        env_file = self.project_dir / ".env.production"
-        if not env_file.exists():
-            self.print_info("Creating .env.production configuration...")
-
-            # Try to detect running services
-            mongodb_host = "localhost"
-            mongodb_port = 27017
-            es_host = "localhost"
-            es_port = 9200
-            milvus_host = "localhost"
-            milvus_port = 19530
-
-            env_content = f"""# EverMemOS Full (Production) Configuration
-
-# Storage Mode
-STORAGE_MODE=full
-USE_MONGODB=true
-USE_ELASTICSEARCH=true
-USE_MILVUS=true
-
-# MongoDB Configuration
-MONGODB_HOST={mongodb_host}
-MONGODB_PORT={mongodb_port}
-MONGODB_DATABASE=evermemos
-MONGODB_USERNAME=
-MONGODB_PASSWORD=
-
-# Elasticsearch Configuration
-ELASTICSEARCH_HOST={es_host}
-ELASTICSEARCH_PORT={es_port}
-ELASTICSEARCH_INDEX_PREFIX=evermemos
-
-# Milvus Configuration
-MILVUS_HOST={milvus_host}
-MILVUS_PORT={milvus_port}
-MILVUS_COLLECTION_PREFIX=evermemos
-
-# Server Configuration
-SERVER_HOST=0.0.0.0
-SERVER_PORT=1995
-
-# Memory Configuration
-MEMORY_LIMIT=100000
-ENABLE_VECTOR_SEARCH=true
-VECTOR_DIMENSION=768
-
-# Performance
-WORKER_COUNT=4
-MAX_CONNECTIONS=1000
-
-# Logging
-LOG_LEVEL=INFO
-LOG_FILE=data/evermemos.log
-
-# Security (IMPORTANT: Change these in production!)
-SECRET_KEY=change-me-in-production
-JWT_SECRET=change-me-in-production
-
-# Monitoring
-ENABLE_METRICS=true
-METRICS_PORT=9090
-"""
-            env_file.write_text(env_content)
-            self.print_success("Created .env.production")
-
-            self.print_warning("\n⚠️  Important: Review and update .env.production:")
-            self.print_info("  - Set MongoDB credentials if needed")
-            self.print_info("  - Change SECRET_KEY and JWT_SECRET")
-            self.print_info("  - Verify service endpoints")
-        else:
-            self.print_info(".env.production already exists")
-
-        # Create data directory
-        data_dir = self.project_dir / "data"
-        data_dir.mkdir(exist_ok=True)
-        self.print_success("Created data directory")
-
-        # Verify services are accessible
-        self.print_info("\nChecking service connectivity...")
-
-        services_ok = True
-
-        # Check MongoDB
-        try:
-            import socket
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(2)
-            result = sock.connect_ex(('localhost', 27017))
-            sock.close()
-            if result == 0:
-                self.print_success("MongoDB is accessible")
-            else:
-                self.print_warning("MongoDB is not running (expected on localhost:27017)")
-                services_ok = False
-        except:
-            self.print_warning("Could not check MongoDB")
-
-        # Check Elasticsearch
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(2)
-            result = sock.connect_ex(('localhost', 9200))
-            sock.close()
-            if result == 0:
-                self.print_success("Elasticsearch is accessible")
-            else:
-                self.print_warning("Elasticsearch is not running (expected on localhost:9200)")
-                services_ok = False
-        except:
-            self.print_warning("Could not check Elasticsearch")
-
-        if not services_ok:
-            self.print_info("\nTo start services:")
-            if has_mongodb:
-                self.print_info("  - MongoDB: sudo systemctl start mongod")
-            if has_es:
-                self.print_info("  - Elasticsearch: sudo systemctl start elasticsearch")
-            self.print_info("  - Milvus: Follow https://milvus.io/docs/install_standalone-docker.md")
-
-        return True
-
     def install_dependencies(self) -> bool:
         """Install Python dependencies"""
         self.print_header("Installing Dependencies")
@@ -921,47 +704,12 @@ METRICS_PORT=9090
             self.print_error("Failed to install dependencies")
             return False
 
-    def verify_installation(self) -> bool:
-        """Verify installation"""
-        self.print_header("Verifying Installation")
 
-        # Determine config file based on mode
-        if self.setup_mode == "lite":
-            config_file = ".env.lite"
-        elif self.setup_mode == "standard":
-            config_file = ".env.docker"
-        elif self.setup_mode == "full":
-            config_file = ".env.production"
-        else:
-            config_file = ".env.lite"
-
-        checks = [
-            ("Project directory", self.project_dir.exists()),
-            ("Source code", (self.project_dir / "src").exists()),
-            (f"Configuration ({config_file})", (self.project_dir / config_file).exists()),
-            ("Data directory", (self.project_dir / "data").exists()),
-        ]
-
-        all_good = True
-        for check_name, result in checks:
-            if result:
-                self.print_success(f"{check_name}: OK")
-            else:
-                self.print_error(f"{check_name}: Failed")
-                all_good = False
-
-        return all_good
-
-    def run_setup(self, mode: str = "auto", non_interactive: bool = False) -> bool:
+    def run_setup(self, non_interactive: bool = False) -> bool:
         """Run complete setup process"""
-        self.print_header("EverMemOS Setup Wizard")
-
-        # Detect mode if auto
-        if mode == "auto":
-            mode = self.detect_setup_mode()
-
-        self.setup_mode = mode
-        self.print_info(f"Setup mode: {mode}")
+        self.print_header("EverMemOS Setup")
+        self.print_info("Installing EverMemOS with Docker containers")
+        print()
 
         # Step 1: Check Python
         if not self.check_python():
@@ -986,55 +734,31 @@ METRICS_PORT=9090
         if not self.install_dependencies():
             return False
 
-        # Step 4: Setup based on mode
-        if mode == "lite":
-            if not self.setup_lite_mode():
-                return False
-        elif mode == "standard":
-            if not self.setup_standard_mode(non_interactive=non_interactive):
-                return False
-        elif mode == "full":
-            if not self.setup_full_mode():
-                return False
-        else:
-            self.print_error(f"Unknown mode: {mode}")
-            return False
-
-        # Step 5: Verify
-        if not self.verify_installation():
+        # Step 4: Setup Docker services
+        if not self.setup_standard_mode(non_interactive=non_interactive):
             return False
 
         # Success
         self.print_header("Setup Complete! 🎉")
         self.print_success("EverMemOS is ready to use")
         print()
-
-        # Mode-specific instructions
-        if mode == "lite":
-            self.print_info("Lite mode setup complete - no external services needed")
-        elif mode == "standard":
-            self.print_info("Standard mode setup complete - Docker services started")
-            self.print_info("Configuration file: .env.docker")
-        elif mode == "full":
-            self.print_info("Full mode setup complete - verify services are running")
-            self.print_info("Configuration file: .env.production")
-            self.print_warning("⚠️  Review .env.production and update credentials!")
-
+        self.print_info("Docker services started:")
+        print("  • MongoDB: localhost:27017")
+        print("  • Elasticsearch: localhost:9200")
+        print("  • Milvus: localhost:19530")
+        print()
+        self.print_info("Configuration: .env.docker")
         print()
         self.print_info("Next steps:")
-        print("  1. Start the server:")
-        print(f"     cd {self.project_dir}")
-
-        if mode == "lite":
-            print("     ENV_FILE=.env.lite uv run python src/run.py")
-        elif mode == "standard":
-            print("     ENV_FILE=.env.docker uv run python src/run.py")
-        elif mode == "full":
-            print("     ENV_FILE=.env.production uv run python src/run.py")
-
-        print()
-        print("  2. Or use the skill:")
+        print("  1. Start EverMemOS:")
         print("     /evermemos-start")
+        print()
+        print("  2. Or start manually:")
+        print(f"     cd {self.project_dir}")
+        print("     ENV_FILE=.env.docker uv run python src/run.py")
+        print()
+        print("  3. Check status:")
+        print("     docker ps")
         print()
 
         return True
@@ -1045,13 +769,7 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="EverMemOS Setup Wizard"
-    )
-    parser.add_argument(
-        "--mode",
-        choices=["auto", "lite", "standard", "full"],
-        default="auto",
-        help="Setup mode (default: auto-detect)"
+        description="EverMemOS Setup - Docker-based installation"
     )
     parser.add_argument(
         "--project-dir",
@@ -1071,7 +789,7 @@ def main():
     manager = SetupManager(project_dir=args.project_dir)
 
     # Run setup
-    success = manager.run_setup(mode=args.mode)
+    success = manager.run_setup(non_interactive=args.non_interactive)
 
     # Exit with appropriate code
     sys.exit(0 if success else 1)

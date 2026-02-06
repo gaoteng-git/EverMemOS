@@ -1,67 +1,85 @@
 ---
 name: evermemos-setup
-description: Install and configure EverMemOS with automated setup wizard. Use when user wants to install EverMemOS or needs help with initial setup.
-argument-hint: "[mode]"
+description: Install and configure EverMemOS with Docker containers for MongoDB, Elasticsearch, and Milvus. Automated setup with Docker auto-installation.
 disable-model-invocation: false
-allowed-tools: Bash(python3 *), Bash(uv *), Bash(curl *), Read, Write
+allowed-tools: Bash(python3 *), Bash(uv *), Bash(curl *), Bash(docker *), Read, Write
 ---
 
 # EverMemOS Setup Wizard
 
-Automated installation and configuration for EverMemOS. This skill guides users through the setup process without requiring deep technical knowledge.
+Automated installation and configuration for EverMemOS using Docker containers. This skill sets up MongoDB, Elasticsearch, and Milvus in Docker, with automatic Docker installation if needed.
 
 ## Usage
 
 ```bash
-/evermemos-setup [mode]
+/evermemos-setup
 ```
 
-**Parameters:**
-- `mode` (optional): Setup mode - `auto` (default), `lite`, `standard`, or `full`
+No parameters needed - the setup wizard handles everything automatically.
 
-## Setup Modes
+## What Gets Installed
 
-### 🚀 Lite Mode (Recommended for beginners)
-- **No external services required**
-- Uses SQLite for storage
-- In-memory vector search
-- Perfect for testing and development
-- Quick setup (< 2 minutes)
+### Docker Services
+- **MongoDB 6.0** - Primary database
+- **Elasticsearch 8.11.0** - Full-text search
+- **Milvus 2.3.3** - Vector database for semantic search
+- **Supporting services** - etcd, MinIO (for Milvus)
 
-### 🔧 Standard Mode (Docker-based)
-- Uses Docker containers
-- MongoDB + Elasticsearch + Milvus
-- Good balance of features and ease
-- Requires Docker installed
-
-### ⚡ Full Mode (Production-ready)
-- Native service installation
-- Full performance optimization
-- Requires manual service management
-- Best for production deployment
+### Auto-Installation
+- **Docker** - Automatically installs if not present (Linux & macOS)
+- **Docker Compose** - Automatically installs if not present
+- **uv package manager** - Python dependency management
+- **EverMemOS dependencies** - All Python packages
 
 ## What This Skill Does
 
 ### 1. System Check
-- Detect operating system
+- Detect operating system (Linux, macOS)
 - Check Python version (3.8+ required)
 - Check for existing installations
-- Recommend appropriate setup mode
+- Verify system resources
 
-### 2. Install Dependencies
-- Install `uv` package manager (if needed)
-- Install Python dependencies
+### 2. Install Docker (if needed)
+- **Linux (Debian/Ubuntu)**: Installs Docker CE via apt
+- **Linux (RHEL/CentOS/Fedora)**: Installs Docker CE via yum
+- **macOS**: Installs Docker Desktop via Homebrew
+- Asks user permission before installing
+- Shows progress during installation
+
+### 3. Install Docker Compose (if needed)
+- **Linux**: Installs docker-compose-plugin
+- **macOS**: Verifies Docker Desktop includes Compose
+- Consistent user experience with Docker installation
+
+### 4. Install Dependencies
+- Install `uv` package manager automatically
+- Install Python dependencies via uv
 - Set up project structure
 
-### 3. Configuration
-- Create appropriate `.env` file
-- Set up data directories
-- Configure based on selected mode
+### 5. Create Docker Services
+- Generate `docker-compose.yml` with all services
+- Configure MongoDB with authentication
+- Configure Elasticsearch for development
+- Configure Milvus with dependencies
+- Set up Docker networks and volumes
 
-### 4. Verification
-- Verify all components installed
-- Run health checks
-- Provide next steps
+### 6. Configuration
+- Create `.env.docker` configuration file
+- Set up data directories
+- Configure service connection strings
+- Set optimal defaults for Docker environment
+
+### 7. Start Services
+- Start all Docker containers automatically
+- Verify services are running
+- Test connectivity
+
+### 8. Verification
+- Check all containers are healthy
+- Verify MongoDB connection
+- Verify Elasticsearch connection
+- Verify Milvus connection
+- Provide service URLs and next steps
 
 ## Automatic Usage
 
@@ -71,353 +89,382 @@ Claude will automatically suggest this skill when:
 - "How do I install EverMemOS?"
 - "Help me set up EverMemOS"
 - "I want to use EverMemOS but don't know how to install it"
-- "EverMemOS installation guide"
+- "Install EverMemOS for me"
+- "Set up EverMemOS with Docker"
 
 **Claude responds:**
 ```
-I'll help you install EverMemOS with the automated setup wizard.
+I'll help you install EverMemOS with Docker containers.
 
-[Runs: /evermemos-setup auto]
+[Runs: /evermemos-setup]
 
-The wizard will:
+The setup wizard will:
 1. Check your system
-2. Recommend the best setup mode
-3. Install all dependencies
-4. Configure everything automatically
+2. Install Docker if needed (asks permission first)
+3. Install Docker Compose if needed
+4. Set up MongoDB, Elasticsearch, and Milvus in Docker
+5. Configure everything automatically
+6. Start all services
 
 Let me start the setup process...
 ```
 
-## Manual Usage Examples
+## Manual Usage
 
-### Example 1: Auto-detect Best Mode
+### Basic Setup
 
 ```bash
 /evermemos-setup
 ```
 
-or
-
-```bash
-/evermemos-setup auto
-```
-
-The wizard will detect your system and recommend the best mode.
-
-### Example 2: Lite Mode (Quick Start)
-
-```bash
-/evermemos-setup lite
-```
-
-Fastest way to get started - no external services needed.
-
-### Example 3: Docker-based Setup
-
-```bash
-/evermemos-setup standard
-```
-
-Uses Docker containers for all services.
-
-## Step-by-Step Process
-
-### When User Asks for Installation
-
-**User:** "How do I install EverMemOS?"
-
-**Claude automatically:**
-
-1. **Assess User's Technical Level**
-   - Ask about their experience if unclear
-   - Recommend appropriate mode
-
-2. **Run Setup Wizard**
-   ```bash
-   python3 ~/.claude/skills/evermemos-setup/scripts/setup.py --mode auto
-   ```
-
-3. **Guide Through Process**
-   - Explain each step
-   - Handle any errors
-   - Provide troubleshooting help
-
-4. **Verify Success**
-   - Confirm installation complete
-   - Show how to start the server
-   - Suggest next steps
-
-### Handling Different User Levels
-
-#### Beginner User
-```
-User: I want to try EverMemOS but I'm not very technical
-
-Claude: No problem! I'll set up EverMemOS in lite mode -
-it's the easiest way and requires no additional software.
-
-[Runs: /evermemos-setup lite]
-
 This will:
-✅ Install everything you need
-✅ No database setup required
-✅ Ready to use in 2 minutes
+- Check if Docker is installed (auto-install if user agrees)
+- Check if Docker Compose is installed (auto-install if user agrees)
+- Create docker-compose.yml
+- Create .env.docker configuration
+- Start all Docker services
+- Verify everything is working
+
+### Expected Output
+
+```
+============================================================
+                    EVERMEMOS SETUP
+============================================================
+
+Detecting system...
+✅ Operating System: Linux (Ubuntu)
+✅ Python 3.10.12
+
+Checking Docker...
+⚠️  Docker is not installed
+ℹ️  Docker is required to run EverMemOS services.
+Would you like to install Docker automatically? (y/n): y
+
+🔄 Installing Docker...
+ℹ️  Installing Docker on Debian/Ubuntu...
+ℹ️  Running: sudo apt-get update
+ℹ️  Running: sudo apt-get install -y docker-ce docker-ce-cli containerd.io
+✅ Docker installed successfully!
+
+Checking Docker Compose...
+⚠️  Docker Compose is not available
+Would you like to install Docker Compose automatically? (y/n): y
+
+🔄 Installing Docker Compose...
+✅ Docker Compose installed successfully!
+
+Creating docker-compose.yml...
+✅ Docker Compose configuration created
+
+Creating .env.docker configuration...
+✅ Configuration file created
+
+Starting Docker services...
+ℹ️  Starting MongoDB, Elasticsearch, and Milvus...
+✅ All services started successfully
+
+Verifying services...
+✅ MongoDB is running on port 27017
+✅ Elasticsearch is running on port 9200
+✅ Milvus is running on port 19530
+
+============================================================
+                    SETUP COMPLETE!
+============================================================
+
+✅ EverMemOS is ready to use!
+
+Services running:
+  • MongoDB: localhost:27017
+  • Elasticsearch: localhost:9200
+  • Milvus: localhost:19530
+
+Configuration: .env.docker
+
+Next steps:
+  1. Start EverMemOS: /evermemos-start
+  2. Check status: docker ps
+  3. View logs: docker-compose logs -f
+
+To stop services:
+  docker-compose down
 ```
 
-#### Experienced User
-```
-User: I need EverMemOS for production with full capabilities
+## Configuration Details
 
-Claude: I'll set up the full production environment with
-MongoDB, Elasticsearch, and Milvus.
+### Docker Compose Services
 
-[Runs: /evermemos-setup full]
+The setup creates the following Docker containers:
 
-This will install and configure:
-- MongoDB for primary storage
-- Elasticsearch for full-text search
-- Milvus for vector similarity
-```
+#### MongoDB
+- **Image**: mongo:6.0
+- **Port**: 27017
+- **Username**: evermemos
+- **Password**: evermemos123
+- **Database**: evermemos
+- **Volume**: mongodb_data
 
-## Error Handling
+#### Elasticsearch
+- **Image**: elasticsearch:8.11.0
+- **Ports**: 9200 (HTTP), 9300 (Transport)
+- **Mode**: Single-node
+- **Security**: Disabled for development
+- **Volume**: es_data
 
-The skill handles common issues:
+#### Milvus
+- **Image**: milvusdb/milvus:v2.3.3
+- **Ports**: 19530 (gRPC), 9091 (Metrics)
+- **Dependencies**: etcd, MinIO
+- **Volume**: milvus_data
 
-### Python Version Too Old
-```
-❌ Python 3.8+ required, found 3.7
+#### Supporting Services
+- **etcd**: Milvus metadata storage
+- **MinIO**: Milvus object storage
 
-Solution: Please upgrade Python first:
-- Ubuntu: sudo apt install python3.11
-- macOS: brew install python@3.11
-```
+### Environment Variables
 
-### Missing Dependencies
-```
-⚠️  uv not found
+The `.env.docker` file contains:
 
-Installing uv package manager...
-✅ uv installed successfully
-```
-
-### Insufficient Permissions
-```
-❌ Cannot create directory: Permission denied
-
-Solution: Run with appropriate permissions or
-choose a different installation directory
-```
-
-## Configuration Files Created
-
-### Lite Mode: `.env.lite`
 ```bash
-STORAGE_MODE=lite
-USE_MONGODB=false
-USE_ELASTICSEARCH=false
-USE_MILVUS=false
-SQLITE_DB_PATH=data/evermemos.db
-SERVER_PORT=1995
-```
+# Storage Configuration
+USE_MONGODB=true
+USE_ELASTICSEARCH=true
+USE_MILVUS=true
 
-### Standard Mode: `.env.docker`
-```bash
-STORAGE_MODE=standard
-MONGODB_URL=mongodb://localhost:27017
-ELASTICSEARCH_URL=http://localhost:9200
+# MongoDB Configuration
+MONGODB_HOST=localhost
+MONGODB_PORT=27017
+MONGODB_DATABASE=evermemos
+MONGODB_USERNAME=evermemos
+MONGODB_PASSWORD=evermemos123
+
+# Elasticsearch Configuration
+ELASTICSEARCH_HOST=localhost
+ELASTICSEARCH_PORT=9200
+
+# Milvus Configuration
 MILVUS_HOST=localhost
 MILVUS_PORT=19530
+
+# Server Configuration
+SERVER_PORT=1995
+MEMORY_LIMIT=10000
+
+# Vector Search
+ENABLE_VECTOR_SEARCH=true
+VECTOR_DIMENSION=768
 ```
 
-### Full Mode: `.env.production`
-```bash
-STORAGE_MODE=full
-# All services with production settings
-```
+## System Requirements
 
-## Post-Installation
+### Minimum Requirements
+- **OS**: Linux (Ubuntu, Debian, RHEL, CentOS, Fedora) or macOS
+- **Python**: 3.8 or higher
+- **RAM**: 4GB minimum, 8GB recommended
+- **Disk**: 10GB free space
+- **Docker**: Installed or will be auto-installed
+- **Ports**: 27017, 9200, 19530 available
 
-After setup completes, guide user to:
-
-1. **Start the server:**
-   ```bash
-   /evermemos-start
-   ```
-   or
-   ```bash
-   cd /path/to/EverMemOS
-   uv run python src/run.py
-   ```
-
-2. **Verify it's running:**
-   ```bash
-   curl http://localhost:1995
-   ```
-
-3. **Install the memory skill:**
-   ```bash
-   /evermemos-setup-skill
-   ```
+### Supported Platforms
+- ✅ Ubuntu 18.04+
+- ✅ Debian 10+
+- ✅ RHEL 8+
+- ✅ CentOS 8+
+- ✅ Fedora 33+
+- ✅ macOS 11+ (Big Sur or later)
 
 ## Troubleshooting
 
-If setup fails, run diagnostics:
+### Docker Not Starting
 
+If Docker fails to start:
 ```bash
-/evermemos-doctor
+# Check Docker status
+sudo systemctl status docker
+
+# Start Docker manually
+sudo systemctl start docker
+
+# Check if user is in docker group
+groups | grep docker
+
+# If not in docker group, log out and back in
 ```
 
-This will identify issues and suggest fixes.
+### Port Conflicts
 
-## Advanced Options
-
-### Custom Project Directory
-
+If ports are already in use:
 ```bash
-/evermemos-setup --project-dir /custom/path
+# Check what's using the ports
+sudo netstat -tulpn | grep -E '27017|9200|19530'
+
+# Stop conflicting services or change ports in docker-compose.yml
 ```
 
-### Non-Interactive Mode
+### Services Not Healthy
+
+If services fail health checks:
+```bash
+# Check container logs
+docker-compose logs mongodb
+docker-compose logs elasticsearch
+docker-compose logs milvus-standalone
+
+# Restart services
+docker-compose restart
+
+# Or rebuild
+docker-compose down
+docker-compose up -d
+```
+
+### macOS Docker Desktop Not Running
+
+If Docker Desktop isn't running on macOS:
+1. Open Docker Desktop from Applications
+2. Wait for the Docker icon to show in menu bar
+3. Verify with: `docker ps`
+4. Re-run setup
+
+## Advanced Usage
+
+### Check Container Status
 
 ```bash
-/evermemos-setup --mode lite --non-interactive
+# List running containers
+docker ps
+
+# Check specific service logs
+docker-compose logs -f mongodb
+docker-compose logs -f elasticsearch
+docker-compose logs -f milvus-standalone
 ```
+
+### Access Services Directly
+
+```bash
+# MongoDB
+docker exec -it evermemos-mongodb mongosh -u evermemos -p evermemos123
+
+# Elasticsearch
+curl http://localhost:9200
+
+# Check Milvus
+docker exec -it evermemos-milvus-standalone /bin/bash
+```
+
+### Manage Docker Services
+
+```bash
+# Stop all services
+docker-compose down
+
+# Start all services
+docker-compose up -d
+
+# Restart a specific service
+docker-compose restart mongodb
+
+# Remove all data (careful!)
+docker-compose down -v
+```
+
+### Update Services
+
+```bash
+# Pull latest images
+docker-compose pull
+
+# Rebuild and restart
+docker-compose up -d --force-recreate
+```
+
+## Security Notes
+
+### Development Settings
+- MongoDB password is set to `evermemos123` (change in production)
+- Elasticsearch security is disabled (enable in production)
+- Services exposed on localhost only
+
+### Production Recommendations
+1. Change MongoDB password
+2. Enable Elasticsearch security
+3. Use Docker secrets for credentials
+4. Configure firewall rules
+5. Enable SSL/TLS
+6. Regular backups
 
 ## Integration with Other Skills
 
 This skill works with:
-
-- **`/evermemos-start`** - Start/stop services
-- **`/evermemos-config`** - Modify configuration
+- **`/evermemos-start`** - Start/stop/manage EverMemOS service
 - **`/evermemos-doctor`** - Health checks and diagnostics
-- **`/evermemos`** - Main memory skill (install after setup)
+- **`/evermemos`** - Use EverMemOS memory features
 
-## Requirements
+Typical workflow:
+```bash
+# 1. Install and configure
+/evermemos-setup
 
-### Minimum
-- Python 3.8+
-- 1GB RAM
-- 500MB disk space
+# 2. Start EverMemOS
+/evermemos-start
 
-### Recommended
-- Python 3.10+
-- 4GB RAM
-- 2GB disk space
+# 3. Check health
+/evermemos-doctor
 
-### For Full Mode
-- MongoDB 4.4+
-- Elasticsearch 7.10+
-- Milvus 2.0+
-
-## Success Indicators
-
-Setup is successful when:
-
-✅ All dependencies installed
-✅ Configuration file created
-✅ Data directories set up
-✅ Server can start without errors
-✅ Health check passes
-
-## Next Steps After Setup
-
-Guide user to:
-
-1. Start the server: `/evermemos-start`
-2. Test the API: `curl http://localhost:1995`
-3. Install memory skill: `cp -r claude-skills/evermemos ~/.claude/skills/`
-4. Try it out: `/evermemos store "Test message" user`
-
----
-
-## Implementation Notes
-
-The setup script (`scripts/setup.py`) provides:
-
-- **System detection** - Auto-detect OS and available resources
-- **Dependency management** - Install required packages
-- **Configuration generation** - Create appropriate config files
-- **Verification** - Ensure everything works
-- **User-friendly output** - Colored, formatted messages
-- **Error recovery** - Handle common issues automatically
-
----
-
-## Example Session
-
-```
-User: I want to use EverMemOS but have no idea how to install it
-
-Claude: I'll help you get EverMemOS up and running! Since you're
-new to this, I recommend lite mode - it's the simplest setup with
-no external dependencies.
-
-[Executes: /evermemos-setup lite]
-
-Starting EverMemOS Setup Wizard...
-
-============================================================
-                  Detecting Setup Mode
-============================================================
-
-ℹ️  OS: Linux 5.15.0
-ℹ️  Docker: ❌
-ℹ️  MongoDB: ❌
-ℹ️  Elasticsearch: ❌
-ℹ️  Recommended mode: lite (Minimal dependencies)
-
-============================================================
-                Installing Dependencies
-============================================================
-
-ℹ️  Checking Python version...
-✅ Python 3.11.5
-
-ℹ️  Checking uv package manager...
-✅ uv is installed
-
-ℹ️  Installing Python packages with uv...
-✅ Dependencies installed
-
-============================================================
-                  Setting Up Lite Mode
-============================================================
-
-ℹ️  Lite mode uses SQLite and in-memory storage
-ℹ️  Creating .env.lite configuration...
-✅ Created .env.lite
-✅ Created data directory
-
-============================================================
-                 Verifying Installation
-============================================================
-
-✅ Project directory: OK
-✅ Source code: OK
-✅ Configuration: OK
-✅ Data directory: OK
-
-============================================================
-                 Setup Complete! 🎉
-============================================================
-
-✅ EverMemOS is ready to use
-
-ℹ️  Next steps:
-  1. Start the server:
-     cd /home/op/gaoteng/git/EverMemOS
-     uv run python src/run.py
-
-  2. Or use the skill:
-     /evermemos-start
-
-That's it! EverMemOS is now installed and configured.
-Would you like me to start the server for you?
+# 4. Use memory features
+/evermemos store "Remember this important information"
 ```
 
+## Files Created
+
+After successful setup:
+
+```
+EverMemOS/
+├── docker-compose.yml          # Docker services configuration
+├── .env.docker                 # Environment variables
+├── data/                       # Application data directory
+└── [Docker volumes]
+    ├── mongodb_data/           # MongoDB data
+    ├── es_data/                # Elasticsearch data
+    └── milvus_data/            # Milvus data
+```
+
+## Support
+
+If you encounter issues:
+
+1. **Check logs**: `docker-compose logs`
+2. **Verify Docker**: `docker ps`
+3. **Run diagnostics**: `/evermemos-doctor`
+4. **Check documentation**: `README.md` in project root
+
+## Technical Details
+
+### Implementation
+- **Script**: `claude-skills/evermemos-setup/scripts/setup.py`
+- **Entry Point**: Main `SetupManager` class
+- **Docker Installation**: Auto-detects OS and installs Docker if needed
+- **Compose Installation**: Auto-installs Docker Compose plugin
+- **Service Configuration**: Generates docker-compose.yml dynamically
+
+### Auto-Installation Features
+- Interactive user prompts for permission
+- OS detection (Linux distro, macOS)
+- Progress indication during installation
+- Comprehensive error handling
+- Troubleshooting guidance
+- Manual fallback instructions
+
+### Verification
+- All functionality verified with automated tests
+- Safe to run without breaking existing installations
+- Idempotent - can be run multiple times safely
+
 ---
 
-For detailed documentation, see:
-- Setup troubleshooting guide
-- Configuration reference
-- Advanced installation options
+**Version**: 2.0 (Simplified, Docker-only)
+**Last Updated**: 2026-02-06
+**Status**: Production Ready
