@@ -166,6 +166,260 @@ class SetupManager:
             self.print_error(f"Failed to install uv: {e}")
             return False
 
+    def install_docker(self) -> bool:
+        """Install Docker based on operating system"""
+        self.print_info("Installing Docker...")
+
+        os_type = self.os_type
+
+        try:
+            if os_type == "linux":
+                return self._install_docker_linux()
+            elif os_type == "darwin":
+                return self._install_docker_macos()
+            else:
+                self.print_error(f"Automatic Docker installation not supported on {os_type}")
+                self.print_info("Please install Docker manually:")
+                self.print_info("  https://docs.docker.com/get-docker/")
+                return False
+        except Exception as e:
+            self.print_error(f"Failed to install Docker: {e}")
+            return False
+
+    def _install_docker_linux(self) -> bool:
+        """Install Docker on Linux"""
+        self.print_info("Detected Linux system, installing Docker...")
+
+        try:
+            # Detect Linux distribution
+            distro = None
+            if Path("/etc/os-release").exists():
+                with open("/etc/os-release") as f:
+                    content = f.read()
+                    if "ubuntu" in content.lower() or "debian" in content.lower():
+                        distro = "debian"
+                    elif "centos" in content.lower() or "rhel" in content.lower() or "fedora" in content.lower():
+                        distro = "rhel"
+
+            if distro == "debian":
+                self.print_info("Installing Docker on Debian/Ubuntu...")
+
+                commands = [
+                    # Update package index
+                    "sudo apt-get update",
+                    # Install prerequisites
+                    "sudo apt-get install -y ca-certificates curl gnupg",
+                    # Add Docker's official GPG key
+                    "sudo install -m 0755 -d /etc/apt/keyrings",
+                    "curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg",
+                    "sudo chmod a+r /etc/apt/keyrings/docker.gpg",
+                    # Set up repository
+                    'echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null',
+                    # Update package index again
+                    "sudo apt-get update",
+                    # Install Docker
+                    "sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin",
+                ]
+
+                for cmd in commands:
+                    self.print_info(f"Running: {cmd}")
+                    result = subprocess.run(
+                        cmd,
+                        shell=True,
+                        check=True,
+                        capture_output=True,
+                        text=True
+                    )
+
+                # Start Docker service
+                subprocess.run("sudo systemctl start docker", shell=True, check=True)
+                subprocess.run("sudo systemctl enable docker", shell=True, check=True)
+
+                # Add current user to docker group (optional, requires re-login)
+                try:
+                    username = os.environ.get("USER", os.environ.get("USERNAME"))
+                    if username:
+                        subprocess.run(f"sudo usermod -aG docker {username}", shell=True, check=True)
+                        self.print_warning(f"Added {username} to docker group")
+                        self.print_warning("You may need to log out and back in for group changes to take effect")
+                except:
+                    pass
+
+                self.print_success("Docker installed successfully")
+                return True
+
+            elif distro == "rhel":
+                self.print_info("Installing Docker on RHEL/CentOS/Fedora...")
+
+                commands = [
+                    "sudo yum install -y yum-utils",
+                    "sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo",
+                    "sudo yum install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin",
+                    "sudo systemctl start docker",
+                    "sudo systemctl enable docker",
+                ]
+
+                for cmd in commands:
+                    self.print_info(f"Running: {cmd}")
+                    subprocess.run(cmd, shell=True, check=True)
+
+                self.print_success("Docker installed successfully")
+                return True
+
+            else:
+                self.print_error("Could not detect Linux distribution")
+                self.print_info("Please install Docker manually:")
+                self.print_info("  https://docs.docker.com/engine/install/")
+                return False
+
+        except subprocess.CalledProcessError as e:
+            self.print_error(f"Installation failed: {e}")
+            self.print_info("\nTroubleshooting:")
+            self.print_info("  1. Make sure you have sudo privileges")
+            self.print_info("  2. Check your internet connection")
+            self.print_info("  3. Try manual installation: https://docs.docker.com/engine/install/")
+            return False
+
+    def _install_docker_macos(self) -> bool:
+        """Install Docker on macOS"""
+        self.print_info("Detected macOS system")
+
+        # Check if Homebrew is available
+        if self.check_command_exists("brew"):
+            self.print_info("Installing Docker Desktop via Homebrew...")
+
+            try:
+                # Install Docker Desktop
+                subprocess.run(
+                    ["brew", "install", "--cask", "docker"],
+                    check=True,
+                    capture_output=True,
+                    text=True
+                )
+
+                self.print_success("Docker Desktop installed")
+                self.print_warning("Please start Docker Desktop from Applications")
+                self.print_info("After Docker Desktop starts, re-run this setup")
+                return True
+
+            except subprocess.CalledProcessError:
+                self.print_error("Homebrew installation failed")
+
+        # Fallback to manual instructions
+        self.print_info("\nTo install Docker on macOS:")
+        self.print_info("  1. Download Docker Desktop:")
+        self.print_info("     https://docs.docker.com/desktop/install/mac-install/")
+        self.print_info("  2. Open the downloaded .dmg file")
+        self.print_info("  3. Drag Docker to Applications")
+        self.print_info("  4. Launch Docker from Applications")
+        self.print_info("  5. Wait for Docker to start")
+        self.print_info("  6. Re-run this setup")
+        return False
+
+    def install_docker_compose(self) -> bool:
+        """Install Docker Compose based on operating system"""
+        self.print_info("Installing Docker Compose...")
+
+        os_type = self.os_type
+
+        try:
+            if os_type == "linux":
+                return self._install_docker_compose_linux()
+            elif os_type == "darwin":
+                return self._install_docker_compose_macos()
+            else:
+                self.print_error(f"Automatic Docker Compose installation not supported on {os_type}")
+                self.print_info("Please install Docker Compose manually:")
+                self.print_info("  https://docs.docker.com/compose/install/")
+                return False
+        except Exception as e:
+            self.print_error(f"Failed to install Docker Compose: {e}")
+            return False
+
+    def _install_docker_compose_linux(self) -> bool:
+        """Install Docker Compose on Linux"""
+        self.print_info("Detected Linux system, installing Docker Compose...")
+
+        try:
+            # Detect Linux distribution
+            distro = None
+            if Path("/etc/os-release").exists():
+                with open("/etc/os-release") as f:
+                    content = f.read()
+                    if "ubuntu" in content.lower() or "debian" in content.lower():
+                        distro = "debian"
+                    elif "centos" in content.lower() or "rhel" in content.lower() or "fedora" in content.lower():
+                        distro = "rhel"
+
+            if distro == "debian":
+                self.print_info("Installing Docker Compose plugin on Debian/Ubuntu...")
+
+                commands = [
+                    "sudo apt-get update",
+                    "sudo apt-get install -y docker-compose-plugin",
+                ]
+
+                for cmd in commands:
+                    self.print_info(f"Running: {cmd}")
+                    result = subprocess.run(
+                        cmd,
+                        shell=True,
+                        check=True,
+                        capture_output=True,
+                        text=True
+                    )
+
+                self.print_success("Docker Compose plugin installed successfully")
+                return True
+
+            elif distro == "rhel":
+                self.print_info("Installing Docker Compose plugin on RHEL/CentOS/Fedora...")
+
+                commands = [
+                    "sudo yum install -y docker-compose-plugin",
+                ]
+
+                for cmd in commands:
+                    self.print_info(f"Running: {cmd}")
+                    subprocess.run(cmd, shell=True, check=True)
+
+                self.print_success("Docker Compose plugin installed successfully")
+                return True
+
+            else:
+                self.print_error("Could not detect Linux distribution")
+                self.print_info("Please install Docker Compose manually:")
+                self.print_info("  https://docs.docker.com/compose/install/")
+                return False
+
+        except subprocess.CalledProcessError as e:
+            self.print_error(f"Installation failed: {e}")
+            self.print_info("\nTroubleshooting:")
+            self.print_info("  1. Make sure you have sudo privileges")
+            self.print_info("  2. Check your internet connection")
+            self.print_info("  3. Verify Docker is installed first")
+            self.print_info("  4. Try manual installation: https://docs.docker.com/compose/install/")
+            return False
+
+    def _install_docker_compose_macos(self) -> bool:
+        """Install Docker Compose on macOS"""
+        self.print_info("Detected macOS system")
+
+        # Docker Desktop for macOS includes Docker Compose v2
+        self.print_info("Docker Desktop for macOS includes Docker Compose v2")
+        self.print_info("If Docker is installed but Compose isn't working:")
+        self.print_info("  1. Make sure Docker Desktop is running")
+        self.print_info("  2. Check Docker Desktop version is up to date")
+        self.print_info("  3. Try restarting Docker Desktop")
+        self.print_info("\nIf Docker Desktop is old, update it:")
+
+        if self.check_command_exists("brew"):
+            self.print_info("  brew upgrade --cask docker")
+        else:
+            self.print_info("  Download latest from: https://docs.docker.com/desktop/install/mac-install/")
+
+        return False
+
     def setup_lite_mode(self) -> bool:
         """Setup lite mode (SQLite + DuckDB)"""
         self.print_header("Setting Up Lite Mode")
@@ -215,24 +469,118 @@ LOG_FILE=data/evermemos.log
 
         return True
 
-    def setup_standard_mode(self) -> bool:
+    def setup_standard_mode(self, non_interactive: bool = False) -> bool:
         """Setup standard mode (Docker-based)"""
         self.print_header("Setting Up Standard Mode (Docker)")
         self.print_info("Standard mode uses Docker containers for all services")
 
         # Check Docker
         if not self.check_command_exists("docker"):
-            self.print_error("Docker is required for standard mode")
-            self.print_info("Install Docker: https://docs.docker.com/get-docker/")
-            return False
+            self.print_warning("Docker is not installed")
+
+            if non_interactive:
+                self.print_error("Docker is required for standard mode")
+                self.print_info("Install Docker: https://docs.docker.com/get-docker/")
+                return False
+
+            # Ask user if they want to auto-install
+            self.print_info("\nDocker is required for standard mode.")
+            response = input("Would you like to install Docker automatically? (y/n): ").lower()
+
+            if response == 'y':
+                if self.install_docker():
+                    self.print_success("Docker installed! Verifying...")
+
+                    # Reload PATH and check again
+                    import time
+                    time.sleep(2)
+
+                    if not self.check_command_exists("docker"):
+                        self.print_warning("Docker installed but not yet available")
+                        self.print_info("Please:")
+                        if self.os_type == "darwin":
+                            self.print_info("  1. Start Docker Desktop from Applications")
+                            self.print_info("  2. Wait for Docker to fully start")
+                        else:
+                            self.print_info("  1. Log out and back in (for group permissions)")
+                            self.print_info("  2. Or run: newgrp docker")
+                        self.print_info("  3. Re-run this setup")
+                        return False
+                else:
+                    self.print_error("Automatic installation failed")
+                    self.print_info("Please install Docker manually:")
+                    self.print_info("  https://docs.docker.com/get-docker/")
+                    return False
+            else:
+                self.print_info("Please install Docker manually:")
+                self.print_info("  https://docs.docker.com/get-docker/")
+                return False
 
         # Check Docker Compose
         has_compose_v1 = self.check_command_exists("docker-compose")
         has_compose_v2, _ = self.run_command(["docker", "compose", "version"], check=False)
 
         if not (has_compose_v1 or has_compose_v2):
-            self.print_error("Docker Compose is required for standard mode")
-            return False
+            self.print_warning("Docker Compose is not available")
+
+            if non_interactive:
+                self.print_error("Docker Compose is required for standard mode")
+                self.print_info("Install Docker Compose: https://docs.docker.com/compose/install/")
+                return False
+
+            # Ask user if they want to auto-install
+            self.print_info("\nDocker Compose is required for standard mode.")
+
+            # On macOS, Docker Desktop should include Compose
+            if self.os_type == "darwin":
+                self.print_warning("Docker Compose should be included with Docker Desktop")
+                self.print_info("Make sure Docker Desktop is running and up to date")
+                response = input("Try to verify again? (y/n): ").lower()
+                if response == 'y':
+                    import time
+                    time.sleep(2)
+                    has_compose_v2, _ = self.run_command(["docker", "compose", "version"], check=False)
+                    if has_compose_v2:
+                        self.print_success("Docker Compose is now available!")
+                    else:
+                        self.print_error("Docker Compose still not available")
+                        self.print_info("Please:")
+                        self.print_info("  1. Update Docker Desktop to latest version")
+                        if self.check_command_exists("brew"):
+                            self.print_info("     brew upgrade --cask docker")
+                        self.print_info("  2. Or download from: https://docs.docker.com/desktop/install/mac-install/")
+                        return False
+                else:
+                    return False
+            else:
+                # Linux - offer to install
+                response = input("Would you like to install Docker Compose automatically? (y/n): ").lower()
+
+                if response == 'y':
+                    if self.install_docker_compose():
+                        self.print_success("Docker Compose installed! Verifying...")
+
+                        # Reload PATH and check again
+                        import time
+                        time.sleep(2)
+
+                        has_compose_v2, _ = self.run_command(["docker", "compose", "version"], check=False)
+                        if not has_compose_v2:
+                            self.print_warning("Docker Compose installed but not yet available")
+                            self.print_info("Please try:")
+                            self.print_info("  1. Restart your terminal")
+                            self.print_info("  2. Or run: hash -r")
+                            self.print_info("  3. Re-run this setup")
+                            return False
+                    else:
+                        self.print_error("Automatic installation failed")
+                        self.print_info("Please install Docker Compose manually:")
+                        self.print_info("  https://docs.docker.com/compose/install/")
+                        return False
+                else:
+                    self.print_info("Please install Docker Compose manually:")
+                    self.print_info("  https://docs.docker.com/compose/install/")
+                    return False
 
         # Create docker-compose.yml
         compose_file = self.project_dir / "docker-compose.yml"
@@ -604,7 +952,7 @@ METRICS_PORT=9090
 
         return all_good
 
-    def run_setup(self, mode: str = "auto") -> bool:
+    def run_setup(self, mode: str = "auto", non_interactive: bool = False) -> bool:
         """Run complete setup process"""
         self.print_header("EverMemOS Setup Wizard")
 
@@ -621,6 +969,10 @@ METRICS_PORT=9090
 
         # Step 2: Check/Install uv
         if not self.check_uv():
+            if non_interactive:
+                self.print_error("uv is required for dependency management")
+                return False
+
             self.print_info("uv is required for dependency management")
             response = input("Install uv now? (y/n): ").lower()
             if response == 'y':
@@ -639,7 +991,7 @@ METRICS_PORT=9090
             if not self.setup_lite_mode():
                 return False
         elif mode == "standard":
-            if not self.setup_standard_mode():
+            if not self.setup_standard_mode(non_interactive=non_interactive):
                 return False
         elif mode == "full":
             if not self.setup_full_mode():
