@@ -162,22 +162,23 @@ def format_search_results(response: Dict[str, Any]) -> str:
 
     output = ["✅ Found relevant memories:\n"]
 
-    for group in memories:
-        group_name = group.get("group_name", "Memory Group")
-        output.append(f"📁 {group_name}")
+    for group_dict in memories:
+        # Each group is a dict with group_id as key
+        for group_name, group_memories in group_dict.items():
+            output.append(f"📁 {group_name}")
 
-        for mem in group.get("memories", []):
-            created_at = mem.get("created_at", "Unknown time")
-            content = mem.get("content", "No content")
-            summary = mem.get("summary")
+            for mem in group_memories:
+                timestamp = mem.get("timestamp", mem.get("created_at", "Unknown time"))
+                subject = mem.get("subject", "")
+                summary = mem.get("summary", "")
+                episode = mem.get("episode", "")
 
-            output.append(f"  ⏰ [{created_at}]")
-            output.append(f"  💬 {content}")
+                # Use subject as title, show summary or episode
+                content = f"{subject}\n{summary or episode}" if subject or summary or episode else "No content"
 
-            if summary:
-                output.append(f"  📝 Summary: {summary}")
-
-            output.append("")  # Empty line
+                output.append(f"  ⏰ [{timestamp}]")
+                output.append(f"  💬 {content}")
+                output.append("")  # Empty line
 
     return "\n".join(output)
 
@@ -194,7 +195,11 @@ def format_recent_memories(response: Dict[str, Any]) -> str:
 
     for mem in memories:
         created_at = mem.get("created_at", "Unknown time")
-        content = mem.get("content", "No content")
+        title = mem.get("title", "")
+        summary = mem.get("summary", "")
+
+        # Display title and summary (episodic_memory format)
+        content = f"{title}\n{summary}" if title or summary else "No content"
 
         output.append(f"⏰ [{created_at}]")
         output.append(f"💬 {content}\n")
