@@ -11,7 +11,8 @@ import subprocess
 import signal
 import time
 import json
-import requests
+import urllib.request
+import urllib.error
 from pathlib import Path
 from typing import Optional, Dict
 
@@ -51,32 +52,27 @@ class ServiceManager:
         if status["running"]:
             status["pid"] = int(self.pid_file.read_text().strip())
 
-            # Check API
+            # Check API health endpoint
             try:
-                response = requests.get("http://localhost:1995", timeout=2)
-                status["api_accessible"] = response.status_code in [200, 404]
-            except:
+                req = urllib.request.Request("http://localhost:1995/health")
+                with urllib.request.urlopen(req, timeout=2) as response:
+                    status["api_accessible"] = response.status == 200
+            except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError):
                 pass
 
-        # Detect mode from env file
-        for env_file in [".env.lite", ".env.docker", ".env.production", ".env"]:
+        # Detect configuration file being used
+        for env_file in [".env.docker", ".env"]:
             env_path = self.project_dir / env_file
             if env_path.exists():
-                content = env_path.read_text()
-                if "STORAGE_MODE=lite" in content or "USE_MONGODB=false" in content:
-                    status["mode"] = "lite"
-                elif "STORAGE_MODE=standard" in content:
-                    status["mode"] = "standard"
-                elif "STORAGE_MODE=full" in content:
-                    status["mode"] = "full"
+                status["mode"] = "docker" if env_file == ".env.docker" else "default"
                 break
 
         return status
 
     def detect_env_file(self) -> Optional[str]:
         """Detect which environment file to use"""
-        # Priority order: .env.docker, .env.production, .env.lite, .env
-        for env_file in [".env.docker", ".env.production", ".env.lite", ".env"]:
+        # Priority order: .env.docker (created by setup), .env (default)
+        for env_file in [".env.docker", ".env"]:
             env_path = self.project_dir / env_file
             if env_path.exists():
                 return env_file

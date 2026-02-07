@@ -141,7 +141,7 @@ or
 🟢 Status: Running
 🆔 PID: 12345
 🌐 API: http://localhost:1995 ✅
-⚙️  Mode: lite
+⚙️  Config: docker
 
 📝 Logs: tail -f /path/to/data/evermemos.log
 ⏹️  Stop: /evermemos-start stop
@@ -209,7 +209,7 @@ Claude: Let me check the service status.
 🟢 Status: Running
 🆔 PID: 12345
 🌐 API: http://localhost:1995 ✅
-⚙️  Mode: lite
+⚙️  Config: docker
 
 Yes, EverMemOS is running and accessible!
 ```
@@ -288,7 +288,7 @@ python3 scripts/service_manager.py start --foreground
 `data/evermemos.log` - Service logs
 
 ### Configuration
-`.env.lite` or `.env` - Environment configuration
+`.env.docker` or `.env` - Environment configuration
 
 ## Integration with Other Skills
 
@@ -427,9 +427,10 @@ Solution:
 ### "Configuration error"
 ```
 Solution:
-1. Check .env file exists
+1. Check .env file exists (cp env.template .env)
 2. Verify configuration syntax
-3. Run: /evermemos-config to reconfigure
+3. Set required API keys (LLM_API_KEY, VECTORIZE_API_KEY)
+4. Restart service: /evermemos-start restart
 ```
 
 ## Best Practices
@@ -468,5 +469,5 @@ Solution:
 
 For more help:
 - Setup: `/evermemos-setup`
-- Configuration: `/evermemos-config`
 - Health check: `/evermemos-doctor`
+- Memory operations: `/evermemos`
