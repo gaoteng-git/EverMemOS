@@ -168,7 +168,8 @@ def format_search_results(response: Dict[str, Any]) -> str:
             output.append(f"📁 {group_name}")
 
             for mem in group_memories:
-                timestamp = mem.get("timestamp", mem.get("created_at", "Unknown time"))
+                # Use original message time: timestamp > start_time > created_at (all UTC)
+                timestamp = mem.get("timestamp") or mem.get("start_time") or mem.get("created_at", "Unknown time")
                 subject = mem.get("subject", "")
                 summary = mem.get("summary", "")
                 episode = mem.get("episode", "")
@@ -194,14 +195,15 @@ def format_recent_memories(response: Dict[str, Any]) -> str:
     output = ["✅ Recent conversation history:\n"]
 
     for mem in memories:
-        created_at = mem.get("created_at", "Unknown time")
+        # Use original message time: timestamp > start_time > created_at (all UTC)
+        timestamp = mem.get("timestamp") or mem.get("start_time") or mem.get("created_at", "Unknown time")
         title = mem.get("title", "")
         summary = mem.get("summary", "")
 
         # Display title and summary (episodic_memory format)
         content = f"{title}\n{summary}" if title or summary else "No content"
 
-        output.append(f"⏰ [{created_at}]")
+        output.append(f"⏰ [{timestamp}]")
         output.append(f"💬 {content}\n")
 
     return "\n".join(output)
