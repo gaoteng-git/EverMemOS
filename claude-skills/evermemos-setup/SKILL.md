@@ -20,9 +20,10 @@ No parameters needed - the setup wizard handles everything automatically.
 ## What Gets Installed
 
 ### Docker Services
-- **MongoDB 6.0** - Primary database
+- **MongoDB 7.0** - Primary database
 - **Elasticsearch 8.11.0** - Full-text search
-- **Milvus 2.3.3** - Vector database for semantic search
+- **Milvus 2.5.2** - Vector database for semantic search
+- **Redis 7.2** - Cache and KV storage
 - **Supporting services** - etcd, MinIO (for Milvus)
 
 ### Auto-Installation
@@ -177,15 +178,17 @@ Verifying services...
 
 Services running:
   • MongoDB: localhost:27017
-  • Elasticsearch: localhost:9200
+  • Elasticsearch: localhost:19200
   • Milvus: localhost:19530
+  • Redis: localhost:6379
 
 Configuration: .env.docker
 
 Next steps:
-  1. Start EverMemOS: /evermemos-start
-  2. Check status: docker ps
-  3. View logs: docker-compose logs -f
+  1. Configure API keys in .env file
+  2. Start EverMemOS: uv run python src/run.py --port 1995
+  3. Check status: docker ps
+  4. View logs: docker-compose logs -f
 
 To stop services:
   docker-compose down
@@ -198,62 +201,80 @@ To stop services:
 The setup creates the following Docker containers:
 
 #### MongoDB
-- **Image**: mongo:6.0
+- **Image**: mongo:7.0
+- **Container**: memsys-mongodb
 - **Port**: 27017
-- **Username**: evermemos
-- **Password**: evermemos123
-- **Database**: evermemos
+- **Username**: admin
+- **Password**: memsys123
+- **Database**: memsys
 - **Volume**: mongodb_data
 
 #### Elasticsearch
 - **Image**: elasticsearch:8.11.0
-- **Ports**: 9200 (HTTP), 9300 (Transport)
+- **Container**: memsys-elasticsearch
+- **Ports**: 19200 (HTTP), 19300 (Transport)
 - **Mode**: Single-node
 - **Security**: Disabled for development
-- **Volume**: es_data
+- **Volume**: elasticsearch_data
 
 #### Milvus
-- **Image**: milvusdb/milvus:v2.3.3
+- **Image**: milvusdb/milvus:v2.5.2
+- **Container**: memsys-milvus-standalone
 - **Ports**: 19530 (gRPC), 9091 (Metrics)
 - **Dependencies**: etcd, MinIO
 - **Volume**: milvus_data
 
+#### Redis
+- **Image**: redis:7.2-alpine
+- **Container**: memsys-redis
+- **Port**: 6379
+- **Volume**: redis_data
+
 #### Supporting Services
-- **etcd**: Milvus metadata storage
-- **MinIO**: Milvus object storage
+- **etcd** (memsys-milvus-etcd): Milvus metadata storage
+- **MinIO** (memsys-milvus-minio): Milvus object storage
 
 ### Environment Variables
 
 The `.env.docker` file contains:
 
 ```bash
-# Storage Configuration
-USE_MONGODB=true
-USE_ELASTICSEARCH=true
-USE_MILVUS=true
-
 # MongoDB Configuration
 MONGODB_HOST=localhost
 MONGODB_PORT=27017
-MONGODB_DATABASE=evermemos
-MONGODB_USERNAME=evermemos
-MONGODB_PASSWORD=evermemos123
+MONGODB_USERNAME=admin
+MONGODB_PASSWORD=memsys123
+MONGODB_DATABASE=memsys
+MONGODB_URI_PARAMS=socketTimeoutMS=15000&authSource=admin
 
 # Elasticsearch Configuration
-ELASTICSEARCH_HOST=localhost
-ELASTICSEARCH_PORT=9200
+ES_HOSTS=http://localhost:19200
+ES_USERNAME=
+ES_PASSWORD=
+ES_VERIFY_CERTS=false
+SELF_ES_INDEX_NS=memsys
 
 # Milvus Configuration
 MILVUS_HOST=localhost
 MILVUS_PORT=19530
+SELF_MILVUS_COLLECTION_NS=memsys
+
+# Redis Configuration
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_DB=8
+REDIS_SSL=false
+
+# KV Storage Configuration
+KV_STORAGE_TYPE=inmemory
 
 # Server Configuration
-SERVER_PORT=1995
-MEMORY_LIMIT=10000
+API_BASE_URL=http://localhost:1995
 
-# Vector Search
-ENABLE_VECTOR_SEARCH=true
-VECTOR_DIMENSION=768
+# Logging
+LOG_LEVEL=INFO
+ENV=dev
+MEMORY_LANGUAGE=en
 ```
 
 ## System Requirements
@@ -345,13 +366,16 @@ docker-compose logs -f milvus-standalone
 
 ```bash
 # MongoDB
-docker exec -it evermemos-mongodb mongosh -u evermemos -p evermemos123
+docker exec -it memsys-mongodb mongosh -u admin -p memsys123 --authenticationDatabase admin
 
 # Elasticsearch
-curl http://localhost:9200
+curl http://localhost:19200
+
+# Redis
+docker exec -it memsys-redis redis-cli
 
 # Check Milvus
-docker exec -it evermemos-milvus-standalone /bin/bash
+docker exec -it memsys-milvus-standalone /bin/bash
 ```
 
 ### Manage Docker Services
@@ -383,8 +407,9 @@ docker-compose up -d --force-recreate
 ## Security Notes
 
 ### Development Settings
-- MongoDB password is set to `evermemos123` (change in production)
+- MongoDB credentials: `admin/memsys123` (change in production)
 - Elasticsearch security is disabled (enable in production)
+- Redis has no password (add password in production)
 - Services exposed on localhost only
 
 ### Production Recommendations
@@ -428,8 +453,11 @@ EverMemOS/
 ├── data/                       # Application data directory
 └── [Docker volumes]
     ├── mongodb_data/           # MongoDB data
-    ├── es_data/                # Elasticsearch data
-    └── milvus_data/            # Milvus data
+    ├── elasticsearch_data/     # Elasticsearch data
+    ├── milvus_data/            # Milvus vector data
+    ├── milvus_etcd_data/       # Milvus metadata
+    ├── milvus_minio_data/      # Milvus object storage
+    └── redis_data/             # Redis cache data
 ```
 
 ## Support

@@ -509,100 +509,159 @@ class SetupManager:
         if not compose_file.exists():
             self.print_info("Creating docker-compose.yml...")
 
-            compose_content = """version: '3.8'
-
-services:
+            compose_content = """services:
+  # MongoDB database
   mongodb:
-    image: mongo:6.0
-    container_name: evermemos-mongodb
+    image: mongo:7.0
+    container_name: memsys-mongodb
     restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: memsys123
+      MONGO_INITDB_DATABASE: memsys
     ports:
       - "27017:27017"
     volumes:
       - mongodb_data:/data/db
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: evermemos
-      MONGO_INITDB_ROOT_PASSWORD: evermemos123
+      - ./docker/mongodb/init:/docker-entrypoint-initdb.d
     networks:
-      - evermemos-network
+      - memsys-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
+  # Elasticsearch search engine
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
-    container_name: evermemos-elasticsearch
+    container_name: memsys-elasticsearch
     restart: unless-stopped
-    ports:
-      - "9200:9200"
-      - "9300:9300"
-    volumes:
-      - es_data:/usr/share/elasticsearch/data
     environment:
       - discovery.type=single-node
       - xpack.security.enabled=false
-      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - "ES_JAVA_OPTS=-Xms1g -Xmx1g"
+      - bootstrap.memory_lock=true
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    ports:
+      - "19200:9200"
+      - "19300:9300"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
     networks:
-      - evermemos-network
+      - memsys-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
+  # Milvus vector database
   milvus-etcd:
     image: quay.io/coreos/etcd:v3.5.5
-    container_name: evermemos-milvus-etcd
+    container_name: memsys-milvus-etcd
     restart: unless-stopped
     environment:
       - ETCD_AUTO_COMPACTION_MODE=revision
       - ETCD_AUTO_COMPACTION_RETENTION=1000
       - ETCD_QUOTA_BACKEND_BYTES=4294967296
       - ETCD_SNAPSHOT_COUNT=50000
+    command: etcd -advertise-client-urls=http://127.0.0.1:2479 -listen-client-urls http://0.0.0.0:2479 --data-dir /etcd
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health", "--endpoints=http://localhost:2479"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
     volumes:
-      - etcd_data:/etcd
-    command: etcd -advertise-client-urls=http://127.0.0.1:2379 -listen-client-urls=http://0.0.0.0:2379 --data-dir=/etcd
+      - milvus_etcd_data:/etcd
     networks:
-      - evermemos-network
+      - memsys-network
 
   milvus-minio:
     image: minio/minio:RELEASE.2023-03-20T20-16-18Z
-    container_name: evermemos-milvus-minio
+    container_name: memsys-milvus-minio
     restart: unless-stopped
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
-    volumes:
-      - minio_data:/minio_data
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+    ports:
+      - "9001:9001"
+      - "9000:9000"
     command: minio server /minio_data --console-address ":9001"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 30s
       timeout: 20s
       retries: 3
+    volumes:
+      - milvus_minio_data:/minio_data
     networks:
-      - evermemos-network
+      - memsys-network
 
   milvus-standalone:
-    image: milvusdb/milvus:v2.3.3
-    container_name: evermemos-milvus
+    image: milvusdb/milvus:v2.5.2
+    container_name: memsys-milvus-standalone
     restart: unless-stopped
-    depends_on:
-      - milvus-etcd
-      - milvus-minio
+    command: ["milvus", "run", "standalone"]
+    environment:
+      ETCD_ENDPOINTS: milvus-etcd:2479
+      MINIO_ADDRESS: milvus-minio:9000
     ports:
       - "19530:19530"
       - "9091:9091"
     volumes:
       - milvus_data:/var/lib/milvus
-    environment:
-      ETCD_ENDPOINTS: milvus-etcd:2379
-      MINIO_ADDRESS: milvus-minio:9000
-    command: ["milvus", "run", "standalone"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+      start_period: 90s
+    depends_on:
+      - milvus-etcd
+      - milvus-minio
     networks:
-      - evermemos-network
+      - memsys-network
+
+  # Redis cache
+  redis:
+    image: redis:7.2-alpine
+    container_name: memsys-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - memsys-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
 volumes:
   mongodb_data:
-  es_data:
-  etcd_data:
-  minio_data:
+    driver: local
+  elasticsearch_data:
+    driver: local
+  milvus_etcd_data:
+    driver: local
+  milvus_minio_data:
+    driver: local
   milvus_data:
+    driver: local
+  redis_data:
+    driver: local
 
 networks:
-  evermemos-network:
+  memsys-network:
     driver: bridge
 """
             compose_file.write_text(compose_content)
@@ -615,43 +674,45 @@ networks:
         if not env_file.exists():
             self.print_info("Creating .env.docker configuration...")
 
-            env_content = """# EverMemOS Standard (Docker) Configuration
-
-# Storage Mode
-STORAGE_MODE=standard
-USE_MONGODB=true
-USE_ELASTICSEARCH=true
-USE_MILVUS=true
+            env_content = """# EverMemOS Docker Configuration
+# Generated by evermemos-setup
 
 # MongoDB Configuration
 MONGODB_HOST=localhost
 MONGODB_PORT=27017
-MONGODB_DATABASE=evermemos
-MONGODB_USERNAME=evermemos
-MONGODB_PASSWORD=evermemos123
+MONGODB_USERNAME=admin
+MONGODB_PASSWORD=memsys123
+MONGODB_DATABASE=memsys
+MONGODB_URI_PARAMS=socketTimeoutMS=15000&authSource=admin
 
 # Elasticsearch Configuration
-ELASTICSEARCH_HOST=localhost
-ELASTICSEARCH_PORT=9200
-ELASTICSEARCH_INDEX_PREFIX=evermemos
+ES_HOSTS=http://localhost:19200
+ES_USERNAME=
+ES_PASSWORD=
+ES_VERIFY_CERTS=false
+SELF_ES_INDEX_NS=memsys
 
 # Milvus Configuration
 MILVUS_HOST=localhost
 MILVUS_PORT=19530
-MILVUS_COLLECTION_PREFIX=evermemos
+SELF_MILVUS_COLLECTION_NS=memsys
+
+# Redis Configuration
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_DB=8
+REDIS_SSL=false
+
+# KV Storage Configuration
+KV_STORAGE_TYPE=inmemory
 
 # Server Configuration
-SERVER_HOST=0.0.0.0
-SERVER_PORT=1995
-
-# Memory Configuration
-MEMORY_LIMIT=10000
-ENABLE_VECTOR_SEARCH=true
-VECTOR_DIMENSION=768
+API_BASE_URL=http://localhost:1995
 
 # Logging
 LOG_LEVEL=INFO
-LOG_FILE=data/evermemos.log
+ENV=dev
+MEMORY_LANGUAGE=en
 """
             env_file.write_text(env_content)
             self.print_success("Created .env.docker")
@@ -674,8 +735,9 @@ LOG_FILE=data/evermemos.log
             self.print_success("Docker services started")
             self.print_info("Services running:")
             self.print_info("  - MongoDB: localhost:27017")
-            self.print_info("  - Elasticsearch: localhost:9200")
+            self.print_info("  - Elasticsearch: localhost:19200")
             self.print_info("  - Milvus: localhost:19530")
+            self.print_info("  - Redis: localhost:6379")
         else:
             self.print_warning("Failed to start Docker services")
             self.print_info("You can start them manually later with:")
@@ -744,21 +806,25 @@ LOG_FILE=data/evermemos.log
         print()
         self.print_info("Docker services started:")
         print("  • MongoDB: localhost:27017")
-        print("  • Elasticsearch: localhost:9200")
+        print("  • Elasticsearch: localhost:19200")
         print("  • Milvus: localhost:19530")
+        print("  • Redis: localhost:6379")
         print()
         self.print_info("Configuration: .env.docker")
         print()
         self.print_info("Next steps:")
-        print("  1. Start EverMemOS:")
-        print("     /evermemos-start")
+        print("  1. Configure API keys in .env file:")
+        print("     cp env.template .env")
+        print("     # Edit .env and set LLM_API_KEY and VECTORIZE_API_KEY")
         print()
-        print("  2. Or start manually:")
-        print(f"     cd {self.project_dir}")
-        print("     ENV_FILE=.env.docker uv run python src/run.py")
+        print("  2. Start EverMemOS:")
+        print("     uv run python src/run.py --port 1995")
         print()
-        print("  3. Check status:")
+        print("  3. Check Docker status:")
         print("     docker ps")
+        print()
+        print("  4. View logs:")
+        print("     docker-compose logs -f")
         print()
 
         return True
