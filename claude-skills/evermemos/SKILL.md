@@ -3,6 +3,34 @@ name: evermemos
 description: Search and store memories using EverMemOS. Use when user asks about past conversations, previous decisions, or when important information should be remembered. Also use to recall project context and historical knowledge.
 argument-hint: "[search|store|recent] [query/content]"
 allowed-tools: Bash(python3 *)
+hooks:
+  SessionStart:
+    - matcher: "startup|clear|compact"
+      hooks:
+        - type: command
+          command: "python3 /home/op/.claude/skills/evermemos/scripts/hook_session_start.py"
+          timeout: 30
+  UserPromptSubmit:
+    - hooks:
+        - type: command
+          command: "python3 /home/op/.claude/skills/evermemos/scripts/hook_user_prompt.py"
+          timeout: 15
+  PostToolUse:
+    - matcher: "*"
+      hooks:
+        - type: command
+          command: "python3 /home/op/.claude/skills/evermemos/scripts/hook_tool_use.py"
+          timeout: 20
+  Stop:
+    - hooks:
+        - type: command
+          command: "python3 /home/op/.claude/skills/evermemos/scripts/hook_stop.py"
+          timeout: 30
+  SessionEnd:
+    - hooks:
+        - type: command
+          command: "python3 /home/op/.claude/skills/evermemos/scripts/hook_session_end.py"
+          timeout: 30
 ---
 
 # EverMemOS Memory Integration
