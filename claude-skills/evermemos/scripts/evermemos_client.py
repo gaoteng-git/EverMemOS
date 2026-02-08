@@ -184,26 +184,63 @@ def format_search_results(response: Dict[str, Any]) -> str:
     return "\n".join(output)
 
 
-def format_recent_memories(response: Dict[str, Any]) -> str:
-    """Format recent memories for display"""
+def format_recent_memories(response: Dict[str, Any], pending_response: Dict[str, Any] = None) -> str:
+    """Format recent memories for display, including pending messages"""
     result = response.get("result", {})
     memories = result.get("memories", [])
 
-    if not memories:
-        return "❌ No recent memories found."
+    # Collect all items (memories + pending messages)
+    all_items = []
 
-    output = ["✅ Recent conversation history:\n"]
-
+    # Add episodic memories
     for mem in memories:
-        # Use original message time: timestamp > start_time > created_at (all UTC)
         timestamp = mem.get("timestamp") or mem.get("start_time") or mem.get("created_at", "Unknown time")
         title = mem.get("title", "")
         summary = mem.get("summary", "")
-
-        # Display title and summary (episodic_memory format)
         content = f"{title}\n{summary}" if title or summary else "No content"
 
-        output.append(f"⏰ [{timestamp}]")
+        all_items.append({
+            "timestamp": timestamp,
+            "content": content,
+            "type": "memory"
+        })
+
+    # Add pending messages from search response (if provided)
+    if pending_response:
+        pending_result = pending_response.get("result", {})
+        pending_messages = pending_result.get("pending_messages", [])
+
+        for msg in pending_messages:
+            # Use message_create_time as the primary timestamp for pending messages
+            timestamp = msg.get("message_create_time") or msg.get("created_at", "Unknown time")
+            content = msg.get("content", "No content")
+
+            all_items.append({
+                "timestamp": timestamp,
+                "content": content,
+                "type": "pending"
+            })
+
+    if not all_items:
+        return "❌ No recent memories or messages found."
+
+    # Sort by timestamp (most recent first)
+    try:
+        all_items.sort(key=lambda x: x["timestamp"], reverse=True)
+    except:
+        pass  # If sorting fails, keep original order
+
+    output = ["✅ Recent conversation history:\n"]
+
+    for item in all_items:
+        timestamp = item["timestamp"]
+        content = item["content"]
+        item_type = item["type"]
+
+        # Add type indicator for pending messages
+        type_indicator = " 🔄 [Pending]" if item_type == "pending" else ""
+
+        output.append(f"⏰ [{timestamp}]{type_indicator}")
         output.append(f"💬 {content}\n")
 
     return "\n".join(output)
@@ -284,8 +321,17 @@ Examples:
 
             print(f"📜 Fetching {limit} recent memories...\n")
 
+            # Fetch recent episodic memories
             response = client.fetch_recent_memories(limit)
-            print(format_recent_memories(response))
+
+            # Also fetch pending messages via search API
+            # Use a broad search to capture pending messages
+            try:
+                pending_response = client.search_memories("", "hybrid", limit)
+            except:
+                pending_response = None  # If search fails, continue without pending
+
+            print(format_recent_memories(response, pending_response))
 
         else:
             print(f"❌ Unknown command: {command}")
