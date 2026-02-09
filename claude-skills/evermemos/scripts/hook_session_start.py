@@ -42,10 +42,10 @@ def format_context_for_claude(memories, pending_messages):
 
     lines = ["# 📚 Recent Memory Context\n"]
 
-    # Add recent episodic memories
+    # Add recent episodic memories (increased display from 5 to 15)
     if memories:
         lines.append("## Recent Conversations:\n")
-        for mem in memories[:5]:  # Last 5 memories
+        for mem in memories[:15]:  # Last 15 memories for richer context
             # Use priority: timestamp > start_time > created_at (all UTC)
             timestamp = mem.get('timestamp') or mem.get('start_time') or mem.get('created_at', 'Unknown time')
             title = mem.get('title', mem.get('subject', 'Untitled'))
@@ -56,9 +56,10 @@ def format_context_for_claude(memories, pending_messages):
                 lines.append(f"  {summary}\n")
 
     # Add pending messages (not yet extracted into episodic memories)
+    # Increased display from 3 to 10 for better context
     if pending_messages:
         lines.append("## Recent Messages (Pending):\n")
-        for msg in pending_messages[:3]:  # Last 3 pending
+        for msg in pending_messages[:10]:  # Last 10 pending
             timestamp = msg.get('message_create_time', msg.get('created_at', 'Unknown time'))
             content = msg.get('content', '')
             # Truncate long content
@@ -78,18 +79,18 @@ def main():
         config = get_env_config()
         client = EverMemOSClient(**config)
 
-        # Fetch recent episodic memories
+        # Fetch recent episodic memories (increased from 10 to 50 for richer context)
         try:
-            recent_response = client.fetch_recent_memories(limit=10)
+            recent_response = client.fetch_recent_memories(limit=50)
             memories = recent_response.get('result', {}).get('memories', [])
         except Exception as e:
             # If fetch fails, use empty list
             print(f"Warning: Failed to fetch recent memories: {e}", file=sys.stderr)
             memories = []
 
-        # Fetch pending messages via search API
+        # Fetch pending messages via search API (increased from 10 to 50)
         try:
-            search_response = client.search_memories("", method="hybrid", top_k=10)
+            search_response = client.search_memories("", method="hybrid", top_k=50)
             result = search_response.get('result', {})
             pending_messages = result.get('pending_messages', [])
         except Exception as e:

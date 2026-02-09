@@ -1,6 +1,6 @@
 ---
 name: evermemos
-description: Search and store memories using EverMemOS. Use when user asks about past conversations, previous decisions, or when important information should be remembered. Also use to recall project context and historical knowledge.
+description: Search and store memories using EverMemOS. PROACTIVELY search before answering ANY project-related questions. Use when user asks about past conversations, previous decisions, or when important information should be remembered. ALWAYS check history before implementing features, debugging issues, or suggesting solutions. Automatically store important decisions, bugs, and patterns. Maintain project continuity across sessions.
 argument-hint: "[search|store|recent] [query/content]"
 allowed-tools: Bash(python3 *)
 hooks:
@@ -120,45 +120,194 @@ python3 ~/.claude/skills/evermemos/scripts/evermemos_client.py recent "${1:-10}"
 
 ## Automatic Usage Guidelines
 
-Claude should **automatically** use this skill in the following scenarios:
+Claude should **PROACTIVELY and AUTOMATICALLY** use this skill in the following scenarios:
 
-### 1. User Asks About Past Events
+### 🔍 CRITICAL: Search BEFORE Answering
+
+**ALWAYS search memories FIRST when:**
+- User asks ANY question that MIGHT benefit from historical context
+- Before implementing features (check past approaches and decisions)
+- When debugging (check similar past issues and solutions)
+- Before suggesting solutions (verify against past experience)
+- When user mentions technical terms we've discussed before
+
+→ **Default Action:** When in doubt, SEARCH FIRST, then answer
+
+### 1. User Asks About Past Events ⭐ ALWAYS TRIGGER
 - "What did we discuss about ES sync yesterday?"
 - "Did we fix that authentication bug?"
 - "What approach did we decide on for caching?"
+- ANY question containing: "last time", "before", "previously", "earlier", "remember"
 
-→ **Action:** Use `/evermemos search "<relevant keywords>"`
+→ **Action:** Use `/evermemos search "<relevant keywords>"` IMMEDIATELY
 
-### 2. User References Previous Work
+### 2. User References Previous Work ⭐ ALWAYS TRIGGER
 - "Remember that API design pattern we used?"
 - "Like we did last time with the database migration"
 - "Similar to the bug we encountered before"
+- ANY reference to past conversations or work
 
-→ **Action:** Search for relevant context before responding
+→ **Action:** Search for relevant context BEFORE responding
 
-### 3. User Wants to Remember Something
+### 3. Technical Questions That May Have Context ⭐ PROACTIVE SEARCH
+Even if user doesn't explicitly mention history, PROACTIVELY search when:
+- User asks about project architecture or design patterns
+- User asks how something works in THIS project
+- User asks for implementation suggestions
+- User reports a bug or issue
+- User asks "how do I..." in context of current project
+
+**Examples:**
+- "How should I implement authentication?" → Search: "authentication implementation design"
+- "This API call is failing" → Search: "API bug error failure"
+- "What's the best way to cache?" → Search: "caching strategy decision"
+
+→ **Action:** Search first, then provide context-aware answer
+
+### 4. User Wants to Remember Something ⭐ ALWAYS TRIGGER
 - "Remember this for later"
 - "Make a note that we use hybrid retrieval"
 - "Keep in mind that async_streaming_bulk has a bug"
+- ANY request to remember or note something
 
-→ **Action:** Use `/evermemos store "<content>" "user"`
+→ **Action:** Use `/evermemos store "<content>" "user"` IMMEDIATELY
 
-### 4. Important Decisions or Discoveries
-When you (Claude) identify:
+### 5. Important Decisions or Discoveries ⭐ AUTO-STORE
+When you (Claude) identify during conversation:
 - Critical bugs and their fixes
-- Architectural decisions
-- Performance optimizations
-- Security issues
-- New patterns or conventions
+- Architectural decisions made
+- Performance optimizations discovered
+- Security issues found
+- New patterns or conventions established
+- Important configuration or setup steps
 
-→ **Action:** Store the information for future reference
+→ **Action:** AUTOMATICALLY store the information without waiting for user request
 
-### 5. Context Recovery
+### 6. Context Recovery ⭐ ALWAYS TRIGGER
 - User returns after a break
 - New conversation but related to previous work
 - Need to understand project history
+- User asks "What were we working on?"
 
 → **Action:** Fetch recent history to understand context
+
+### 7. Before Major Code Changes ⭐ PROACTIVE SEARCH
+Before writing significant code:
+- Search for similar implementations: `/evermemos search "<feature name>"`
+- Search for related bugs: `/evermemos search "bug <component>"`
+- Search for design decisions: `/evermemos search "design <topic>"`
+- Search for past patterns: `/evermemos search "pattern <concept>"`
+
+→ **Action:** Gather context BEFORE implementing
+
+### 8. When User Mentions Specific Components ⭐ PROACTIVE SEARCH
+If user mentions specific files, modules, or components:
+- "Can you look at the authentication module?"
+- "There's an issue with the API handler"
+- "Update the database schema"
+
+→ **Action:** Search for past work on that component FIRST
+
+**Example:**
+User: "Can you update the API handler?"
+You:
+1. `/evermemos search "API handler implementation"`
+2. `/evermemos search "API bug fix"`
+3. Review results, then respond with context-aware solution
+
+---
+
+## 🚀 Proactive Search Strategy
+
+### When to Search EVEN IF User Doesn't Ask
+
+Claude should **automatically and proactively** search in these scenarios WITHOUT waiting for explicit user request:
+
+#### Scenario A: Technical Questions About THIS Project
+```
+User: "How does authentication work in this system?"
+```
+**Before answering:**
+1. `/evermemos search "authentication implementation"`
+2. `/evermemos search "auth design pattern"`
+3. Review results, then provide answer based on actual project history
+
+#### Scenario B: Feature Implementation Requests
+```
+User: "Add a caching layer to the API"
+```
+**Before implementing:**
+1. `/evermemos search "caching implementation"`
+2. `/evermemos search "API performance"`
+3. Check if caching was discussed/tried before
+4. Use past learnings to inform implementation
+
+#### Scenario C: Bug Reports or Issues
+```
+User: "The database connection keeps failing"
+```
+**Before debugging:**
+1. `/evermemos search "database connection error"`
+2. `/evermemos search "connection bug fix"`
+3. Check if similar issues were solved
+4. Apply proven solutions first
+
+#### Scenario D: Architecture or Design Questions
+```
+User: "Should we use microservices or monolith?"
+```
+**Before suggesting:**
+1. `/evermemos search "architecture decision"`
+2. `/evermemos search "design pattern choice"`
+3. Check if architecture decisions were made
+4. Respect past decisions and explain rationale
+
+#### Scenario E: Code Review or Refactoring
+```
+User: "Review this authentication code"
+```
+**Before reviewing:**
+1. `/evermemos search "authentication code review"`
+2. `/evermemos search "auth security issue"`
+3. Check past review comments
+4. Apply learned patterns and avoid known issues
+
+#### Scenario F: Configuration or Setup Questions
+```
+User: "How do I configure the database?"
+```
+**Before answering:**
+1. `/evermemos search "database configuration"`
+2. `/evermemos search "setup environment"`
+3. Provide project-specific instructions
+4. Don't give generic answers when specific history exists
+
+### Search Decision Tree
+
+```
+User asks a question
+    ↓
+Is it about THIS project?
+    ↓ YES → SEARCH FIRST (90% of cases)
+    ↓ NO → Is it a general programming question?
+        ↓ YES → Answer directly (but still consider project context)
+        ↓ NO → SEARCH FIRST (be safe)
+
+Examples:
+✅ "How does this API work?" → SEARCH (project-specific)
+✅ "Fix this bug" → SEARCH (check past bugs)
+✅ "Implement feature X" → SEARCH (check past work)
+✅ "Review this code" → SEARCH (check past reviews)
+⚠️ "What is a REST API?" → CONSIDER: Any project-specific REST patterns?
+❌ "Explain quantum physics" → DON'T SEARCH (unrelated)
+```
+
+### Default Behavior: **Search First**
+
+**Golden Rule:** When in doubt, SEARCH!
+- Searching unnecessarily costs a few seconds
+- Missing important context costs hours of duplicated work or repeated mistakes
+- **Bias toward searching, not toward skipping**
 
 ---
 
@@ -335,14 +484,77 @@ This allows context isolation between different work streams.
 
 ## Best Practices
 
-1. **Search First**: Before answering questions about past work, always search memories
-2. **Store Important Info**: Don't just acknowledge user requests to remember - actually store them
-3. **Use Appropriate Methods**:
-   - Use `hybrid` for general searches (default)
+### 🎯 Primary Principle: SEARCH FIRST, ANSWER SECOND
+
+1. **ALWAYS Search First**: Before answering ANY question about this project:
+   - Search for past discussions on the topic
+   - Search for related bugs or issues
+   - Search for design decisions
+   - Search for similar implementations
+   - **When in doubt, search!** It's better to search unnecessarily than miss important context
+
+2. **Be Proactive, Not Reactive**: Don't wait for users to say "remember when...":
+   - If user asks about a feature → Search for it first
+   - If user reports a bug → Search for similar bugs
+   - If user wants implementation → Search for past patterns
+   - **Assume all questions have historical context until proven otherwise**
+
+3. **Store Important Info Automatically**: Don't just acknowledge user requests to remember:
+   - When you discover a bug → Store it immediately
+   - When a decision is made → Store it immediately
+   - When you learn something new → Store it immediately
+   - When you implement a pattern → Store it immediately
+   - **Don't ask permission, just store it** (user requested auto-memory)
+
+4. **Use Appropriate Methods**:
+   - Use `hybrid` for general searches (default, recommended)
    - Use `vector` for semantic/conceptual searches
    - Use `keyword` for exact term matching
-4. **Provide Context**: When using retrieved memories, cite timestamps and sources
-5. **Regular Recall**: Periodically search for project context to maintain continuity
+   - Use `agentic` for complex queries requiring reasoning
+
+5. **Multi-Query Pattern for Complex Questions**:
+   ```bash
+   # Don't just search once - search multiple angles!
+   /evermemos search "authentication implementation"
+   /evermemos search "auth bug fix"
+   /evermemos search "security pattern"
+   ```
+   Then synthesize all results for comprehensive answer
+
+6. **Provide Context with Citations**: When using retrieved memories:
+   - Cite timestamps and sources
+   - Reference specific past decisions
+   - Explain why past context is relevant
+   - Connect current question to historical patterns
+
+7. **Regular Context Refresh**:
+   - At start of complex tasks: `/evermemos recent 20`
+   - Before major implementations: Search for related work
+   - When resuming after break: Review recent history
+   - **Maintain continuity across sessions**
+
+8. **Verify Assumptions Against History**:
+   - Before suggesting "Let's use approach X" → Search if we tried X before
+   - Before implementing pattern Y → Search if Y is our convention
+   - Before debugging → Search if similar issues were solved
+   - **Learn from past experience, don't repeat mistakes**
+
+### ⚠️ Common Mistakes to AVOID
+
+❌ **DON'T**: Answer technical questions without checking history first
+✅ **DO**: Search → Review → Answer with context
+
+❌ **DON'T**: Only search when user explicitly mentions past
+✅ **DO**: Proactively search for any project-related question
+
+❌ **DON'T**: Acknowledge "I'll remember that" without storing
+✅ **DO**: Actually call `/evermemos store` to save it
+
+❌ **DON'T**: Search only once and give up if no results
+✅ **DO**: Try multiple search queries with different keywords
+
+❌ **DON'T**: Ignore SessionStart context
+✅ **DO**: Review the loaded memories and reference them when relevant
 
 ---
 
