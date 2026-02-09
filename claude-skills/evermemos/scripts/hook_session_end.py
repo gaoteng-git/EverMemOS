@@ -184,6 +184,132 @@ def generate_session_summary(session_id, reason, client):
         return f"📊 Session Complete\n\nSession ID: {session_id}\nEnd Time: {datetime.now().isoformat()}\nEnd Reason: {reason}\n\n⚠️ Summary generation encountered an error, but session ended successfully."
 
 
+def find_transcript_path(session_id):
+    """Find transcript file path for given session_id"""
+    try:
+        claude_dir = os.path.expanduser('~/.claude/projects')
+
+        for root, dirs, files in os.walk(claude_dir):
+            for file in files:
+                if file.startswith(session_id) and file.endswith('.jsonl'):
+                    return os.path.join(root, file)
+
+        return None
+    except Exception as e:
+        print(f"[WARNING] Failed to find transcript: {e}", file=sys.stderr)
+        return None
+
+
+def extract_all_assistant_messages(transcript_path):
+    """
+    Extract ALL assistant messages with text content from transcript
+
+    Returns:
+        list: List of tuples (timestamp, message_text)
+    """
+    if not transcript_path or not os.path.exists(transcript_path):
+        return []
+
+    messages = []
+
+    try:
+        with open(transcript_path, 'r', encoding='utf-8') as f:
+            content = f.read().strip()
+
+        if not content:
+            return []
+
+        lines = content.split('\n')
+
+        for line in lines:
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+            if entry.get('type') != 'assistant':
+                continue
+
+            timestamp = entry.get('timestamp', '')
+            msg_content = entry.get('message', {}).get('content')
+
+            if not msg_content:
+                continue
+
+            text = ''
+            if isinstance(msg_content, str):
+                text = msg_content
+            elif isinstance(msg_content, list):
+                text_parts = []
+                for item in msg_content:
+                    if isinstance(item, dict) and item.get('type') == 'text':
+                        text_parts.append(item.get('text', ''))
+                text = '\n'.join(text_parts)
+
+            # Strip system-reminder tags
+            if text:
+                import re
+                text = re.sub(r'<system-reminder>[\s\S]*?</system-reminder>', '', text)
+                text = re.sub(r'\n{3,}', '\n\n', text).strip()
+
+            if text and len(text) > 20:  # Only include substantial messages
+                messages.append((timestamp, text))
+
+        return messages
+
+    except Exception as e:
+        print(f"[WARNING] Failed to extract all messages: {e}", file=sys.stderr)
+        return []
+
+
+def batch_store_missing_messages(messages, client, existing_pending):
+    """
+    Store messages that are not already in EverMemOS
+
+    Args:
+        messages: List of (timestamp, text) tuples
+        client: EverMemOSClient instance
+        existing_pending: Existing pending messages from EverMemOS
+
+    Returns:
+        int: Number of new messages stored
+    """
+    # Build set of existing message content (first 100 chars as fingerprint)
+    existing_fingerprints = set()
+    for msg in existing_pending:
+        content = msg.get('content', '')
+        fingerprint = content[:100] if len(content) >= 100 else content
+        existing_fingerprints.add(fingerprint)
+
+    stored_count = 0
+
+    for timestamp, text in messages:
+        # Check if this message is already stored
+        fingerprint = text[:100] if len(text) >= 100 else text
+
+        if fingerprint in existing_fingerprints:
+            print(f"[DEBUG] Skipping duplicate message: {timestamp}", file=sys.stderr)
+            continue
+
+        # Store new message
+        try:
+            result = client.store_message(
+                content=text,
+                role="user",
+                sender_name="Claude (Response)"
+            )
+            print(f"[DEBUG] Stored missing message from {timestamp}: {len(text)} chars", file=sys.stderr)
+            stored_count += 1
+
+            # Add to existing fingerprints to avoid duplicates
+            existing_fingerprints.add(fingerprint)
+
+        except Exception as e:
+            print(f"[WARNING] Failed to store message: {e}", file=sys.stderr)
+
+    return stored_count
+
+
 def main():
     """Main execution"""
     try:
@@ -193,6 +319,7 @@ def main():
         session_id = hook_data.get('sessionId', 'unknown')
         cwd = hook_data.get('cwd', '')
         reason = hook_data.get('reason', 'other')
+        transcript_path = hook_data.get('transcript_path')
 
         # Debug: log received data
         print(f"[DEBUG] SessionEnd: sessionId={session_id}, cwd={cwd}, reason={reason}", file=sys.stderr)
@@ -214,6 +341,35 @@ def main():
         print(f"[DEBUG] Using config: {config}", file=sys.stderr)
 
         client = EverMemOSClient(**config)
+
+        # OPTION 3: Batch process all assistant messages from transcript
+        print(f"[DEBUG] === OPTION 3: Batch processing transcript ===", file=sys.stderr)
+
+        if not transcript_path:
+            transcript_path = find_transcript_path(session_id)
+            print(f"[DEBUG] Found transcript path: {transcript_path}", file=sys.stderr)
+
+        if transcript_path:
+            # Extract all assistant messages
+            print(f"[DEBUG] Extracting all assistant messages from transcript...", file=sys.stderr)
+            all_messages = extract_all_assistant_messages(transcript_path)
+            print(f"[DEBUG] Found {len(all_messages)} assistant messages with text", file=sys.stderr)
+
+            if all_messages:
+                # Get existing pending messages to avoid duplicates
+                try:
+                    response = client.search_memories("", method="hybrid", top_k=200)
+                    existing_pending = response.get('result', {}).get('pending_messages', [])
+                    print(f"[DEBUG] Found {len(existing_pending)} existing pending messages", file=sys.stderr)
+                except Exception as e:
+                    print(f"[WARNING] Failed to fetch existing messages: {e}", file=sys.stderr)
+                    existing_pending = []
+
+                # Batch store missing messages
+                stored_count = batch_store_missing_messages(all_messages, client, existing_pending)
+                print(f"[DEBUG] Stored {stored_count} new messages (skipped {len(all_messages) - stored_count} duplicates)", file=sys.stderr)
+        else:
+            print(f"[DEBUG] No transcript path available for batch processing", file=sys.stderr)
 
         # Generate complete session summary
         print(f"[DEBUG] Generating complete session summary...", file=sys.stderr)

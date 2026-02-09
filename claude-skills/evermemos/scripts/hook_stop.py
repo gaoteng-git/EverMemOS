@@ -179,11 +179,27 @@ def main():
         if transcript_path:
             print(f"[DEBUG] Extracting assistant message from transcript...", file=sys.stderr)
 
-            claude_output = extract_last_assistant_message(transcript_path)
+            # OPTION 1: Add delay and retry logic
+            # Wait for transcript to be fully written (Stop hook may fire before all content is flushed)
+            import time
+            claude_output = None
+            max_retries = 3
+            retry_delay = 0.5  # 500ms between retries
+
+            for attempt in range(max_retries):
+                if attempt > 0:
+                    print(f"[DEBUG] Retry {attempt}/{max_retries} after {retry_delay}s delay...", file=sys.stderr)
+                    time.sleep(retry_delay)
+
+                claude_output = extract_last_assistant_message(transcript_path)
+
+                if claude_output:
+                    print(f"[DEBUG] Extracted assistant output on attempt {attempt + 1}: {len(claude_output)} chars", file=sys.stderr)
+                    break
+                else:
+                    print(f"[DEBUG] No assistant message found on attempt {attempt + 1}", file=sys.stderr)
 
             if claude_output:
-                print(f"[DEBUG] Extracted assistant output: {len(claude_output)} chars", file=sys.stderr)
-
                 # Store Claude's text output
                 # Use role="user" because EverMemOS only includes user messages in pending_messages
                 result = client.store_message(
@@ -194,7 +210,7 @@ def main():
 
                 print(f"[DEBUG] Claude output stored successfully: {result.get('message', 'OK')}", file=sys.stderr)
             else:
-                print(f"[DEBUG] No assistant message found in transcript", file=sys.stderr)
+                print(f"[DEBUG] No assistant message found after {max_retries} attempts", file=sys.stderr)
         else:
             print(f"[DEBUG] No transcript_path provided, skipping assistant message extraction", file=sys.stderr)
 
