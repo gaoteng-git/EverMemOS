@@ -3,6 +3,7 @@
 Encapsulates all HTTP API call details and provides the simplest interface.
 """
 
+import os
 import re
 import asyncio
 import httpx
@@ -80,17 +81,20 @@ class SimpleMemoryManager:
 
     def __init__(
         self,
-        base_url: str = "http://localhost:1995",
+        base_url: str = None,
         group_id: str = "default_group",
         scene: str = "assistant",
     ):
         """Initialize the manager
 
         Args:
-            base_url: API server address (default: localhost:1995)
+            base_url: API server address (default: from API_BASE_URL env or http://localhost:8001)
             group_id: Group ID (default: default_group)
             scene: Scene type (default: "assistant", options: "assistant" or "companion")
         """
+        # Use environment variable API_BASE_URL if base_url not provided
+        if base_url is None:
+            base_url = os.getenv("API_BASE_URL", "http://localhost:8001")
         self.base_url = base_url
         self.group_id = group_id
         self.group_name = "Simple Demo Group"
