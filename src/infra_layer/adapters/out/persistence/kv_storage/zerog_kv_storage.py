@@ -1,7 +1,7 @@
 """
 0G-Storage based KV-Storage implementation
 
-Uses 0g-storage-client command-line tool for storage operations.
+Uses 0g-storage Python SDK for storage operations.
 All values are Base64 encoded to avoid \\n and , issues.
 
 Key Format: {collection_name}:{document_id}
@@ -24,6 +24,14 @@ from .encoding_utils import (
     decode_values_batch
 )
 
+# Import 0g-storage Python SDK
+from zg_storage import EvmClient
+from zg_storage.core.data import BytesDataSource
+from zg_storage.indexer import IndexerClient
+from zg_storage.kv import StreamDataBuilder, KvClient
+from zg_storage.kv.types import create_tags
+from zg_storage.transfer import NodeUploader, NodeUploaderConfig, UploadOption
+
 logger = get_logger(__name__)
 
 
@@ -32,7 +40,7 @@ class ZeroGKVStorage(KVStorageInterface):
     """
     0G-Storage based KV-Storage implementation
 
-    Uses 0g-storage-client command-line tool for storage operations.
+    Uses 0g-storage Python SDK for storage operations.
     All values are Base64 encoded to avoid \\n and , issues.
 
     Note:
@@ -47,30 +55,66 @@ class ZeroGKVStorage(KVStorageInterface):
         stream_id: str,                # Unified stream ID for all collections
         rpc_url: str,                  # "https://evmrpc-testnet.0g.ai"
         read_node: str,                # "http://34.31.1.26:6789" (read operations)
-        timeout: int = 30,             # Command timeout in seconds
-        max_retries: int = 3           # Max retry attempts
+        timeout: int = 30,             # Request timeout in seconds
+        max_retries: int = 3,          # Max retry attempts
+        use_indexer: bool = True,      # Use IndexerClient (True) or NodeUploader (False)
+        indexer_url: str = "https://indexer-storage-testnet-turbo.0g.ai",  # Indexer URL
+        flow_address: str = "0x22E03a6A89B950F1c82ec5e74F8eCa321a105296"   # Flow contract address
     ):
-        self.nodes = nodes
+        self.nodes = nodes.split(',') if isinstance(nodes, str) else nodes
         self.stream_id = stream_id
         self.rpc_url = rpc_url
         self.read_node = read_node
         self.timeout = timeout
         self.max_retries = max_retries
+        self.use_indexer = use_indexer
+        self.indexer_url = indexer_url
+        self.flow_address = flow_address
 
         # Get wallet private key from environment variable (SECURE!)
         self.wallet_private_key = os.getenv('ZEROG_WALLET_KEY')
         if not self.wallet_private_key:
             raise ValueError("ZEROG_WALLET_KEY environment variable is required")
 
+        # Initialize EVM client
+        self.evm_client = EvmClient(
+            rpc_url=self.rpc_url,
+            private_key=self.wallet_private_key
+        )
+
+        # Initialize KV client for read operations
+        self.kv_client = KvClient(self.read_node, timeout=float(self.timeout))
+
+        # Initialize uploader (IndexerClient or NodeUploader)
+        if self.use_indexer:
+            self.uploader = IndexerClient(
+                self.indexer_url,
+                evm_client=self.evm_client,
+                flow_address=self.flow_address
+            )
+            logger.info(f"✅ Using IndexerClient: {self.indexer_url}")
+        else:
+            cfg = NodeUploaderConfig(
+                nodes=self.nodes,
+                evm_client=self.evm_client,
+                flow_address=self.flow_address,
+                rpc_timeout=float(self.timeout)
+            )
+            self.uploader = NodeUploader.from_config(cfg)
+            logger.info(f"✅ Using NodeUploader: {self.nodes[0]}...")
+
         logger.info(
-            f"✅ ZeroGKVStorage initialized: stream_id={stream_id}, "
-            f"nodes={nodes.split(',')[0]}..., timeout={timeout}s"
+            f"✅ ZeroGKVStorage initialized with Python SDK\n"
+            f"   Stream ID: {stream_id}\n"
+            f"   RPC URL: {rpc_url}\n"
+            f"   Read Node: {read_node}\n"
+            f"   Timeout: {timeout}s"
         )
 
 
     async def get(self, key: str) -> Optional[str]:
         """
-        Get value by key
+        Get value by key using Python SDK
 
         Args:
             key: Full key including collection prefix (e.g., "episodic_memories:123")
@@ -79,32 +123,30 @@ class ZeroGKVStorage(KVStorageInterface):
             JSON string or None if not found
         """
         try:
-            # Execute read command
-            cmd = [
-                '0g-storage-client', 'kv-read',
-                '--node', self.read_node,
-                '--stream-id', self.stream_id,
-                '--stream-keys', key
-            ]
+            # Convert key to bytes
+            key_bytes = key.encode('utf-8')
 
-            result = await self._execute_command(cmd)
+            # Call SDK in thread pool to avoid blocking
+            loop = asyncio.get_event_loop()
+            value_bytes = await loop.run_in_executor(
+                None,
+                self.kv_client.get_value_bytes,
+                self.stream_id,
+                key_bytes
+            )
 
-            # Parse JSON response: {"key1":"value1"}
-            response = json.loads(result)
-            encoded_value = response.get(key)
-
-            if encoded_value is None or encoded_value == "":
+            if value_bytes is None or len(value_bytes) == 0:
                 # Key not found or deleted
                 return None
 
-            # Base64 decode
+            # Decode bytes to string (already Base64 encoded)
+            encoded_value = value_bytes.decode('utf-8')
+
+            # Base64 decode to get original JSON
             json_value = decode_value_from_zerog(encoded_value)
             logger.debug(f"✅ Get key: {key} ({len(json_value)} bytes)")
             return json_value
 
-        except json.JSONDecodeError as e:
-            logger.error(f"❌ Failed to parse response for key {key}: {e}")
-            return None
         except Exception as e:
             logger.error(f"❌ Failed to get key {key}: {e}")
             return None
@@ -112,7 +154,7 @@ class ZeroGKVStorage(KVStorageInterface):
 
     async def put(self, key: str, value: str) -> bool:
         """
-        Store key-value pair
+        Store key-value pair using Python SDK
 
         Args:
             key: Full key including collection prefix (e.g., "episodic_memories:123")
@@ -125,19 +167,36 @@ class ZeroGKVStorage(KVStorageInterface):
             # Base64 encode value
             encoded_value = encode_value_for_zerog(value)
 
-            # Execute write command
-            cmd = [
-                '0g-storage-client', 'kv-write',
-                '--node', self.nodes,
-                '--key', self.wallet_private_key,
-                '--stream-id', self.stream_id,
-                '--stream-keys', key,
-                '--stream-values', encoded_value,
-                '--url', self.rpc_url
-            ]
+            # Convert to bytes
+            key_bytes = key.encode('utf-8')
+            value_bytes = encoded_value.encode('utf-8')
 
-            await self._execute_command(cmd)
-            logger.debug(f"✅ Put key: {key} ({len(value)} bytes)")
+            # Build KV payload using StreamDataBuilder
+            builder = StreamDataBuilder()
+            builder.set(
+                stream_id=self.stream_id,
+                key=key_bytes,
+                data=value_bytes
+            )
+            stream_data = builder.build(sorted_items=True)
+            payload = stream_data.encode()
+            tags = create_tags(builder.stream_ids(), sorted_ids=True)
+
+            # Upload option
+            opt = UploadOption(tags=tags)
+
+            # Upload using SDK in thread pool
+            loop = asyncio.get_event_loop()
+            tx, root = await loop.run_in_executor(
+                None,
+                lambda: self.uploader.upload(
+                    file_path=BytesDataSource(payload),
+                    tags=tags,
+                    option=opt
+                )
+            )
+
+            logger.debug(f"✅ Put key: {key} ({len(value)} bytes), tx={tx}, root={root}")
             return True
 
         except Exception as e:
@@ -147,7 +206,7 @@ class ZeroGKVStorage(KVStorageInterface):
 
     async def delete(self, key: str) -> bool:
         """
-        Delete by key (implemented as writing empty string)
+        Delete by key (implemented as writing empty string) using Python SDK
 
         Args:
             key: Full key including collection prefix
@@ -156,19 +215,36 @@ class ZeroGKVStorage(KVStorageInterface):
             True if successful
         """
         try:
-            # Delete by writing empty string
-            cmd = [
-                '0g-storage-client', 'kv-write',
-                '--node', self.nodes,
-                '--key', self.wallet_private_key,
-                '--stream-id', self.stream_id,
-                '--stream-keys', key,
-                '--stream-values', '',  # Empty string for deletion
-                '--url', self.rpc_url
-            ]
+            # Delete by writing empty bytes
+            key_bytes = key.encode('utf-8')
+            empty_bytes = b''
 
-            await self._execute_command(cmd)
-            logger.debug(f"✅ Delete key: {key}")
+            # Build KV payload with empty value
+            builder = StreamDataBuilder()
+            builder.set(
+                stream_id=self.stream_id,
+                key=key_bytes,
+                data=empty_bytes
+            )
+            stream_data = builder.build(sorted_items=True)
+            payload = stream_data.encode()
+            tags = create_tags(builder.stream_ids(), sorted_ids=True)
+
+            # Upload option
+            opt = UploadOption(tags=tags)
+
+            # Upload using SDK in thread pool
+            loop = asyncio.get_event_loop()
+            tx, root = await loop.run_in_executor(
+                None,
+                lambda: self.uploader.upload(
+                    file_path=BytesDataSource(payload),
+                    tags=tags,
+                    option=opt
+                )
+            )
+
+            logger.debug(f"✅ Delete key: {key}, tx={tx}")
             return True
 
         except Exception as e:
@@ -178,7 +254,7 @@ class ZeroGKVStorage(KVStorageInterface):
 
     async def batch_get(self, keys: List[str]) -> Dict[str, str]:
         """
-        Batch get values
+        Batch get values using Python SDK
 
         Args:
             keys: List of keys (each with collection prefix)
@@ -190,27 +266,36 @@ class ZeroGKVStorage(KVStorageInterface):
             return {}
 
         try:
-            # Join keys with comma
-            keys_str = ','.join(keys)
+            # Convert keys to bytes
+            keys_bytes = [key.encode('utf-8') for key in keys]
 
-            # Execute read command
-            cmd = [
-                '0g-storage-client', 'kv-read',
-                '--node', self.read_node,
-                '--stream-id', self.stream_id,
-                '--stream-keys', keys_str
-            ]
+            # Call SDK in thread pool
+            loop = asyncio.get_event_loop()
+            data = await loop.run_in_executor(
+                None,
+                self.kv_client.get_values,
+                self.stream_id,
+                keys_bytes
+            )
 
-            result = await self._execute_command(cmd)
+            # data is Dict[bytes, bytes], convert to Dict[str, str]
+            # and Base64 decode values
+            result = {}
+            for key_bytes, value_bytes in data.items():
+                if value_bytes and len(value_bytes) > 0:
+                    key_str = key_bytes.decode('utf-8')
+                    encoded_value = value_bytes.decode('utf-8')
 
-            # Parse JSON response: {"key1":"value1","key2":"value2"}
-            encoded_response = json.loads(result)
+                    # Base64 decode to get original JSON
+                    try:
+                        json_value = decode_value_from_zerog(encoded_value)
+                        result[key_str] = json_value
+                    except Exception as e:
+                        logger.warning(f"⚠️  Failed to decode value for key {key_str}: {e}")
+                        continue
 
-            # Base64 decode all values (skip empty values = deleted items)
-            decoded_response = decode_values_batch(encoded_response)
-
-            logger.debug(f"✅ Batch get {len(decoded_response)}/{len(keys)} keys")
-            return decoded_response
+            logger.debug(f"✅ Batch get {len(result)}/{len(keys)} keys")
+            return result
 
         except Exception as e:
             logger.error(f"❌ Failed to batch get {len(keys)} keys: {e}")
@@ -219,7 +304,7 @@ class ZeroGKVStorage(KVStorageInterface):
 
     async def batch_delete(self, keys: List[str]) -> int:
         """
-        Batch delete keys (implemented as writing empty strings)
+        Batch delete keys (implemented as writing empty bytes) using Python SDK
 
         Args:
             keys: List of keys to delete
@@ -231,96 +316,40 @@ class ZeroGKVStorage(KVStorageInterface):
             return 0
 
         try:
-            # Join keys with comma
-            keys_str = ','.join(keys)
+            # Build KV payload with multiple empty values
+            builder = StreamDataBuilder()
+            for key in keys:
+                key_bytes = key.encode('utf-8')
+                builder.set(
+                    stream_id=self.stream_id,
+                    key=key_bytes,
+                    data=b''  # Empty bytes for deletion
+                )
 
-            # Join empty values with comma: ",," for 3 keys
-            values_str = ','.join([''] * len(keys))
+            stream_data = builder.build(sorted_items=True)
+            payload = stream_data.encode()
+            tags = create_tags(builder.stream_ids(), sorted_ids=True)
 
-            # Execute batch write with empty values
-            cmd = [
-                '0g-storage-client', 'kv-write',
-                '--node', self.nodes,
-                '--key', self.wallet_private_key,
-                '--stream-id', self.stream_id,
-                '--stream-keys', keys_str,
-                '--stream-values', values_str,  # Empty strings separated by commas
-                '--url', self.rpc_url
-            ]
+            # Upload option
+            opt = UploadOption(tags=tags)
 
-            await self._execute_command(cmd)
-            logger.debug(f"✅ Batch delete {len(keys)} keys")
+            # Upload using SDK in thread pool
+            loop = asyncio.get_event_loop()
+            tx, root = await loop.run_in_executor(
+                None,
+                lambda: self.uploader.upload(
+                    file_path=BytesDataSource(payload),
+                    tags=tags,
+                    option=opt
+                )
+            )
+
+            logger.debug(f"✅ Batch delete {len(keys)} keys, tx={tx}")
             return len(keys)
 
         except Exception as e:
             logger.error(f"❌ Failed to batch delete {len(keys)} keys: {e}")
             return 0
-
-
-    async def _execute_command(self, cmd: List[str]) -> str:
-        """
-        Execute 0g-storage-client command with retry and exponential backoff
-
-        Args:
-            cmd: Command and arguments as list
-
-        Returns:
-            Command stdout output
-
-        Raises:
-            RuntimeError: If command fails after retries
-        """
-        for attempt in range(self.max_retries):
-            try:
-                # Create subprocess
-                process = await asyncio.create_subprocess_exec(
-                    *cmd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
-                )
-
-                # Wait with timeout
-                stdout, stderr = await asyncio.wait_for(
-                    process.communicate(),
-                    timeout=self.timeout
-                )
-
-                # Check return code
-                if process.returncode != 0:
-                    error_msg = stderr.decode('utf-8').strip() if stderr else 'Unknown error'
-                    raise RuntimeError(
-                        f"Command failed with code {process.returncode}: {error_msg}"
-                    )
-
-                result = stdout.decode('utf-8').strip()
-
-                if attempt > 0:
-                    logger.info(f"✅ Command succeeded on attempt {attempt + 1}")
-
-                return result
-
-            except asyncio.TimeoutError:
-                wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
-                logger.warning(
-                    f"⚠️  Command timeout (attempt {attempt + 1}/{self.max_retries}), "
-                    f"retrying in {wait_time}s..."
-                )
-                if attempt == self.max_retries - 1:
-                    raise RuntimeError(
-                        f"Command timed out after {self.max_retries} attempts "
-                        f"(timeout={self.timeout}s)"
-                    )
-                await asyncio.sleep(wait_time)
-
-            except Exception as e:
-                wait_time = 2 ** attempt
-                logger.warning(
-                    f"⚠️  Command failed (attempt {attempt + 1}/{self.max_retries}): {e}, "
-                    f"retrying in {wait_time}s..."
-                )
-                if attempt == self.max_retries - 1:
-                    raise
-                await asyncio.sleep(wait_time)
 
 
 __all__ = ["ZeroGKVStorage"]
