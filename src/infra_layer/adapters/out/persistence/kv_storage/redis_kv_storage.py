@@ -178,5 +178,27 @@ class RedisKVStorage(KVStorageInterface):
             logger.error(f"❌ Redis BATCH_DELETE failed: {e}")
             return 0
 
+    async def begin_batch(self) -> None:
+        """
+        Begin batch mode (no-op for Redis)
+
+        Redis supports concurrent writes, so batch mode is not needed.
+        This method exists for interface compatibility.
+        """
+        # Redis supports parallel writes, no batch mode needed
+        pass
+
+    async def commit_batch(self) -> bool:
+        """
+        Commit batch operations (no-op for Redis)
+
+        Redis operations are immediately persisted, no commit needed.
+
+        Returns:
+            Always True
+        """
+        # Redis operations are immediately persisted
+        return True
+
 
 __all__ = ["RedisKVStorage"]

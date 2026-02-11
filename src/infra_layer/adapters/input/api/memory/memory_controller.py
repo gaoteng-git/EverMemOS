@@ -23,6 +23,9 @@ from core.interface.controller.base_controller import (
     patch,
     delete,
 )
+from infra_layer.adapters.out.persistence.kv_storage.kv_storage_interface import (
+    KVStorageInterface,
+)
 from core.constants.errors import ErrorCode, ErrorStatus
 from core.constants.exceptions import ValidationException
 from agentic_layer.memory_manager import MemoryManager
@@ -159,12 +162,20 @@ class MemoryController(BaseController):
             HTTPException: When request processing fails
         """
         del request_body  # Used for OpenAPI documentation only
+
+        # Get KV-Storage instance at the beginning to ensure it's available in exception handlers
+        kv_storage = get_bean_by_type(KVStorageInterface)
+
         try:
             # 1. Get JSON body from request (simple direct format)
             message_data = await request.json()
             logger.info("Received memorize request (single message)")
 
-            # 2. Convert directly to MemorizeRequest (unified single-step conversion)
+            # 2. Begin KV-Storage batch mode to avoid parallel write conflicts
+            await kv_storage.begin_batch()
+            logger.debug("📦 KV-Storage batch mode started")
+
+            # 3. Convert directly to MemorizeRequest (unified single-step conversion)
             logger.info(
                 "Starting conversion from simple message format to MemorizeRequest"
             )
@@ -205,7 +216,17 @@ class MemoryController(BaseController):
             # memorize returns count of extracted memories (int)
             memory_count = await self.memory_manager.memorize(memorize_request)
 
-            # 5. Return unified response format
+            # 5. Commit KV-Storage batch (flush all staged write operations)
+            commit_success = await kv_storage.commit_batch()
+            if not commit_success:
+                logger.error("❌ KV-Storage batch commit failed")
+                raise HTTPException(
+                    status_code=500,
+                    detail="Failed to commit memory data to storage"
+                )
+            logger.debug("✅ KV-Storage batch committed successfully")
+
+            # 6. Return unified response format
             logger.info(
                 "Memory request processing completed, extracted %s memories",
                 memory_count,
@@ -229,12 +250,27 @@ class MemoryController(BaseController):
 
         except ValueError as e:
             logger.error("memorize request parameter error: %s", e)
+            # Ensure batch mode is cleaned up on error
+            try:
+                await kv_storage.commit_batch()  # Reset batch state
+            except Exception as cleanup_error:
+                logger.error(f"Failed to cleanup batch state: {cleanup_error}")
             raise HTTPException(status_code=400, detail=str(e)) from e
         except HTTPException:
             # Re-raise HTTPException
+            # Ensure batch mode is cleaned up on error
+            try:
+                await kv_storage.commit_batch()  # Reset batch state
+            except Exception as cleanup_error:
+                logger.error(f"Failed to cleanup batch state: {cleanup_error}")
             raise
         except Exception as e:
             logger.error("memorize request processing failed: %s", e, exc_info=True)
+            # Ensure batch mode is cleaned up on error
+            try:
+                await kv_storage.commit_batch()  # Reset batch state
+            except Exception as cleanup_error:
+                logger.error(f"Failed to cleanup batch state: {cleanup_error}")
             raise HTTPException(
                 status_code=500, detail="Failed to store memory, please try again later"
             ) from e

@@ -103,6 +103,16 @@ class ZeroGKVStorage(KVStorageInterface):
             self.uploader = NodeUploader.from_config(cfg)
             logger.info(f"✅ Using NodeUploader: {self.nodes[0]}...")
 
+        # Batch mode state
+        self._batch_mode = False
+        self._batch_builder: Optional[StreamDataBuilder] = None
+        self._batch_operations: List[tuple] = []  # List of (key, value) tuples
+
+        # Concurrency control: lock to prevent parallel batch operations
+        # Multiple concurrent POST requests share the same KVStorage instance (singleton)
+        # This lock ensures only one batch operation at a time
+        self._batch_lock = asyncio.Lock()
+
         logger.info(
             f"✅ ZeroGKVStorage initialized with Python SDK\n"
             f"   Stream ID: {stream_id}\n"
@@ -156,12 +166,15 @@ class ZeroGKVStorage(KVStorageInterface):
         """
         Store key-value pair using Python SDK
 
+        In batch mode: stages the operation for later commit
+        In normal mode: uploads immediately
+
         Args:
             key: Full key including collection prefix (e.g., "episodic_memories:123")
             value: JSON string to store
 
         Returns:
-            True if successful
+            True if successful (or staged in batch mode)
         """
         try:
             # Base64 encode value
@@ -171,6 +184,23 @@ class ZeroGKVStorage(KVStorageInterface):
             key_bytes = key.encode('utf-8')
             value_bytes = encoded_value.encode('utf-8')
 
+            # Batch mode: only stage the operation
+            if self._batch_mode:
+                if self._batch_builder is None:
+                    logger.error("❌ Batch mode active but builder not initialized")
+                    return False
+
+                # Stage the operation
+                self._batch_builder.set(
+                    stream_id=self.stream_id,
+                    key=key_bytes,
+                    data=value_bytes
+                )
+                self._batch_operations.append((key, len(value)))
+                logger.debug(f"📦 Staged key in batch: {key} ({len(value)} bytes)")
+                return True
+
+            # Normal mode: upload immediately
             # Build KV payload using StreamDataBuilder
             builder = StreamDataBuilder()
             builder.set(
@@ -215,6 +245,13 @@ class ZeroGKVStorage(KVStorageInterface):
             True if successful
         """
         try:
+            # Warning: delete during batch mode may cause conflicts
+            if self._batch_mode:
+                logger.warning(
+                    f"⚠️  delete() called during batch mode for key {key}. "
+                    "This will create a separate upload operation and may conflict with batch commit."
+                )
+
             # Delete by writing empty bytes
             key_bytes = key.encode('utf-8')
             empty_bytes = b''
@@ -316,6 +353,13 @@ class ZeroGKVStorage(KVStorageInterface):
             return 0
 
         try:
+            # Warning: batch_delete during batch mode may cause conflicts
+            if self._batch_mode:
+                logger.warning(
+                    f"⚠️  batch_delete() called during batch mode for {len(keys)} keys. "
+                    "This will create a separate upload operation and may conflict with batch commit."
+                )
+
             # Build KV payload with multiple empty values
             builder = StreamDataBuilder()
             for key in keys:
@@ -350,6 +394,108 @@ class ZeroGKVStorage(KVStorageInterface):
         except Exception as e:
             logger.error(f"❌ Failed to batch delete {len(keys)} keys: {e}")
             return 0
+
+
+    async def begin_batch(self) -> None:
+        """
+        Begin batch mode - accumulate write operations without committing
+
+        Creates a new StreamDataBuilder to stage multiple put() operations.
+        Call commit_batch() to upload all staged operations at once.
+
+        This avoids parallel write conflicts in 0G-Storage.
+
+        Note: Uses lock to prevent concurrent batch operations from different requests.
+        If another request is already in batch mode, this will wait.
+        """
+        # Acquire lock to prevent concurrent batch operations
+        await self._batch_lock.acquire()
+
+        try:
+            if self._batch_mode:
+                logger.warning("⚠️  Batch mode already active (should not happen with lock)")
+
+            # Initialize builder and operations first (may throw)
+            batch_builder = StreamDataBuilder()
+            batch_operations = []
+
+            # Only set state after successful initialization
+            self._batch_mode = True
+            self._batch_builder = batch_builder
+            self._batch_operations = batch_operations
+            logger.debug("📦 Batch mode started (lock acquired)")
+        except Exception as e:
+            # Release lock and reset state if initialization fails
+            self._batch_mode = False
+            self._batch_builder = None
+            self._batch_operations = []
+            self._batch_lock.release()
+            logger.error(f"❌ Failed to begin batch: {e}")
+            raise
+
+
+    async def commit_batch(self) -> bool:
+        """
+        Commit all staged write operations from batch mode
+
+        Builds and uploads all staged put() operations as a single transaction.
+        Releases the batch lock after commit (success or failure).
+
+        Returns:
+            True if commit successful
+        """
+        success = True
+
+        try:
+            if not self._batch_mode:
+                logger.warning("⚠️  Batch mode not active, nothing to commit")
+                return True
+
+            if not self._batch_operations:
+                logger.debug("📦 Batch mode ending with no operations")
+                return True
+
+            try:
+                # Build the accumulated operations
+                stream_data = self._batch_builder.build(sorted_items=True)
+                payload = stream_data.encode()
+                tags = create_tags(self._batch_builder.stream_ids(), sorted_ids=True)
+
+                # Upload option
+                opt = UploadOption(tags=tags)
+
+                # Upload using SDK in thread pool
+                loop = asyncio.get_event_loop()
+                tx, root = await loop.run_in_executor(
+                    None,
+                    lambda: self.uploader.upload(
+                        file_path=BytesDataSource(payload),
+                        tags=tags,
+                        option=opt
+                    )
+                )
+
+                total_bytes = sum(size for _, size in self._batch_operations)
+                logger.info(
+                    f"✅ Batch commit successful: {len(self._batch_operations)} operations, "
+                    f"{total_bytes} bytes total, tx={tx}, root={root}"
+                )
+
+            except Exception as e:
+                logger.error(f"❌ Failed to commit batch: {e}")
+                success = False
+
+            return success
+
+        finally:
+            # Always reset batch state and release lock
+            self._batch_mode = False
+            self._batch_builder = None
+            self._batch_operations = []
+
+            if self._batch_lock.locked():
+                self._batch_lock.release()
+                logger.debug("📦 Batch lock released")
 
 
 __all__ = ["ZeroGKVStorage"]

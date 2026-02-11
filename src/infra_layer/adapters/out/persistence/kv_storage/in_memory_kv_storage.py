@@ -52,5 +52,27 @@ class InMemoryKVStorage(KVStorageInterface):
                 count += 1
         return count
 
+    async def begin_batch(self) -> None:
+        """
+        Begin batch mode (no-op for in-memory storage)
+
+        In-memory operations are instant and don't need batching.
+        This method exists for interface compatibility.
+        """
+        # In-memory storage doesn't need batch mode
+        pass
+
+    async def commit_batch(self) -> bool:
+        """
+        Commit batch operations (no-op for in-memory storage)
+
+        In-memory operations are already persisted.
+
+        Returns:
+            Always True
+        """
+        # In-memory operations are already complete
+        return True
+
 
 __all__ = ["InMemoryKVStorage"]

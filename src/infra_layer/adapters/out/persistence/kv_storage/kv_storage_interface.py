@@ -78,5 +78,30 @@ class KVStorageInterface(ABC):
         """
         pass
 
+    @abstractmethod
+    async def begin_batch(self) -> None:
+        """
+        Begin batch mode - accumulate write operations without committing
+
+        In batch mode, put() operations are staged/buffered.
+        Call commit_batch() to flush all staged operations.
+
+        This is useful for storage backends that don't support parallel writes (e.g., 0G-Storage).
+        """
+        pass
+
+    @abstractmethod
+    async def commit_batch(self) -> bool:
+        """
+        Commit all staged write operations from batch mode
+
+        Flushes all buffered put() operations to storage.
+        After commit, batch mode ends.
+
+        Returns:
+            True if all staged operations committed successfully
+        """
+        pass
+
 
 __all__ = ["KVStorageInterface"]
