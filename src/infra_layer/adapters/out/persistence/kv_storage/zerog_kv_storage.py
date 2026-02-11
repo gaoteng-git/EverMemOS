@@ -58,8 +58,8 @@ class ZeroGKVStorage(KVStorageInterface):
         timeout: int = 30,             # Request timeout in seconds
         max_retries: int = 3,          # Max retry attempts
         use_indexer: bool = True,      # Use IndexerClient (True) or NodeUploader (False)
-        indexer_url: str = "https://indexer-storage-testnet-turbo.0g.ai",  # Indexer URL
-        flow_address: str = "0x22E03a6A89B950F1c82ec5e74F8eCa321a105296"   # Flow contract address
+        indexer_url: Optional[str] = None,  # Indexer URL (required if use_indexer=True)
+        flow_address: Optional[str] = None  # Flow contract address (required if use_indexer=True)
     ):
         self.nodes = nodes.split(',') if isinstance(nodes, str) else nodes
         self.stream_id = stream_id
@@ -70,6 +70,13 @@ class ZeroGKVStorage(KVStorageInterface):
         self.use_indexer = use_indexer
         self.indexer_url = indexer_url
         self.flow_address = flow_address
+
+        # Validate indexer configuration
+        if self.use_indexer:
+            if not self.indexer_url:
+                raise ValueError("indexer_url is required when use_indexer=True")
+            if not self.flow_address:
+                raise ValueError("flow_address is required when use_indexer=True")
 
         # Get wallet private key from environment variable (SECURE!)
         self.wallet_private_key = os.getenv('ZEROG_WALLET_KEY')

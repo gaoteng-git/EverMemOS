@@ -47,6 +47,9 @@ class KVStorageLifespan(LifespanProvider):
             ZEROG_WALLET_KEY: Wallet private key
             ZEROG_TIMEOUT: Command timeout in seconds (optional, default: 30)
             ZEROG_MAX_RETRIES: Max retry attempts (optional, default: 3)
+            ZEROG_USE_INDEXER: Use IndexerClient or NodeUploader (optional, default: true)
+            ZEROG_INDEXER_URL: Indexer service URL (required if USE_INDEXER=true)
+            ZEROG_FLOW_ADDRESS: Flow contract address (required if USE_INDEXER=true)
         """
         kv_type = os.getenv("KV_STORAGE_TYPE", "inmemory").lower()
 
@@ -86,6 +89,24 @@ class KVStorageLifespan(LifespanProvider):
                 timeout = int(os.getenv("ZEROG_TIMEOUT", "30"))
                 max_retries = int(os.getenv("ZEROG_MAX_RETRIES", "3"))
 
+                # Read additional optional parameters
+                use_indexer = os.getenv("ZEROG_USE_INDEXER", "true").lower() == "true"
+                indexer_url = os.getenv("ZEROG_INDEXER_URL")
+                flow_address = os.getenv("ZEROG_FLOW_ADDRESS")
+
+                # Validate indexer configuration if use_indexer is enabled
+                if use_indexer:
+                    if not indexer_url:
+                        raise ValueError(
+                            "ZEROG_INDEXER_URL is required when ZEROG_USE_INDEXER=true. "
+                            "Please set this environment variable or check .env file."
+                        )
+                    if not flow_address:
+                        raise ValueError(
+                            "ZEROG_FLOW_ADDRESS is required when ZEROG_USE_INDEXER=true. "
+                            "Please set this environment variable or check .env file."
+                        )
+
                 # Create ZeroGKVStorage instance
                 # Note: ZEROG_WALLET_KEY is read inside ZeroGKVStorage.__init__
                 kv_storage = ZeroGKVStorage(
@@ -95,6 +116,9 @@ class KVStorageLifespan(LifespanProvider):
                     read_node=read_node,
                     timeout=timeout,
                     max_retries=max_retries,
+                    use_indexer=use_indexer,
+                    indexer_url=indexer_url,
+                    flow_address=flow_address,
                 )
 
                 logger.info(
