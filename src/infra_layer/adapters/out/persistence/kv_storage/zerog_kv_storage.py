@@ -2,7 +2,7 @@
 0G-Storage based KV-Storage implementation
 
 Uses 0g-storage Python SDK for storage operations.
-All values are Base64 encoded to avoid \\n and , issues.
+All values are UTF-8 encoded as bytes.
 
 Key Format: {collection_name}:{document_id}
 Example: "episodic_memories:6979da5797f9041fc0aa063f"
@@ -18,11 +18,6 @@ from typing import Optional, Dict, List
 from core.observation.logger import get_logger
 from core.di.decorators import component
 from .kv_storage_interface import KVStorageInterface
-from .encoding_utils import (
-    encode_value_for_zerog,
-    decode_value_from_zerog,
-    decode_values_batch
-)
 
 # Import 0g-storage Python SDK
 from zg_storage import EvmClient
@@ -41,7 +36,7 @@ class ZeroGKVStorage(KVStorageInterface):
     0G-Storage based KV-Storage implementation
 
     Uses 0g-storage Python SDK for storage operations.
-    All values are Base64 encoded to avoid \\n and , issues.
+    All values are UTF-8 encoded as bytes.
 
     Note:
     - All documents share a unified stream-id
@@ -156,11 +151,8 @@ class ZeroGKVStorage(KVStorageInterface):
                 # Key not found or deleted
                 return None
 
-            # Decode bytes to string (already Base64 encoded)
-            encoded_value = value_bytes.decode('utf-8')
-
-            # Base64 decode to get original JSON
-            json_value = decode_value_from_zerog(encoded_value)
+            # Decode bytes to UTF-8 string (JSON)
+            json_value = value_bytes.decode('utf-8')
             logger.debug(f"✅ Get key: {key} ({len(json_value)} bytes)")
             return json_value
 
@@ -184,12 +176,9 @@ class ZeroGKVStorage(KVStorageInterface):
             True if successful (or staged in batch mode)
         """
         try:
-            # Base64 encode value
-            encoded_value = encode_value_for_zerog(value)
-
-            # Convert to bytes
+            # Convert to bytes (UTF-8 encoding)
             key_bytes = key.encode('utf-8')
-            value_bytes = encoded_value.encode('utf-8')
+            value_bytes = value.encode('utf-8')
 
             # Batch mode: only stage the operation
             if self._batch_mode:
@@ -323,16 +312,15 @@ class ZeroGKVStorage(KVStorageInterface):
             )
 
             # data is Dict[bytes, bytes], convert to Dict[str, str]
-            # and Base64 decode values
+            # and decode UTF-8 values to JSON strings
             result = {}
             for key_bytes, value_bytes in data.items():
                 if value_bytes and len(value_bytes) > 0:
                     key_str = key_bytes.decode('utf-8')
-                    encoded_value = value_bytes.decode('utf-8')
 
-                    # Base64 decode to get original JSON
+                    # Decode UTF-8 bytes to JSON string
                     try:
-                        json_value = decode_value_from_zerog(encoded_value)
+                        json_value = value_bytes.decode('utf-8')
                         result[key_str] = json_value
                     except Exception as e:
                         logger.warning(f"⚠️  Failed to decode value for key {key_str}: {e}")
