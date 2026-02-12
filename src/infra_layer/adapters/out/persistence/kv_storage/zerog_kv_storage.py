@@ -173,6 +173,64 @@ class ZeroGKVStorage(KVStorageInterface):
         return tx, root
 
 
+    async def _put_or_delete(self, key: str, value_bytes: bytes, operation: str) -> bool:
+        """
+        Internal unified method for put and delete operations
+
+        This method handles both put and delete operations, reducing code duplication.
+        The only difference is the value_bytes: actual data for put, empty for delete.
+
+        Args:
+            key: Full key including collection prefix (e.g., "episodic_memories:123")
+            value_bytes: Value as bytes (empty bytes for delete)
+            operation: Operation name for logging ("put" or "delete")
+
+        Returns:
+            True if successful (or staged in batch mode)
+        """
+        try:
+            # Convert key to bytes
+            key_bytes = key.encode('utf-8')
+
+            # Check if in batch mode (from coroutine context)
+            batch_builder = self._ctx_batch_builder.get()
+            batch_operations = self._ctx_batch_operations.get()
+
+            if batch_builder is not None:
+                # Batch mode: stage the operation (no lock needed)
+                if batch_operations is None:
+                    logger.error(f"❌ Batch builder exists but operations list is None")
+                    return False
+
+                # Stage the operation to coroutine-local builder
+                batch_builder.set(
+                    stream_id=self.stream_id,
+                    key=key_bytes,
+                    data=value_bytes
+                )
+                batch_operations.append((key, len(value_bytes)))
+                logger.debug(f"📦 Staged {operation} in batch: {key} ({len(value_bytes)} bytes)")
+                return True
+
+            # Normal mode: upload immediately
+            # Build KV payload using StreamDataBuilder
+            builder = StreamDataBuilder()
+            builder.set(
+                stream_id=self.stream_id,
+                key=key_bytes,
+                data=value_bytes
+            )
+
+            # Upload to 0G-Storage
+            tx, root = await self._upload_builder(builder)
+            logger.debug(f"✅ {operation.capitalize()} key: {key} ({len(value_bytes)} bytes), tx={tx}, root={root}")
+            return True
+
+        except Exception as e:
+            logger.error(f"❌ Failed to {operation} key {key}: {e}")
+            return False
+
+
     async def get(self, key: str) -> Optional[str]:
         """
         Get value by key using Python SDK
@@ -224,90 +282,33 @@ class ZeroGKVStorage(KVStorageInterface):
         Returns:
             True if successful (or staged in batch mode)
         """
-        try:
-            # Convert to bytes (UTF-8 encoding)
-            key_bytes = key.encode('utf-8')
-            value_bytes = value.encode('utf-8')
+        # Convert value to bytes
+        value_bytes = value.encode('utf-8')
 
-            # Check if in batch mode (from coroutine context)
-            batch_builder = self._ctx_batch_builder.get()
-            batch_operations = self._ctx_batch_operations.get()
-
-            if batch_builder is not None:
-                # Batch mode: only stage the operation (no lock needed)
-                if batch_operations is None:
-                    logger.error("❌ Batch builder exists but operations list is None")
-                    return False
-
-                # Stage the operation to coroutine-local builder
-                batch_builder.set(
-                    stream_id=self.stream_id,
-                    key=key_bytes,
-                    data=value_bytes
-                )
-                batch_operations.append((key, len(value)))
-                logger.debug(f"📦 Staged key in batch: {key} ({len(value)} bytes)")
-                return True
-
-            # Normal mode: upload immediately
-            # Build KV payload using StreamDataBuilder
-            builder = StreamDataBuilder()
-            builder.set(
-                stream_id=self.stream_id,
-                key=key_bytes,
-                data=value_bytes
-            )
-
-            # Upload to 0G-Storage
-            tx, root = await self._upload_builder(builder)
-            logger.debug(f"✅ Put key: {key} ({len(value)} bytes), tx={tx}, root={root}")
-            return True
-
-        except Exception as e:
-            logger.error(f"❌ Failed to put key {key}: {e}")
-            return False
+        # Delegate to unified internal method
+        return await self._put_or_delete(key, value_bytes, "put")
 
 
     async def delete(self, key: str) -> bool:
         """
-        Delete by key (implemented as writing empty string) using Python SDK
+        Delete by key (implemented as writing empty bytes) using Python SDK
+
+        Behavior is identical to put(), except value is empty bytes.
+
+        In batch mode: stages the operation for later commit
+        In normal mode: uploads immediately
 
         Args:
             key: Full key including collection prefix
 
         Returns:
-            True if successful
+            True if successful (or staged in batch mode)
         """
-        try:
-            # Warning: delete during batch mode may cause separate upload
-            batch_builder = self._ctx_batch_builder.get()
-            if batch_builder is not None:
-                logger.warning(
-                    f"⚠️  delete() called during batch mode for key {key}. "
-                    "This will create a separate upload operation outside the batch. "
-                    "Consider using batch_delete() if you need to delete within a batch."
-                )
+        # Delete is implemented as writing empty bytes
+        empty_bytes = b''
 
-            # Delete by writing empty bytes
-            key_bytes = key.encode('utf-8')
-            empty_bytes = b''
-
-            # Build KV payload with empty value
-            builder = StreamDataBuilder()
-            builder.set(
-                stream_id=self.stream_id,
-                key=key_bytes,
-                data=empty_bytes
-            )
-
-            # Upload to 0G-Storage
-            tx, root = await self._upload_builder(builder)
-            logger.debug(f"✅ Delete key: {key}, tx={tx}")
-            return True
-
-        except Exception as e:
-            logger.error(f"❌ Failed to delete key {key}: {e}")
-            return False
+        # Delegate to unified internal method
+        return await self._put_or_delete(key, empty_bytes, "delete")
 
 
     async def batch_get(self, keys: List[str]) -> Dict[str, str]:
