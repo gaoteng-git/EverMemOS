@@ -124,6 +124,44 @@ class ZeroGKVStorage(KVStorageInterface):
         )
 
 
+    async def _upload_builder(self, builder: StreamDataBuilder) -> tuple:
+        """
+        Upload a StreamDataBuilder to 0G-Storage
+
+        This is a private helper method to reduce code duplication.
+        Used by put(), delete(), batch_delete(), and commit_batch().
+
+        Args:
+            builder: StreamDataBuilder with staged operations
+
+        Returns:
+            Tuple of (tx, root) from upload operation
+
+        Raises:
+            Exception if upload fails
+        """
+        # Build and encode the stream data
+        stream_data = builder.build(sorted_items=True)
+        payload = stream_data.encode()
+        tags = create_tags(builder.stream_ids(), sorted_ids=True)
+
+        # Upload option
+        opt = UploadOption(tags=tags)
+
+        # Upload using SDK in thread pool to avoid blocking event loop
+        loop = asyncio.get_event_loop()
+        tx, root = await loop.run_in_executor(
+            None,
+            lambda: self.uploader.upload(
+                file_path=BytesDataSource(payload),
+                tags=tags,
+                option=opt
+            )
+        )
+
+        return tx, root
+
+
     async def get(self, key: str) -> Optional[str]:
         """
         Get value by key using Python SDK
@@ -204,24 +242,9 @@ class ZeroGKVStorage(KVStorageInterface):
                 key=key_bytes,
                 data=value_bytes
             )
-            stream_data = builder.build(sorted_items=True)
-            payload = stream_data.encode()
-            tags = create_tags(builder.stream_ids(), sorted_ids=True)
 
-            # Upload option
-            opt = UploadOption(tags=tags)
-
-            # Upload using SDK in thread pool
-            loop = asyncio.get_event_loop()
-            tx, root = await loop.run_in_executor(
-                None,
-                lambda: self.uploader.upload(
-                    file_path=BytesDataSource(payload),
-                    tags=tags,
-                    option=opt
-                )
-            )
-
+            # Upload to 0G-Storage
+            tx, root = await self._upload_builder(builder)
             logger.debug(f"✅ Put key: {key} ({len(value)} bytes), tx={tx}, root={root}")
             return True
 
@@ -259,24 +282,9 @@ class ZeroGKVStorage(KVStorageInterface):
                 key=key_bytes,
                 data=empty_bytes
             )
-            stream_data = builder.build(sorted_items=True)
-            payload = stream_data.encode()
-            tags = create_tags(builder.stream_ids(), sorted_ids=True)
 
-            # Upload option
-            opt = UploadOption(tags=tags)
-
-            # Upload using SDK in thread pool
-            loop = asyncio.get_event_loop()
-            tx, root = await loop.run_in_executor(
-                None,
-                lambda: self.uploader.upload(
-                    file_path=BytesDataSource(payload),
-                    tags=tags,
-                    option=opt
-                )
-            )
-
+            # Upload to 0G-Storage
+            tx, root = await self._upload_builder(builder)
             logger.debug(f"✅ Delete key: {key}, tx={tx}")
             return True
 
@@ -365,24 +373,8 @@ class ZeroGKVStorage(KVStorageInterface):
                     data=b''  # Empty bytes for deletion
                 )
 
-            stream_data = builder.build(sorted_items=True)
-            payload = stream_data.encode()
-            tags = create_tags(builder.stream_ids(), sorted_ids=True)
-
-            # Upload option
-            opt = UploadOption(tags=tags)
-
-            # Upload using SDK in thread pool
-            loop = asyncio.get_event_loop()
-            tx, root = await loop.run_in_executor(
-                None,
-                lambda: self.uploader.upload(
-                    file_path=BytesDataSource(payload),
-                    tags=tags,
-                    option=opt
-                )
-            )
-
+            # Upload to 0G-Storage
+            tx, root = await self._upload_builder(builder)
             logger.debug(f"✅ Batch delete {len(keys)} keys, tx={tx}")
             return len(keys)
 
@@ -451,24 +443,8 @@ class ZeroGKVStorage(KVStorageInterface):
                 return True
 
             try:
-                # Build the accumulated operations
-                stream_data = self._batch_builder.build(sorted_items=True)
-                payload = stream_data.encode()
-                tags = create_tags(self._batch_builder.stream_ids(), sorted_ids=True)
-
-                # Upload option
-                opt = UploadOption(tags=tags)
-
-                # Upload using SDK in thread pool
-                loop = asyncio.get_event_loop()
-                tx, root = await loop.run_in_executor(
-                    None,
-                    lambda: self.uploader.upload(
-                        file_path=BytesDataSource(payload),
-                        tags=tags,
-                        option=opt
-                    )
-                )
+                # Upload all accumulated operations to 0G-Storage
+                tx, root = await self._upload_builder(self._batch_builder)
 
                 total_bytes = sum(size for _, size in self._batch_operations)
                 logger.info(
