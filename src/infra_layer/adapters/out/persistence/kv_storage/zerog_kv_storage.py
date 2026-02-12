@@ -142,6 +142,10 @@ class ZeroGKVStorage(KVStorageInterface):
         This is a private helper method to reduce code duplication.
         Used by put(), delete(), batch_delete(), and commit_batch().
 
+        IMPORTANT: This method acquires self._upload_lock to ensure
+        that all uploads to 0G-Storage are serialized, as the uploader
+        does not support concurrent uploads.
+
         Args:
             builder: StreamDataBuilder with staged operations
 
@@ -151,7 +155,7 @@ class ZeroGKVStorage(KVStorageInterface):
         Raises:
             Exception if upload fails
         """
-        # Build and encode the stream data
+        # Build and encode the stream data (can be done in parallel)
         stream_data = builder.build(sorted_items=True)
         payload = stream_data.encode()
         tags = create_tags(builder.stream_ids(), sorted_ids=True)
@@ -159,16 +163,19 @@ class ZeroGKVStorage(KVStorageInterface):
         # Upload option
         opt = UploadOption(tags=tags)
 
-        # Upload using SDK in thread pool to avoid blocking event loop
-        loop = asyncio.get_event_loop()
-        tx, root = await loop.run_in_executor(
-            None,
-            lambda: self.uploader.upload(
-                file_path=BytesDataSource(payload),
-                tags=tags,
-                option=opt
+        # 🔒 Acquire upload lock - ensures serial uploads to 0G-Storage
+        # This protects ALL uploads (batch and non-batch) from concurrent execution
+        async with self._upload_lock:
+            # Upload using SDK in thread pool to avoid blocking event loop
+            loop = asyncio.get_event_loop()
+            tx, root = await loop.run_in_executor(
+                None,
+                lambda: self.uploader.upload(
+                    file_path=BytesDataSource(payload),
+                    tags=tags,
+                    option=opt
+                )
             )
-        )
 
         return tx, root
 
@@ -491,19 +498,10 @@ class ZeroGKVStorage(KVStorageInterface):
                 return True
 
             try:
-                # ⚠️ KEY OPTIMIZATION: Only lock during upload, not entire batch!
-                # This allows multiple requests to prepare batches concurrently
-                logger.debug(f"📦 Acquiring upload lock [Task: {task_name}]...")
-
-                async with self._upload_lock:
-                    logger.debug(f"🔒 Upload lock acquired [Task: {task_name}]")
-
-                    # Upload all accumulated operations to 0G-Storage
-                    tx, root = await self._upload_builder(batch_builder)
-
-                    logger.debug(f"🔓 Upload lock will be released [Task: {task_name}]")
-
-                # Lock is released here (exiting async with block)
+                # Upload all accumulated operations to 0G-Storage
+                # Note: _upload_builder() internally acquires self._upload_lock
+                # to ensure serial uploads (0G-Storage requirement)
+                tx, root = await self._upload_builder(batch_builder)
 
                 total_bytes = sum(size for _, size in batch_operations)
                 logger.info(
