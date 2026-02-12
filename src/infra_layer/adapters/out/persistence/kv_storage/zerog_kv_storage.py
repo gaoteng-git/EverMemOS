@@ -14,7 +14,8 @@ Environment Variables Required:
 import asyncio
 import json
 import os
-from typing import Optional, Dict, List
+from contextvars import ContextVar
+from typing import Optional, Dict, List, Tuple
 from core.observation.logger import get_logger
 from core.di.decorators import component
 from .kv_storage_interface import KVStorageInterface
@@ -38,11 +39,26 @@ class ZeroGKVStorage(KVStorageInterface):
     Uses 0g-storage Python SDK for storage operations.
     All values are UTF-8 encoded as bytes.
 
+    Batch Mode:
+    - Uses contextvars for coroutine-local batch state
+    - Each coroutine has its own StreamDataBuilder
+    - Only upload operations require locking (not the entire batch)
+    - This allows concurrent batch operations to proceed in parallel
+
     Note:
     - All documents share a unified stream-id
     - Keys use format: {collection_name}:{document_id}
     - Delete is implemented as writing empty string
     """
+
+    # Context variables for coroutine-local batch state
+    # Each async request gets its own isolated batch context
+    _ctx_batch_builder: ContextVar[Optional[StreamDataBuilder]] = ContextVar(
+        'batch_builder', default=None
+    )
+    _ctx_batch_operations: ContextVar[Optional[List[Tuple[str, int]]]] = ContextVar(
+        'batch_operations', default=None
+    )
 
     def __init__(
         self,
@@ -105,15 +121,10 @@ class ZeroGKVStorage(KVStorageInterface):
             self.uploader = NodeUploader.from_config(cfg)
             logger.info(f"✅ Using NodeUploader: {self.nodes[0]}...")
 
-        # Batch mode state
-        self._batch_mode = False
-        self._batch_builder: Optional[StreamDataBuilder] = None
-        self._batch_operations: List[tuple] = []  # List of (key, value) tuples
-
-        # Concurrency control: lock to prevent parallel batch operations
-        # Multiple concurrent POST requests share the same KVStorage instance (singleton)
-        # This lock ensures only one batch operation at a time
-        self._batch_lock = asyncio.Lock()
+        # Upload lock: Only serializes the upload operation, not the entire batch
+        # Multiple concurrent requests can prepare their batches in parallel
+        # Only the actual upload to 0G-Storage needs to be serialized
+        self._upload_lock = asyncio.Lock()
 
         logger.info(
             f"✅ ZeroGKVStorage initialized with Python SDK\n"
@@ -218,19 +229,23 @@ class ZeroGKVStorage(KVStorageInterface):
             key_bytes = key.encode('utf-8')
             value_bytes = value.encode('utf-8')
 
-            # Batch mode: only stage the operation
-            if self._batch_mode:
-                if self._batch_builder is None:
-                    logger.error("❌ Batch mode active but builder not initialized")
+            # Check if in batch mode (from coroutine context)
+            batch_builder = self._ctx_batch_builder.get()
+            batch_operations = self._ctx_batch_operations.get()
+
+            if batch_builder is not None:
+                # Batch mode: only stage the operation (no lock needed)
+                if batch_operations is None:
+                    logger.error("❌ Batch builder exists but operations list is None")
                     return False
 
-                # Stage the operation
-                self._batch_builder.set(
+                # Stage the operation to coroutine-local builder
+                batch_builder.set(
                     stream_id=self.stream_id,
                     key=key_bytes,
                     data=value_bytes
                 )
-                self._batch_operations.append((key, len(value)))
+                batch_operations.append((key, len(value)))
                 logger.debug(f"📦 Staged key in batch: {key} ({len(value)} bytes)")
                 return True
 
@@ -264,11 +279,13 @@ class ZeroGKVStorage(KVStorageInterface):
             True if successful
         """
         try:
-            # Warning: delete during batch mode may cause conflicts
-            if self._batch_mode:
+            # Warning: delete during batch mode may cause separate upload
+            batch_builder = self._ctx_batch_builder.get()
+            if batch_builder is not None:
                 logger.warning(
                     f"⚠️  delete() called during batch mode for key {key}. "
-                    "This will create a separate upload operation and may conflict with batch commit."
+                    "This will create a separate upload operation outside the batch. "
+                    "Consider using batch_delete() if you need to delete within a batch."
                 )
 
             # Delete by writing empty bytes
@@ -356,11 +373,12 @@ class ZeroGKVStorage(KVStorageInterface):
             return 0
 
         try:
-            # Warning: batch_delete during batch mode may cause conflicts
-            if self._batch_mode:
+            # Warning: batch_delete during batch mode may cause separate upload
+            batch_builder = self._ctx_batch_builder.get()
+            if batch_builder is not None:
                 logger.warning(
                     f"⚠️  batch_delete() called during batch mode for {len(keys)} keys. "
-                    "This will create a separate upload operation and may conflict with batch commit."
+                    "This will create a separate upload operation outside the batch."
                 )
 
             # Build KV payload with multiple empty values
@@ -387,36 +405,51 @@ class ZeroGKVStorage(KVStorageInterface):
         """
         Begin batch mode - accumulate write operations without committing
 
-        Creates a new StreamDataBuilder to stage multiple put() operations.
+        Creates a coroutine-local StreamDataBuilder to stage multiple put() operations.
         Call commit_batch() to upload all staged operations at once.
 
-        This avoids parallel write conflicts in 0G-Storage.
+        Uses contextvars for coroutine isolation:
+        - Each async request has its own batch context
+        - No locking needed here (only during upload)
+        - Multiple requests can prepare batches concurrently
 
-        Note: Uses lock to prevent concurrent batch operations from different requests.
-        If another request is already in batch mode, this will wait.
+        Raises:
+            RuntimeError: If batch mode is already active in this coroutine
         """
-        # Acquire lock to prevent concurrent batch operations
-        await self._batch_lock.acquire()
+        # Check for nested batch mode (potential problem 1)
+        existing_builder = self._ctx_batch_builder.get()
+        if existing_builder is not None:
+            # Get current task info for debugging
+            current_task = asyncio.current_task()
+            task_name = current_task.get_name() if current_task else "unknown"
+
+            logger.error(
+                f"❌ begin_batch() called while already in batch mode! "
+                f"Task: {task_name}. Nested batches are not supported."
+            )
+            raise RuntimeError(
+                "begin_batch() called while already in batch mode. "
+                "Please call commit_batch() or handle the existing batch first."
+            )
 
         try:
-            if self._batch_mode:
-                logger.warning("⚠️  Batch mode already active (should not happen with lock)")
-
-            # Initialize builder and operations first (may throw)
+            # Create coroutine-local batch context
             batch_builder = StreamDataBuilder()
-            batch_operations = []
+            batch_operations: List[Tuple[str, int]] = []
 
-            # Only set state after successful initialization
-            self._batch_mode = True
-            self._batch_builder = batch_builder
-            self._batch_operations = batch_operations
-            logger.debug("📦 Batch mode started (lock acquired)")
+            # Store in context variables (coroutine-isolated)
+            self._ctx_batch_builder.set(batch_builder)
+            self._ctx_batch_operations.set(batch_operations)
+
+            # Log with task info for debugging (potential problem 3)
+            current_task = asyncio.current_task()
+            task_name = current_task.get_name() if current_task else "unknown"
+            logger.debug(f"📦 Batch started [Task: {task_name}] (context-local, no lock)")
+
         except Exception as e:
-            # Release lock and reset state if initialization fails
-            self._batch_mode = False
-            self._batch_builder = None
-            self._batch_operations = []
-            self._batch_lock.release()
+            # Clean up context on failure (potential problem 2)
+            self._ctx_batch_builder.set(None)
+            self._ctx_batch_operations.set(None)
             logger.error(f"❌ Failed to begin batch: {e}")
             raise
 
@@ -426,47 +459,69 @@ class ZeroGKVStorage(KVStorageInterface):
         Commit all staged write operations from batch mode
 
         Builds and uploads all staged put() operations as a single transaction.
-        Releases the batch lock after commit (success or failure).
+
+        Key optimization:
+        - Only acquires upload lock during the actual upload
+        - Other coroutines can prepare their batches in parallel
+        - Significantly reduces lock contention
 
         Returns:
             True if commit successful
+
+        Note:
+            Always cleans up coroutine-local context, even on failure
         """
-        success = True
+        # Get coroutine-local batch context
+        batch_builder = self._ctx_batch_builder.get()
+        batch_operations = self._ctx_batch_operations.get()
+
+        # Get task info for debugging (potential problem 3)
+        current_task = asyncio.current_task()
+        task_name = current_task.get_name() if current_task else "unknown"
 
         try:
-            if not self._batch_mode:
-                logger.warning("⚠️  Batch mode not active, nothing to commit")
+            # Check if batch mode is active
+            if batch_builder is None:
+                logger.warning(f"⚠️  Batch mode not active [Task: {task_name}], nothing to commit")
                 return True
 
-            if not self._batch_operations:
-                logger.debug("📦 Batch mode ending with no operations")
+            if not batch_operations:
+                logger.debug(f"📦 Batch ending with no operations [Task: {task_name}]")
                 return True
 
             try:
-                # Upload all accumulated operations to 0G-Storage
-                tx, root = await self._upload_builder(self._batch_builder)
+                # ⚠️ KEY OPTIMIZATION: Only lock during upload, not entire batch!
+                # This allows multiple requests to prepare batches concurrently
+                logger.debug(f"📦 Acquiring upload lock [Task: {task_name}]...")
 
-                total_bytes = sum(size for _, size in self._batch_operations)
+                async with self._upload_lock:
+                    logger.debug(f"🔒 Upload lock acquired [Task: {task_name}]")
+
+                    # Upload all accumulated operations to 0G-Storage
+                    tx, root = await self._upload_builder(batch_builder)
+
+                    logger.debug(f"🔓 Upload lock will be released [Task: {task_name}]")
+
+                # Lock is released here (exiting async with block)
+
+                total_bytes = sum(size for _, size in batch_operations)
                 logger.info(
-                    f"✅ Batch commit successful: {len(self._batch_operations)} operations, "
-                    f"{total_bytes} bytes total, tx={tx}, root={root}"
+                    f"✅ Batch commit successful [Task: {task_name}]: "
+                    f"{len(batch_operations)} operations, {total_bytes} bytes total, "
+                    f"tx={tx}, root={root}"
                 )
+                return True
 
             except Exception as e:
-                logger.error(f"❌ Failed to commit batch: {e}")
-                success = False
-
-            return success
+                logger.error(f"❌ Failed to commit batch [Task: {task_name}]: {e}")
+                return False
 
         finally:
-            # Always reset batch state and release lock
-            self._batch_mode = False
-            self._batch_builder = None
-            self._batch_operations = []
-
-            if self._batch_lock.locked():
-                self._batch_lock.release()
-                logger.debug("📦 Batch lock released")
+            # Always clean up coroutine-local context (potential problem 2)
+            # This ensures no memory leaks even on exceptions
+            self._ctx_batch_builder.set(None)
+            self._ctx_batch_operations.set(None)
+            logger.debug(f"📦 Batch context cleaned up [Task: {task_name}]")
 
 
 __all__ = ["ZeroGKVStorage"]
