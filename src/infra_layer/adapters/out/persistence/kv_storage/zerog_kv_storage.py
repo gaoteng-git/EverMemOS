@@ -15,7 +15,7 @@ import asyncio
 import json
 import os
 from contextvars import ContextVar
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, Dict, List, Tuple, AsyncIterator
 from core.observation.logger import get_logger
 from core.di.decorators import component
 from .kv_storage_interface import KVStorageInterface
@@ -521,6 +521,76 @@ class ZeroGKVStorage(KVStorageInterface):
             self._ctx_batch_builder.set(None)
             self._ctx_batch_operations.set(None)
             logger.debug(f"📦 Batch context cleaned up [Task: {task_name}]")
+
+    async def iterate_all(self) -> AsyncIterator[Tuple[str, str]]:
+        """
+        Iterate all key-value pairs using 0G Storage KvIterator
+
+        Uses Python SDK's iterator to traverse the entire stream.
+        Since the SDK is synchronous, all operations run in thread pool.
+
+        Yields:
+            Tuple[str, str]: (key, value_json_string)
+
+        Note:
+            - This operation may be slow for large streams
+            - Empty/deleted entries (empty data) are skipped
+        """
+        try:
+            # Create iterator in thread pool (0G SDK is synchronous)
+            loop = asyncio.get_event_loop()
+            iterator = await loop.run_in_executor(
+                None,
+                self.kv_client.new_iterator,
+                self.stream_id
+            )
+
+            # Seek to first key
+            await loop.run_in_executor(None, iterator.seek_to_first)
+
+            total_count = 0
+            skipped_count = 0
+
+            # Iterate through all keys
+            while True:
+                # Check if iterator is valid (synchronous call)
+                valid = await loop.run_in_executor(None, iterator.valid)
+                if not valid:
+                    break
+
+                # Get current key and data (synchronous calls)
+                key_bytes = await loop.run_in_executor(None, lambda: iterator.key)
+                data_bytes = await loop.run_in_executor(None, lambda: iterator.data)
+
+                # Decode to strings
+                key = key_bytes.decode('utf-8')
+
+                # Skip empty/deleted entries (0G uses empty bytes for deletion)
+                if data_bytes and len(data_bytes) > 0:
+                    value = data_bytes.decode('utf-8')
+                    total_count += 1
+                    yield (key, value)
+                else:
+                    skipped_count += 1
+
+                # Move to next key
+                await loop.run_in_executor(None, iterator.next)
+
+                # Log progress every 1000 items
+                if (total_count + skipped_count) % 1000 == 0:
+                    logger.debug(
+                        f"📊 ZeroG iterate progress: {total_count} yielded, "
+                        f"{skipped_count} skipped (empty/deleted)"
+                    )
+
+            logger.info(
+                f"✅ ZeroG iterate_all completed: {total_count} key-value pairs yielded, "
+                f"{skipped_count} empty/deleted entries skipped"
+            )
+
+        except Exception as e:
+            logger.error(f"❌ ZeroG iterate_all failed: {e}")
+            raise
 
 
 __all__ = ["ZeroGKVStorage"]

@@ -4,7 +4,7 @@ Redis KV-Storage Implementation
 Production-ready Redis implementation for cross-process data sharing.
 """
 
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, AsyncIterator, Tuple
 from infra_layer.adapters.out.persistence.kv_storage.kv_storage_interface import (
     KVStorageInterface,
 )
@@ -199,6 +199,55 @@ class RedisKVStorage(KVStorageInterface):
         """
         # Redis operations are immediately persisted
         return True
+
+    async def iterate_all(self) -> AsyncIterator[Tuple[str, str]]:
+        """
+        Iterate all key-value pairs using Redis SCAN
+
+        Uses SCAN cursor to avoid blocking Redis for large datasets.
+        This is safe for production use as SCAN is non-blocking.
+
+        Yields:
+            Tuple[str, str]: (key, value_json_string)
+        """
+        try:
+            redis = await self._get_redis()
+            cursor = 0
+            total_count = 0
+
+            while True:
+                # SCAN returns (next_cursor, keys)
+                # count=100 is a hint, actual returned count may vary
+                cursor, keys = await redis.scan(cursor=cursor, count=100)
+
+                # Batch get values for this batch of keys
+                if keys:
+                    # Decode bytes keys to strings
+                    str_keys = [k.decode('utf-8') if isinstance(k, bytes) else k for k in keys]
+
+                    # Batch fetch values using mget
+                    values = await redis.mget(str_keys)
+
+                    for key, value in zip(str_keys, values):
+                        if value is not None:
+                            # Decode bytes value to string
+                            if isinstance(value, bytes):
+                                value = value.decode('utf-8')
+
+                            # Skip empty values (deleted entries in 0G style)
+                            if value:
+                                total_count += 1
+                                yield (key, value)
+
+                # cursor=0 means scan is complete
+                if cursor == 0:
+                    break
+
+            logger.debug(f"✅ Redis iterate_all completed: yielded {total_count} key-value pairs")
+
+        except Exception as e:
+            logger.error(f"❌ Redis iterate_all failed: {e}")
+            raise
 
 
 __all__ = ["RedisKVStorage"]

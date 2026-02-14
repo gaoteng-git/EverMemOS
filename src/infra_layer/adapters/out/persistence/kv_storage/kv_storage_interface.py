@@ -6,7 +6,7 @@ Used to store complete model data separately from MongoDB indexes.
 """
 
 from abc import ABC, abstractmethod
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, AsyncIterator, Tuple
 
 
 class KVStorageInterface(ABC):
@@ -100,6 +100,26 @@ class KVStorageInterface(ABC):
 
         Returns:
             True if all staged operations committed successfully
+        """
+        pass
+
+    @abstractmethod
+    async def iterate_all(self) -> AsyncIterator[Tuple[str, str]]:
+        """
+        Iterate all key-value pairs in storage
+
+        This method is used for data validation and recovery purposes.
+        It allows scanning all documents in KV Storage to check MongoDB completeness.
+
+        Yields:
+            Tuple[str, str]: (key, value_json_string)
+            - key: Full key with collection prefix, format "{collection_name}:{document_id}"
+            - value: JSON string of full document data
+
+        Note:
+            - For large storages, this operation may be slow
+            - Implementation should handle large datasets efficiently (e.g., using cursors)
+            - Empty/deleted entries (empty string values) may be skipped
         """
         pass
 
