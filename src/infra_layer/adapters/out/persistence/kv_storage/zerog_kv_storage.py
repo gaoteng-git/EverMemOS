@@ -332,32 +332,22 @@ class ZeroGKVStorage(KVStorageInterface):
             return {}
 
         try:
-            # Convert keys to bytes
-            keys_bytes = [key.encode('utf-8') for key in keys]
-
             # Call SDK in thread pool
+            # Note: SDK's get_values() returns Dict[str, str] where values are already decoded
             loop = asyncio.get_event_loop()
             data = await loop.run_in_executor(
                 None,
                 self.kv_client.get_values,
                 self.stream_id,
-                keys_bytes
+                keys  # Pass str keys directly (SDK handles encoding internally)
             )
 
-            # data is Dict[bytes, bytes], convert to Dict[str, str]
-            # and decode UTF-8 values to JSON strings
+            # SDK returns Dict[str, str] - both keys and values are already strings
+            # Filter out empty values
             result = {}
-            for key_bytes, value_bytes in data.items():
-                if value_bytes and len(value_bytes) > 0:
-                    key_str = key_bytes.decode('utf-8')
-
-                    # Decode UTF-8 bytes to JSON string
-                    try:
-                        json_value = value_bytes.decode('utf-8')
-                        result[key_str] = json_value
-                    except Exception as e:
-                        logger.warning(f"⚠️  Failed to decode value for key {key_str}: {e}")
-                        continue
+            for key_str, json_value in data.items():
+                if json_value and len(json_value) > 0:
+                    result[key_str] = json_value
 
             logger.debug(f"✅ Batch get {len(result)}/{len(keys)} keys")
             return result

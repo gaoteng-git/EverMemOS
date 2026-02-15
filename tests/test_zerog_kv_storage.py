@@ -147,6 +147,51 @@ async def wait_for_data_sync(zerog_storage, key: str, expected_value: str = None
     )
 
 
+async def wait_for_data_deletion(zerog_storage, key: str,
+                                  max_retries: int = 10, retry_delay: float = 1.0,
+                                  initial_delay: float = 5.0) -> None:
+    """
+    Wait for data deletion to sync to read nodes after delete
+
+    Since 0G-KV-Storage delete is essentially writing empty value,
+    it requires the same sync time as write operations.
+
+    Strategy:
+    1. Wait 5 seconds initially
+    2. Try reading every 1 second, up to 10 times
+    3. Total timeout: 5 + 10 = 15 seconds
+
+    Args:
+        zerog_storage: ZeroGKVStorage instance
+        key: Key to verify deletion
+        max_retries: Maximum number of read attempts (default: 10)
+        retry_delay: Delay between retries in seconds (default: 1.0)
+        initial_delay: Initial wait time before first read attempt (default: 5.0)
+
+    Raises:
+        AssertionError if key still exists after 15 seconds total
+    """
+    # Wait initially before first read attempt (delete needs time to propagate)
+    await asyncio.sleep(initial_delay)
+
+    for attempt in range(max_retries):
+        retrieved = await zerog_storage.get(key)
+
+        if retrieved is None:
+            total_time = initial_delay + (attempt * retry_delay)
+            print(f"   ✅ Deletion synced after {total_time:.1f}s ({attempt + 1} read attempts)")
+            return
+
+        if attempt < max_retries - 1:
+            await asyncio.sleep(retry_delay)
+
+    # Timeout after 15 seconds
+    total_wait = initial_delay + (max_retries * retry_delay)
+    raise AssertionError(
+        f"❌ Timeout after {total_wait:.1f}s: key={key} still exists with value={retrieved}"
+    )
+
+
 class TestZeroGKVStorageInit:
     """Test initialization"""
 
@@ -213,10 +258,8 @@ class TestNormalModeOperations:
 
         print(f"✅ Delete successful, waiting for sync...")
 
-        # Verify deleted (wait for delete to sync)
-        await asyncio.sleep(5)  # Wait for delete to propagate
-        retrieved = await zerog_storage.get(key)
-        assert retrieved is None, f"Expected None after delete, got {retrieved}"
+        # Verify deleted (wait for delete to sync, same as write since delete = write empty value)
+        await wait_for_data_deletion(zerog_storage, key)
 
         print(f"✅ Deletion verified!")
 
@@ -296,13 +339,10 @@ class TestBatchOperations:
 
         print(f"✅ Batch delete successful, waiting for sync...")
 
-        # Wait for deletes to propagate
-        await asyncio.sleep(5)
-
-        # Verify all deleted
+        # Wait for deletes to propagate (same sync time as writes since delete = write empty value)
         for key in keys:
-            retrieved = await zerog_storage.get(key)
-            assert retrieved is None, f"Key {key} should be deleted but still exists"
+            await wait_for_data_deletion(zerog_storage, key)
+            print(f"   ✅ {key} deletion verified")
 
         print(f"✅ All deletions verified!")
 
@@ -373,9 +413,8 @@ class TestBatchMode:
         retrieved_put = await wait_for_data_sync(zerog_storage, key_put, '{"new": "data"}')
         assert retrieved_put == '{"new": "data"}', "Put failed"
 
-        # Wait for delete to propagate
-        await asyncio.sleep(5)
-        assert await zerog_storage.get(key_del) is None, "Delete failed"
+        # Wait for delete to propagate (same sync time as write since delete = write empty value)
+        await wait_for_data_deletion(zerog_storage, key_del)
 
         print(f"✅ Mixed operations verified!")
 
@@ -512,5 +551,6 @@ class TestStressTest:
 
 # Helper to run tests with proper async support
 if __name__ == "__main__":
-    # Run with: pytest tests/test_zerog_kv_storage.py -v -s
-    pytest.main([__file__, "-v", "-s", "--tb=short"])
+    # Run with: pytest tests/test_zerog_kv_storage.py -v -s -x
+    # -x: stop on first failure (to preserve the failure scene)
+    pytest.main([__file__, "-v", "-s", "-x", "--tb=short"])
