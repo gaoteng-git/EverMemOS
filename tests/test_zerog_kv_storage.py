@@ -51,17 +51,17 @@ async def zerog_storage():
     from infra_layer.adapters.out.persistence.kv_storage.zerog_kv_storage import ZeroGKVStorage
 
     # Read configuration from environment variables
-    nodes = os.getenv('ZEROG_NODES', 'http://35.236.80.213:5678,http://34.102.76.235:5678')
-    stream_id = os.getenv('ZEROG_STREAM_ID', '000000000000000000000000000000000000000000000000000000000000f2be')
-    rpc_url = os.getenv('ZEROG_RPC_URL', 'https://evmrpc-testnet.0g.ai')
-    read_node = os.getenv('ZEROG_READ_NODE', 'http://34.31.1.26:6789')
-    timeout = int(os.getenv('ZEROG_TIMEOUT', '30'))
-    max_retries = int(os.getenv('ZEROG_MAX_RETRIES', '3'))
+    nodes = 'http://35.236.80.213:5678,http://34.102.76.235:5678'
+    stream_id = '0000000000000000000000000000000000000000000000000000000000006e3d'
+    rpc_url = 'https://evmrpc-testnet.0g.ai'
+    read_node = 'http://127.0.0.1:6789'
+    timeout = 30
+    max_retries = 3
 
     # Indexer configuration (if available)
-    use_indexer = os.getenv('ZEROG_USE_INDEXER', 'true').lower() == 'true'
-    indexer_url = os.getenv('ZEROG_INDEXER_URL', 'https://indexer-storage-testnet-standard.0g.ai')
-    flow_address = os.getenv('ZEROG_FLOW_ADDRESS', '0x0460aA47b41a66694c0a73f667a1b795A5ED3556')
+    use_indexer = True
+    indexer_url = 'https://indexer-storage-testnet-standard.0g.ai'
+    flow_address = '0x0460aA47b41a66694c0a73f667a1b795A5ED3556'
 
     # Check for required ZEROG_WALLET_KEY
     if not os.getenv('ZEROG_WALLET_KEY'):
