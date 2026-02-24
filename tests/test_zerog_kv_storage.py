@@ -60,8 +60,8 @@ async def zerog_storage():
 
     # Indexer configuration (if available)
     use_indexer = True
-    indexer_url = 'https://indexer-storage-testnet-standard.0g.ai'
-    flow_address = '0x0460aA47b41a66694c0a73f667a1b795A5ED3556'
+    indexer_url = 'https://indexer-storage-testnet-turbo.0g.ai'
+    flow_address = '0x22E03a6A89B950F1c82ec5e74F8eCa321a105296'
 
     # Check for required ZEROG_WALLET_KEY
     if not os.getenv('ZEROG_WALLET_KEY'):
