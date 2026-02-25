@@ -7,6 +7,7 @@ Automated installation and initialization for EverMemOS.
 
 import os
 import sys
+import shutil
 import subprocess
 import platform
 import json
@@ -767,6 +768,98 @@ MEMORY_LANGUAGE=en
             return False
 
 
+    def install_claude_hooks(self) -> bool:
+        """
+        Copy EverMemOS skills to ~/.claude/skills/ and merge hooks into
+        ~/.claude/settings.json (global, applies to all projects).
+
+        Safe to run multiple times — already-configured hooks are skipped.
+        """
+        self.print_header("Installing Claude Code Integration")
+
+        # ── Step 1: Copy skill directories ──────────────────────────────────
+        skills_src = self.project_dir / "claude-skills"
+        skills_dst = Path.home() / ".claude" / "skills"
+
+        if not skills_src.exists():
+            self.print_warning(f"claude-skills/ not found at {skills_src}, skipping")
+            return False
+
+        skills_dst.mkdir(parents=True, exist_ok=True)
+
+        for skill_dir in sorted(skills_src.iterdir()):
+            if skill_dir.is_dir() and skill_dir.name.startswith("evermemos"):
+                dst = skills_dst / skill_dir.name
+                if dst.exists():
+                    shutil.rmtree(dst)
+                shutil.copytree(skill_dir, dst)
+                self.print_success(f"Installed skill: ~/.claude/skills/{skill_dir.name}/")
+
+        # ── Step 2: Merge hooks into ~/.claude/settings.json ────────────────
+        settings_path = Path.home() / ".claude" / "settings.json"
+
+        # Load existing global settings (or start fresh)
+        settings: dict = {}
+        if settings_path.exists():
+            try:
+                with open(settings_path, "r", encoding="utf-8") as f:
+                    settings = json.load(f)
+            except (json.JSONDecodeError, OSError) as e:
+                self.print_warning(f"Could not read {settings_path}: {e}, will recreate")
+                settings = {}
+
+        if "hooks" not in settings:
+            settings["hooks"] = {}
+
+        # Hook definitions: (event, matcher_or_None, command, timeout)
+        new_hooks = [
+            ("SessionStart",    "startup|clear|compact",
+             "python3 \"$HOME/.claude/skills/evermemos/scripts/hook_session_start.py\"", 30),
+            ("UserPromptSubmit", None,
+             "python3 \"$HOME/.claude/skills/evermemos/scripts/hook_user_prompt.py\"",  15),
+            ("PostToolUse",     "*",
+             "python3 \"$HOME/.claude/skills/evermemos/scripts/hook_tool_use.py\"",     20),
+            ("Stop",            None,
+             "python3 \"$HOME/.claude/skills/evermemos/scripts/hook_stop.py\"",         30),
+            ("SessionEnd",      None,
+             "python3 \"$HOME/.claude/skills/evermemos/scripts/hook_session_end.py\"",  30),
+        ]
+
+        for event, matcher, command, timeout in new_hooks:
+            existing = settings["hooks"].get(event, [])
+
+            # Idempotent: skip if this script is already registered
+            script_name = command.split("/")[-1].rstrip('"')
+            already_present = any(
+                script_name in h.get("command", "")
+                for group in existing
+                for h in group.get("hooks", [])
+            )
+            if already_present:
+                self.print_info(f"Hook {event} already configured, skipping")
+                continue
+
+            hook_group: dict = {
+                "hooks": [{"type": "command", "command": command, "timeout": timeout}]
+            }
+            if matcher:
+                hook_group["matcher"] = matcher
+
+            settings["hooks"].setdefault(event, []).append(hook_group)
+            self.print_success(f"Added hook: {event}")
+
+        # Write back
+        try:
+            settings_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(settings_path, "w", encoding="utf-8") as f:
+                json.dump(settings, f, indent=2, ensure_ascii=False)
+                f.write("\n")
+            self.print_success("Updated ~/.claude/settings.json")
+            return True
+        except OSError as e:
+            self.print_error(f"Failed to write settings.json: {e}")
+            return False
+
     def run_setup(self, non_interactive: bool = False) -> bool:
         """Run complete setup process"""
         self.print_header("EverMemOS Setup")
@@ -799,6 +892,14 @@ MEMORY_LANGUAGE=en
         # Step 4: Setup Docker services
         if not self.setup_standard_mode(non_interactive=non_interactive):
             return False
+
+        # Step 5: Install skills + hooks into Claude Code global config
+        if not self.install_claude_hooks():
+            self.print_warning(
+                "Claude Code hook installation failed — "
+                "hooks won't auto-record across all projects. "
+                "You can re-run setup to retry."
+            )
 
         # Success
         self.print_header("Setup Complete! 🎉")
