@@ -6,7 +6,7 @@ Used to store complete model data separately from MongoDB indexes.
 """
 
 from abc import ABC, abstractmethod
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Tuple, AsyncIterator
 
 
 class KVStorageInterface(ABC):
@@ -77,6 +77,24 @@ class KVStorageInterface(ABC):
             Number of keys deleted
         """
         pass
+
+    @abstractmethod
+    async def iterate_all(self) -> AsyncIterator[Tuple[str, str]]:
+        """
+        Iterate all key-value pairs in storage
+
+        Used for data validation and recovery (e.g., MongoDB completeness check).
+        Empty/deleted entries (empty string values) should be skipped.
+
+        Yields:
+            Tuple[str, str]: (key, value_json_string)
+            - key: Full key with collection prefix "{collection_name}:{document_id}"
+            - value: JSON string of full document data
+        """
+        # Make this an async generator in the abstract base
+        # (required so subclasses can use `yield` without extra boilerplate)
+        return
+        yield  # noqa: unreachable — makes this an async generator
 
 
 __all__ = ["KVStorageInterface"]

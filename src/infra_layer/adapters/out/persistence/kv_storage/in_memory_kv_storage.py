@@ -5,7 +5,7 @@ Simple in-memory implementation for testing and development.
 Not suitable for production use.
 """
 
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Tuple, AsyncIterator
 from infra_layer.adapters.out.persistence.kv_storage.kv_storage_interface import (
     KVStorageInterface,
 )
@@ -51,6 +51,11 @@ class InMemoryKVStorage(KVStorageInterface):
                 del self._storage[key]
                 count += 1
         return count
+
+    async def iterate_all(self) -> AsyncIterator[Tuple[str, str]]:
+        """Iterate all key-value pairs from in-memory dict"""
+        for key, value in self._storage.items():
+            yield (key, value)
 
 
 __all__ = ["InMemoryKVStorage"]

@@ -4,7 +4,7 @@ Redis KV-Storage Implementation
 Production-ready Redis implementation for cross-process data sharing.
 """
 
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Tuple, AsyncIterator
 from infra_layer.adapters.out.persistence.kv_storage.kv_storage_interface import (
     KVStorageInterface,
 )
@@ -177,6 +177,40 @@ class RedisKVStorage(KVStorageInterface):
         except Exception as e:
             logger.error(f"❌ Redis BATCH_DELETE failed: {e}")
             return 0
+
+    async def iterate_all(self) -> AsyncIterator[Tuple[str, str]]:
+        """
+        Iterate all key-value pairs using Redis SCAN.
+
+        Uses cursor-based SCAN to avoid blocking Redis on large datasets.
+        """
+        try:
+            redis = await self._get_redis()
+            cursor = 0
+            total_count = 0
+
+            while True:
+                cursor, keys = await redis.scan(cursor=cursor, count=100)
+
+                if keys:
+                    str_keys = [k.decode('utf-8') if isinstance(k, bytes) else k for k in keys]
+                    values = await redis.mget(str_keys)
+
+                    for key, value in zip(str_keys, values):
+                        if value is not None:
+                            if isinstance(value, bytes):
+                                value = value.decode('utf-8')
+                            total_count += 1
+                            yield (key, value)
+
+                if cursor == 0:
+                    break
+
+            logger.debug(f"✅ Redis iterate_all completed: {total_count} key-value pairs")
+
+        except Exception as e:
+            logger.error(f"❌ Redis iterate_all failed: {e}")
+            raise
 
 
 __all__ = ["RedisKVStorage"]

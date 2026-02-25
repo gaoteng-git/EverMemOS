@@ -22,10 +22,11 @@ Concurrency Model:
 - Lock is held briefly for set/get and for build+clear; upload happens outside the lock.
 """
 
+import asyncio
 import os
 import threading
 import concurrent.futures
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Tuple, AsyncIterator
 
 from core.observation.logger import get_logger
 from core.di.decorators import component
@@ -34,7 +35,7 @@ from .kv_storage_interface import KVStorageInterface
 from zg_storage import EvmClient
 from zg_storage.core.data import BytesDataSource
 from zg_storage.indexer import IndexerClient
-from zg_storage.kv import StreamDataBuilder
+from zg_storage.kv import StreamDataBuilder, KvClient
 from zg_storage.kv.types import create_tags
 from zg_storage.transfer import NodeUploader, NodeUploaderConfig, UploadOption
 
@@ -104,6 +105,9 @@ class ZeroGKVStorage(KVStorageInterface):
             )
             self._uploader = NodeUploader.from_config(cfg)
             logger.info(f"✅ Using NodeUploader: {self.nodes[0]}...")
+
+        # KvClient for read operations (iterate_all uses this)
+        self._kv_client = KvClient(self.read_node)
 
         # Shared StreamDataBuilder — one instance, shared by all coroutines/threads
         self._builder = StreamDataBuilder()
@@ -330,6 +334,64 @@ class ZeroGKVStorage(KVStorageInterface):
                 logger.error(f"❌ Failed to stage delete for key {key}: {e}")
 
         return deleted
+
+    async def iterate_all(self) -> AsyncIterator[Tuple[str, str]]:
+        """
+        Iterate all key-value pairs using 0G Storage KvIterator.
+
+        Uses KvClient.new_iterator to traverse the entire stream from first to last.
+        All SDK calls are synchronous; they run in the thread pool via run_in_executor
+        to avoid blocking the event loop.
+        Empty/deleted entries (empty bytes) are skipped.
+        """
+        try:
+            loop = asyncio.get_event_loop()
+
+            # Create iterator and seek to first key (both are synchronous SDK calls)
+            iterator = await loop.run_in_executor(
+                None, self._kv_client.new_iterator, self.stream_id
+            )
+            await loop.run_in_executor(None, iterator.seek_to_first)
+
+            total_count = 0
+            skipped_count = 0
+
+            while True:
+                valid = await loop.run_in_executor(None, iterator.valid)
+                if not valid:
+                    break
+
+                # iterator.key and iterator.data are properties; access via lambda
+                # to keep the call inside the executor thread
+                key_bytes = await loop.run_in_executor(None, lambda: iterator.key)
+                data_bytes = await loop.run_in_executor(None, lambda: iterator.data)
+
+                key = key_bytes.decode('utf-8')
+
+                # Skip empty/deleted entries (0G uses empty bytes for deletion)
+                if data_bytes and len(data_bytes) > 0:
+                    value = data_bytes.decode('utf-8')
+                    total_count += 1
+                    yield (key, value)
+                else:
+                    skipped_count += 1
+
+                await loop.run_in_executor(None, iterator.next)
+
+                if (total_count + skipped_count) % 1000 == 0 and (total_count + skipped_count) > 0:
+                    logger.debug(
+                        f"📊 ZeroG iterate progress: {total_count} yielded, "
+                        f"{skipped_count} skipped (empty/deleted)"
+                    )
+
+            logger.info(
+                f"✅ ZeroG iterate_all completed: {total_count} yielded, "
+                f"{skipped_count} skipped"
+            )
+
+        except Exception as e:
+            logger.error(f"❌ ZeroG iterate_all failed: {e}", exc_info=True)
+            raise
 
 
 __all__ = ["ZeroGKVStorage"]
