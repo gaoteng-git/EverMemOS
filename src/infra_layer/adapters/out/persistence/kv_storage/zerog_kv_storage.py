@@ -14,9 +14,12 @@ Concurrency Model:
 - Single shared StreamDataBuilder and uploader across all coroutines/threads
 - One threading.Lock (_lock) serializes all builder operations:
     builder.set (put/delete), builder.get (get), builder.build + stream_ids (commit)
-- _commit_sync runs exclusively in a single-thread executor: never parallel
-- Lock is held briefly for set/get; also for build+clear in commit (upload is outside lock)
-- After COMMIT_THRESHOLD pending ops, _commit is submitted to the background thread
+- At most ONE _commit_sync task ever lives in the executor at a time (_commit_running flag).
+  No queue of pending commits: if a commit is already running, stage ops accumulate and
+  will be picked up by the drain loop inside the running commit.
+- _commit_sync drain loop: after each upload, if _pending_count >= COMMIT_THRESHOLD,
+  immediately commit again without returning to the executor queue.
+- Lock is held briefly for set/get and for build+clear; upload happens outside the lock.
 """
 
 import os
@@ -46,8 +49,10 @@ class ZeroGKVStorage(KVStorageInterface):
     0G-Storage based KV-Storage implementation.
 
     All put/delete operations are staged into a shared StreamDataBuilder.
-    When COMMIT_THRESHOLD operations accumulate, _commit is submitted to a
-    single-thread background executor, which serializes all uploads.
+    When COMMIT_THRESHOLD operations accumulate, a single _commit_sync task is
+    submitted to a single-thread executor. That task loops internally:
+    after each upload it rechecks _pending_count and commits again if still
+    >= COMMIT_THRESHOLD, so no commits ever queue up behind each other.
     """
 
     def __init__(
@@ -103,19 +108,24 @@ class ZeroGKVStorage(KVStorageInterface):
         # Shared StreamDataBuilder — one instance, shared by all coroutines/threads
         self._builder = StreamDataBuilder()
 
-        # One lock to protect ALL builder operations:
-        #   builder.set   (in _stage_operation)
-        #   builder.get   (in get / batch_get)       -- pseudocode, see note below
-        #   builder.build + builder.stream_ids        (in _commit_sync)
-        #   builder.clear                             (in _commit_sync, TODO)
-        #   _pending_count read/write
+        # One lock protecting ALL builder operations and the two fields below:
+        #   builder.set   (_stage_operation)
+        #   builder.get   (get / batch_get)        -- pseudocode, see note
+        #   builder.build + builder.stream_ids + builder.clear  (_commit_sync)
+        #   _pending_count
+        #   _commit_running
         self._lock = threading.Lock()
 
-        # Number of staged (not yet committed) operations, protected by _lock
-        self._pending_count = 0
+        # Ops staged since the last commit snapshot, protected by _lock.
+        self._pending_count: int = 0
 
-        # Single-thread executor: _commit_sync is always submitted here.
-        # max_workers=1 guarantees serial execution — _commit never runs in parallel.
+        # True while _commit_sync is running in the executor, protected by _lock.
+        # Prevents multiple commits from queuing up: at most one commit task lives
+        # in the executor at any time.
+        self._commit_running: bool = False
+
+        # Single-thread executor — _commit_sync always runs on this one thread.
+        # max_workers=1 is a safety net; _commit_running already prevents queuing.
         self._executor = concurrent.futures.ThreadPoolExecutor(
             max_workers=1,
             thread_name_prefix="zerog_commit",
@@ -127,36 +137,61 @@ class ZeroGKVStorage(KVStorageInterface):
         )
 
     # -------------------------------------------------------------------------
-    # Internal: commit
+    # Internal: commit (drain loop)
     # -------------------------------------------------------------------------
 
     def _commit_sync(self) -> None:
         """
-        Build the current builder snapshot and upload to 0G-Storage.
+        Take a snapshot of the builder, upload to 0G-Storage, then loop:
+        if _pending_count has reached COMMIT_THRESHOLD again (ops accumulated
+        during the upload), commit immediately without re-queuing.
 
-        Runs exclusively in self._executor (single-thread), so it is NEVER
-        called concurrently. The lock is held only for the brief build+clear
-        phase; the actual network upload happens outside the lock.
+        Runs exclusively in self._executor (single thread). _commit_running
+        ensures only one instance of this method is ever active.
         """
-        try:
-            # --- critical section: snapshot + clear ---
+        while True:
+            # --- Step 1: take snapshot under lock ---
+            try:
+                with self._lock:
+                    stream_data = self._builder.build(sorted_items=True)
+                    tags = create_tags(self._builder.stream_ids(), sorted_ids=True)
+                    # TODO: self._builder.clear()  # clear staged ops after snapshot
+                    committed_count = self._pending_count
+                    self._pending_count = 0
+            except Exception as e:
+                logger.error(f"❌ Commit snapshot failed: {e}", exc_info=True)
+                with self._lock:
+                    self._commit_running = False
+                return
+
+            # --- Step 2: upload outside lock ---
+            try:
+                payload = stream_data.encode()
+                opt = UploadOption(tags=tags)
+                tx, root = self._uploader.upload(
+                    file_path=BytesDataSource(payload),
+                    tags=tags,
+                    option=opt,
+                )
+                logger.info(f"✅ Commit ({committed_count} ops): tx={tx}, root={root}")
+            except Exception as e:
+                logger.error(f"❌ Commit upload failed: {e}", exc_info=True)
+                with self._lock:
+                    self._commit_running = False
+                return
+
+            # --- Step 3: drain loop check ---
+            # During the upload, new ops may have accumulated. If enough have
+            # built up, commit again immediately rather than waiting for the
+            # next threshold crossing in _stage_operation.
             with self._lock:
-                stream_data = self._builder.build(sorted_items=True)
-                tags = create_tags(self._builder.stream_ids(), sorted_ids=True)
-                # TODO: self._builder.clear()  # clear staged ops after snapshot
-
-            # --- upload: outside lock so other coroutines can keep staging ---
-            payload = stream_data.encode()
-            opt = UploadOption(tags=tags)
-            tx, root = self._uploader.upload(
-                file_path=BytesDataSource(payload),
-                tags=tags,
-                option=opt,
-            )
-            logger.info(f"✅ Commit successful: tx={tx}, root={root}")
-
-        except Exception as e:
-            logger.error(f"❌ Commit failed: {e}", exc_info=True)
+                if self._pending_count < COMMIT_THRESHOLD:
+                    # Not enough for another commit; release the running flag
+                    # so the next threshold crossing in _stage_operation can
+                    # re-submit.
+                    self._commit_running = False
+                    return
+                # else: fall through and loop — _commit_running stays True
 
     # -------------------------------------------------------------------------
     # Internal: stage a set/delete operation
@@ -164,12 +199,11 @@ class ZeroGKVStorage(KVStorageInterface):
 
     def _stage_operation(self, key: str, value_bytes: bytes) -> bool:
         """
-        Call builder.set under lock, increment pending count, and submit
-        _commit_sync to the executor when COMMIT_THRESHOLD is reached.
-
-        Returns True if the operation was staged successfully.
+        Call builder.set under lock, then submit _commit_sync if the threshold
+        is reached AND no commit is already running.
         """
         key_bytes = key.encode('utf-8')
+        should_submit = False
 
         with self._lock:
             self._builder.set(
@@ -178,13 +212,15 @@ class ZeroGKVStorage(KVStorageInterface):
                 data=value_bytes,
             )
             self._pending_count += 1
-            should_commit = self._pending_count >= COMMIT_THRESHOLD
-            if should_commit:
-                # Reset counter before releasing lock so only one caller
-                # at the threshold triggers a commit.
-                self._pending_count = 0
 
-        if should_commit:
+            # Submit a new commit only when threshold is crossed AND no commit
+            # is currently running. If a commit is running, the drain loop
+            # will pick up these ops after the current upload finishes.
+            if self._pending_count >= COMMIT_THRESHOLD and not self._commit_running:
+                self._commit_running = True
+                should_submit = True
+
+        if should_submit:
             self._executor.submit(self._commit_sync)
 
         return True
@@ -197,15 +233,14 @@ class ZeroGKVStorage(KVStorageInterface):
         """
         Get value by key from the local builder state (staged, not yet uploaded).
 
-        NOTE: builder.get is pseudocode — the actual SDK method name may differ.
-        This reads uncommitted (locally staged) writes only.
+        NOTE: builder.get is pseudocode — StreamDataBuilder does not expose a
+        get() method in the current SDK. Replace with the correct call when available.
         """
         try:
             key_bytes = key.encode('utf-8')
 
             with self._lock:
                 # PSEUDOCODE: builder.get does not exist in the current SDK.
-                # Replace with the correct SDK call when available.
                 value_bytes = self._builder.get(  # type: ignore[attr-defined]
                     stream_id=self.stream_id,
                     key=key_bytes,
@@ -223,7 +258,7 @@ class ZeroGKVStorage(KVStorageInterface):
     async def put(self, key: str, value: str) -> bool:
         """
         Stage a put operation (builder.set).
-        Triggers _commit when COMMIT_THRESHOLD ops accumulate.
+        Triggers _commit when COMMIT_THRESHOLD ops accumulate and no commit is running.
         """
         try:
             return self._stage_operation(key, value.encode('utf-8'))
@@ -234,7 +269,7 @@ class ZeroGKVStorage(KVStorageInterface):
     async def delete(self, key: str) -> bool:
         """
         Stage a delete operation (builder.set with empty bytes).
-        Triggers _commit when COMMIT_THRESHOLD ops accumulate.
+        Triggers _commit when COMMIT_THRESHOLD ops accumulate and no commit is running.
         """
         try:
             return self._stage_operation(key, b'')
@@ -276,7 +311,7 @@ class ZeroGKVStorage(KVStorageInterface):
     async def batch_delete(self, keys: List[str]) -> int:
         """
         Stage delete (empty bytes) for each key.
-        May trigger one or more _commit calls if COMMIT_THRESHOLD is crossed.
+        May trigger a _commit if COMMIT_THRESHOLD is crossed and no commit is running.
         """
         if not keys:
             return 0
