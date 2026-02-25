@@ -221,7 +221,12 @@ class ZeroGKVStorage(KVStorageInterface):
                 should_submit = True
 
         if should_submit:
-            self._executor.submit(self._commit_sync)
+            try:
+                self._executor.submit(self._commit_sync)
+            except Exception as e:
+                logger.error(f"❌ Failed to submit commit task: {e}", exc_info=True)
+                with self._lock:
+                    self._commit_running = False
 
         return True
 
