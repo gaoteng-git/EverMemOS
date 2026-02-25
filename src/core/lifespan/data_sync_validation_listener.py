@@ -38,14 +38,15 @@ class DataSyncValidationListener(AppReadyListener):
 
         # Get configuration
         days = int(os.getenv("STARTUP_SYNC_DAYS", "0"))
+        check_mongodb = os.getenv("STARTUP_SYNC_MONGODB", "true").lower() == "true"
         check_milvus = os.getenv("STARTUP_SYNC_MILVUS", "true").lower() == "true"
         check_es = os.getenv("STARTUP_SYNC_ES", "true").lower() == "true"
 
-        # Skip if both validations are disabled
-        if not check_milvus and not check_es:
+        # Skip if all validations are disabled
+        if not check_mongodb and not check_milvus and not check_es:
             logger.info(
-                "Both Milvus and ES validation are disabled "
-                "(STARTUP_SYNC_MILVUS=false, STARTUP_SYNC_ES=false)"
+                "All validations are disabled "
+                "(STARTUP_SYNC_MONGODB=false, STARTUP_SYNC_MILVUS=false, STARTUP_SYNC_ES=false)"
             )
             return
 
@@ -53,39 +54,56 @@ class DataSyncValidationListener(AppReadyListener):
         if days == 0:
             logger.warning(
                 "🔥 Starting FULL DATABASE validation (all documents) - "
-                "this may take several minutes. milvus=%s, es=%s",
+                "this may take several minutes. mongodb=%s, milvus=%s, es=%s",
+                check_mongodb,
                 check_milvus,
                 check_es,
             )
         else:
             logger.info(
-                "Starting data sync validation (last %d days, milvus=%s, es=%s)",
+                "Starting data sync validation (last %d days, mongodb=%s, milvus=%s, es=%s)",
                 days,
+                check_mongodb,
                 check_milvus,
                 check_es,
             )
 
         # Run validation asynchronously (non-blocking)
-        asyncio.create_task(self._run_validation(days, check_milvus, check_es))
+        asyncio.create_task(self._run_validation(days, check_mongodb, check_milvus, check_es))
 
     async def _run_validation(
-        self, days: int, check_milvus: bool, check_es: bool
+        self, days: int, check_mongodb: bool, check_milvus: bool, check_es: bool
     ) -> None:
         """
         Run validation and sync process
 
         Args:
             days: Days to check (0 = all documents)
+            check_mongodb: Whether to validate MongoDB (against KV Storage)
             check_milvus: Whether to validate Milvus
             check_es: Whether to validate Elasticsearch
         """
         from core.validation.milvus_data_validator import validate_milvus_data
         from core.validation.es_data_validator import validate_es_data
+        from core.validation.mongodb_data_validator import validate_mongodb_data
 
         doc_types = ["episodic_memory", "event_log", "foresight"]
         all_results = []
 
         try:
+            # CRITICAL: Validate MongoDB FIRST (before Milvus and ES)
+            # MongoDB is the source for Milvus/ES data recovery
+            # If MongoDB is missing data, Milvus/ES recovery will fail
+            if check_mongodb:
+                logger.info("Validating MongoDB data against KV Storage...")
+                try:
+                    mongodb_results = await validate_mongodb_data(days)
+                    all_results.extend(mongodb_results)
+                    for result in mongodb_results:
+                        self._log_result(result, days)
+                except Exception as e:
+                    logger.error(f"Failed to validate MongoDB: {e}", exc_info=True)
+
             # Validate Milvus for each document type
             if check_milvus:
                 logger.info("Validating Milvus data...")
