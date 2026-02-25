@@ -54,7 +54,7 @@ class ServiceManager:
 
             # Check API health endpoint
             try:
-                req = urllib.request.Request("http://localhost:1995/health")
+                req = urllib.request.Request("http://localhost:8001/health")
                 with urllib.request.urlopen(req, timeout=2) as response:
                     status["api_accessible"] = response.status == 200
             except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError):
@@ -126,7 +126,7 @@ class ServiceManager:
                 if status["api_accessible"]:
                     print(f"✅ EverMemOS started successfully (PID: {process.pid})")
                     print(f"📝 Logs: {self.log_file}")
-                    print(f"🌐 API: http://localhost:1995")
+                    print(f"🌐 API: http://localhost:8001")
                     return True
                 else:
                     print("⚠️  Service started but API not accessible yet")
@@ -207,9 +207,9 @@ class ServiceManager:
             print(f"🆔 PID: {status['pid']}")
 
             if status["api_accessible"]:
-                print(f"🌐 API: http://localhost:1995 ✅")
+                print(f"🌐 API: http://localhost:8001 ✅")
             else:
-                print(f"🌐 API: http://localhost:1995 ❌ (not accessible)")
+                print(f"🌐 API: http://localhost:8001 ❌ (not accessible)")
 
             if status["mode"]:
                 print(f"⚙️  Mode: {status['mode']}")
