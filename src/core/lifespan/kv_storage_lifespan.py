@@ -40,7 +40,7 @@ class KVStorageLifespan(LifespanProvider):
             KV_STORAGE_TYPE: "inmemory", "redis", or "zerog" (default: "inmemory")
 
         For ZeroG Storage, also requires:
-            ZEROG_KV_URL: KV node URL for reads/writes
+            ZEROG_READ_NODE: KV node URL for reads/writes
             ZEROG_RPC_URL: RPC endpoint URL
             ZEROG_STREAM_ID: Unified stream ID
             ZEROG_WALLET_KEY: Wallet private key
@@ -59,7 +59,7 @@ class KVStorageLifespan(LifespanProvider):
                 )
 
                 # Read configuration from environment variables
-                kv_url = os.getenv("ZEROG_KV_URL")
+                kv_url = os.getenv("ZEROG_READ_NODE")
                 stream_id = os.getenv("ZEROG_STREAM_ID")
                 rpc_url = os.getenv("ZEROG_RPC_URL")
                 indexer_url = os.getenv("ZEROG_INDEXER_URL")
@@ -68,7 +68,7 @@ class KVStorageLifespan(LifespanProvider):
                 # Validate required configuration
                 missing_vars = []
                 if not kv_url:
-                    missing_vars.append("ZEROG_KV_URL")
+                    missing_vars.append("ZEROG_READ_NODE")
                 if not stream_id:
                     missing_vars.append("ZEROG_STREAM_ID")
                 if not rpc_url:

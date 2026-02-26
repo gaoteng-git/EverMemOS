@@ -219,7 +219,7 @@ class ZeroGKVStorage(KVStorageInterface):
             loop = asyncio.get_event_loop()
 
             iterator = await loop.run_in_executor(
-                None, self._cached.new_iterator, self.stream_id
+                None, self._cached._kv_client.new_iterator, "0x" + self.stream_id
             )
             await loop.run_in_executor(None, iterator.seek_to_first)
 
@@ -268,18 +268,8 @@ class ZeroGKVStorage(KVStorageInterface):
         self._stop_event.set()
         self._commit_thread.join(timeout=5)
 
-        # Final flush: commit any ops staged after the last interval
-        with self._lock:
-            pending = self._pending_count
-            self._pending_count = 0
-
-        if pending > 0:
-            try:
-                self._cached.commit()
-                logger.info(f"✅ Final commit on close ({pending} pending ops)")
-            except Exception as e:
-                logger.error(f"❌ Final commit on close failed: {e}", exc_info=True)
-
+        # CachedKvClient.close() will itself commit any remaining pending writes
+        # and wait for all queued uploads to finish before shutting down the worker.
         try:
             self._cached.close()
             logger.info("✅ ZeroGKVStorage closed")
