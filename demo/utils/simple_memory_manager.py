@@ -278,16 +278,25 @@ class SimpleMemoryManager:
                 result = response.json()
 
                 if result.get("status") == "ok":
-                    # memories is grouped: [{"group_id": [Memory, ...]}, ...]
+                    # memories and scores are parallel structures:
+                    #   memories: [{"group_id": [mem, ...]}, ...]
+                    #   scores:   [{"group_id": [score, ...]}, ...]
                     raw_memories = result.get("result", {}).get("memories", [])
+                    raw_scores   = result.get("result", {}).get("scores", [])
                     metadata = result.get("result", {}).get("metadata", {})
                     latency = metadata.get("total_latency_ms", 0)
-                    
-                    # Flatten grouped memories to flat list
+
+                    # Flatten and attach the RRF score onto each memory dict
                     memories = []
-                    for group_dict in raw_memories:
-                        for group_id, mem_list in group_dict.items():
+                    for mem_group, score_group in zip(raw_memories, raw_scores):
+                        for group_id, mem_list in mem_group.items():
+                            score_list = score_group.get(group_id, [])
+                            for mem, score in zip(mem_list, score_list):
+                                mem["score"] = score
                             memories.extend(mem_list)
+
+                    # Sort by RRF score descending so the most relevant result is first
+                    memories.sort(key=lambda m: m.get("score", 0), reverse=True)
 
                     if show_details:
                         print(
@@ -320,6 +329,11 @@ class SimpleMemoryManager:
             )
             return
 
+        scores_summary = "  ".join(
+            f"#{i} {m.get('score', 0):.6f}" for i, m in enumerate(memories, 1)
+        )
+        print(f"  Scores: {scores_summary}")
+
         for i, mem in enumerate(memories, 1):
             score = mem.get('score', 0)
             # Extract actual event time (not storage time)
@@ -328,7 +342,7 @@ class SimpleMemoryManager:
             summary = mem.get('summary', '')
             episode = mem.get('episode', '')
 
-            print(f"\n     [{i}] Relevance: {score:.4f} | Time: {event_time}")
+            print(f"\n     [{i}] score={score:.6f} | Time: {event_time}")
             if subject:
                 print(f"         Subject: {subject}")
             if summary:
