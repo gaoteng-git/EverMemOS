@@ -1,7 +1,7 @@
 """
 0G-Storage based KV-Storage implementation
 
-Uses 0g-storage Python SDK for storage operations.
+Uses 0g-storage Python SDK (CachedKvClient) for storage operations.
 All values are UTF-8 encoded as bytes.
 
 Key Format: {collection_name}:{document_id}
@@ -11,191 +11,118 @@ Environment Variables Required:
 - ZEROG_WALLET_KEY: Wallet private key (IMPORTANT: Keep secure!)
 
 Concurrency Model:
-- Single shared StreamDataBuilder and uploader across all coroutines/threads
-- One threading.Lock (_lock) serializes all builder operations:
-    builder.set (put/delete), builder.get (get), builder.build + stream_ids (commit)
-- At most ONE _commit_sync task ever lives in the executor at a time (_commit_running flag).
-  No queue of pending commits: if a commit is already running, stage ops accumulate and
-  will be picked up by the drain loop inside the running commit.
-- _commit_sync drain loop: after each upload, if _pending_count >= COMMIT_THRESHOLD,
-  immediately commit again without returning to the executor queue.
-- Lock is held briefly for set/get and for build+clear; upload happens outside the lock.
+- Single CachedKvClient shared across all coroutines/threads.
+- One threading.Lock (_lock) serializes staged-write operations:
+    cached.set (put/delete) and _pending_count updates.
+- A dedicated background daemon thread (_commit_thread) wakes up every
+  COMMIT_INTERVAL seconds. If _pending_count > 0, it calls cached.commit()
+  (non-blocking: actual upload happens inside the SDK) and resets the counter;
+  otherwise it skips the interval entirely.
+- Lock is NOT held during commit(); it is only held during cached.set() calls.
 """
 
 import asyncio
 import os
 import threading
-import concurrent.futures
 from typing import Optional, Dict, List, Tuple, AsyncIterator
 
 from core.observation.logger import get_logger
 from core.di.decorators import component
 from .kv_storage_interface import KVStorageInterface
 
-from zg_storage import EvmClient
-from zg_storage.core.data import BytesDataSource
-from zg_storage.indexer import IndexerClient
-from zg_storage.kv import StreamDataBuilder, KvClient
-from zg_storage.kv.types import create_tags
-from zg_storage.transfer import NodeUploader, NodeUploaderConfig, UploadOption
+from zg_storage import CachedKvClient, EvmClient, UploadOption
 
 logger = get_logger(__name__)
 
-COMMIT_THRESHOLD = 100  # Trigger _commit after this many staged operations
+COMMIT_INTERVAL = 20  # seconds between commit attempts
 
 
 @component("zerog_kv_storage")
 class ZeroGKVStorage(KVStorageInterface):
     """
-    0G-Storage based KV-Storage implementation.
+    0G-Storage based KV-Storage implementation using CachedKvClient.
 
-    All put/delete operations are staged into a shared StreamDataBuilder.
-    When COMMIT_THRESHOLD operations accumulate, a single _commit_sync task is
-    submitted to a single-thread executor. That task loops internally:
-    after each upload it rechecks _pending_count and commits again if still
-    >= COMMIT_THRESHOLD, so no commits ever queue up behind each other.
+    put/delete: call cached.set() to stage the op (fast, in-memory).
+    commit: a dedicated background thread wakes every COMMIT_INTERVAL seconds
+            and calls cached.commit() only if there are pending staged ops.
+    get: cached.get_bytes() reads from local cache or the KV node.
     """
 
     def __init__(
         self,
-        nodes: str,                    # "http://35.236.80.213:5678,http://34.102.76.235:5678"
-        stream_id: str,                # Unified stream ID for all collections
-        rpc_url: str,                  # "https://evmrpc-testnet.0g.ai"
-        read_node: str,                # "http://34.31.1.26:6789" (kept for future read use)
-        timeout: int = 30,             # Request timeout in seconds
-        max_retries: int = 3,          # Max retry attempts
-        use_indexer: bool = True,      # Use IndexerClient (True) or NodeUploader (False)
-        indexer_url: Optional[str] = None,   # Indexer URL (required if use_indexer=True)
-        flow_address: Optional[str] = None,  # Flow contract address (required if use_indexer=True)
+        kv_url: str,                    # KV node URL for reads/writes
+        stream_id: str,                 # Unified stream ID for all collections
+        rpc_url: str,                   # "https://evmrpc-testnet.0g.ai"
+        indexer_url: str,               # Indexer URL for uploads
+        flow_address: str,              # Flow contract address
+        max_queue_size: int = 100,      # Internal write queue size
+        max_cache_entries: int = 10000, # Local read cache size
     ):
-        self.nodes = nodes.split(',') if isinstance(nodes, str) else nodes
         self.stream_id = stream_id
-        self.rpc_url = rpc_url
-        self.read_node = read_node
-        self.timeout = timeout
-        self.max_retries = max_retries
-        self.use_indexer = use_indexer
-        self.indexer_url = indexer_url
-        self.flow_address = flow_address
 
         wallet_private_key = os.getenv('ZEROG_WALLET_KEY')
         if not wallet_private_key:
             raise ValueError("ZEROG_WALLET_KEY environment variable is required")
 
-        # EVM client
-        self._evm_client = EvmClient(
-            rpc_url=self.rpc_url,
+        evm = EvmClient(
+            rpc_url=rpc_url,
             private_key=wallet_private_key,
         )
 
-        # Uploader: IndexerClient or NodeUploader
-        if self.use_indexer:
-            self._uploader = IndexerClient(
-                self.indexer_url,
-                evm_client=self._evm_client,
-                flow_address=self.flow_address,
-            )
-            logger.info(f"✅ Using IndexerClient: {self.indexer_url}")
-        else:
-            cfg = NodeUploaderConfig(
-                nodes=self.nodes,
-                evm_client=self._evm_client,
-                flow_address=self.flow_address,
-                rpc_timeout=float(self.timeout),
-            )
-            self._uploader = NodeUploader.from_config(cfg)
-            logger.info(f"✅ Using NodeUploader: {self.nodes[0]}...")
+        self._cached = CachedKvClient(
+            kv_url=kv_url,
+            indexer_url=indexer_url,
+            evm_client=evm,
+            flow_address=flow_address,
+            max_queue_size=max_queue_size,
+            max_cache_entries=max_cache_entries,
+            upload_option=UploadOption(skip_tx=False),
+        )
 
-        # KvClient for read operations (iterate_all uses this)
-        self._kv_client = KvClient(self.read_node)
-
-        # Shared StreamDataBuilder — one instance, shared by all coroutines/threads
-        self._builder = StreamDataBuilder()
-
-        # One lock protecting ALL builder operations and the two fields below:
-        #   builder.set   (_stage_operation)
-        #   builder.get   (get / batch_get)        -- pseudocode, see note
-        #   builder.build + builder.stream_ids + builder.clear  (_commit_sync)
-        #   _pending_count
-        #   _commit_running
+        # Lock protecting cached.set() calls and _pending_count.
         self._lock = threading.Lock()
 
-        # Ops staged since the last commit snapshot, protected by _lock.
+        # Number of ops staged since the last commit. Protected by _lock.
         self._pending_count: int = 0
 
-        # True while _commit_sync is running in the executor, protected by _lock.
-        # Prevents multiple commits from queuing up: at most one commit task lives
-        # in the executor at any time.
-        self._commit_running: bool = False
-
-        # Single-thread executor — _commit_sync always runs on this one thread.
-        # max_workers=1 is a safety net; _commit_running already prevents queuing.
-        self._executor = concurrent.futures.ThreadPoolExecutor(
-            max_workers=1,
-            thread_name_prefix="zerog_commit",
+        # Background commit thread
+        self._stop_event = threading.Event()
+        self._commit_thread = threading.Thread(
+            target=self._commit_loop,
+            name="zerog_commit",
+            daemon=True,
         )
+        self._commit_thread.start()
 
         logger.info(
             f"✅ ZeroGKVStorage initialized: stream_id={stream_id}, "
-            f"use_indexer={use_indexer}, timeout={timeout}s"
+            f"kv_url={kv_url}, indexer_url={indexer_url}, "
+            f"commit_interval={COMMIT_INTERVAL}s"
         )
 
     # -------------------------------------------------------------------------
-    # Internal: commit (drain loop)
+    # Internal: time-based commit loop
     # -------------------------------------------------------------------------
 
-    def _commit_sync(self) -> None:
+    def _commit_loop(self) -> None:
         """
-        Take a snapshot of the builder, upload to 0G-Storage, then loop:
-        if _pending_count has reached COMMIT_THRESHOLD again (ops accumulated
-        during the upload), commit immediately without re-queuing.
-
-        Runs exclusively in self._executor (single thread). _commit_running
-        ensures only one instance of this method is ever active.
+        Dedicated background thread.
+        Wakes up every COMMIT_INTERVAL seconds.
+        If _pending_count > 0, calls cached.commit() (non-blocking) and resets
+        the counter. If _pending_count == 0, skips the interval silently.
         """
-        while True:
-            # --- Step 1: take snapshot under lock ---
-            try:
-                with self._lock:
-                    stream_data = self._builder.build(sorted_items=True)
-                    tags = create_tags(self._builder.stream_ids(), sorted_ids=True)
-                    # TODO: self._builder.clear()  # clear staged ops after snapshot
-                    committed_count = self._pending_count
-                    self._pending_count = 0
-            except Exception as e:
-                logger.error(f"❌ Commit snapshot failed: {e}", exc_info=True)
-                with self._lock:
-                    self._commit_running = False
-                return
-
-            # --- Step 2: upload outside lock ---
-            try:
-                payload = stream_data.encode()
-                opt = UploadOption(tags=tags)
-                tx, root = self._uploader.upload(
-                    file_path=BytesDataSource(payload),
-                    tags=tags,
-                    option=opt,
-                )
-                logger.info(f"✅ Commit ({committed_count} ops): tx={tx}, root={root}")
-            except Exception as e:
-                logger.error(f"❌ Commit upload failed: {e}", exc_info=True)
-                with self._lock:
-                    self._commit_running = False
-                return
-
-            # --- Step 3: drain loop check ---
-            # During the upload, new ops may have accumulated. If enough have
-            # built up, commit again immediately rather than waiting for the
-            # next threshold crossing in _stage_operation.
+        while not self._stop_event.wait(COMMIT_INTERVAL):
             with self._lock:
-                if self._pending_count < COMMIT_THRESHOLD:
-                    # Not enough for another commit; release the running flag
-                    # so the next threshold crossing in _stage_operation can
-                    # re-submit.
-                    self._commit_running = False
-                    return
-                # else: fall through and loop — _commit_running stays True
+                if self._pending_count == 0:
+                    continue
+                pending = self._pending_count
+                self._pending_count = 0
+
+            try:
+                self._cached.commit()
+                logger.info(f"✅ Commit triggered ({pending} pending ops)")
+            except Exception as e:
+                logger.error(f"❌ Commit failed: {e}", exc_info=True)
 
     # -------------------------------------------------------------------------
     # Internal: stage a set/delete operation
@@ -203,35 +130,13 @@ class ZeroGKVStorage(KVStorageInterface):
 
     def _stage_operation(self, key: str, value_bytes: bytes) -> bool:
         """
-        Call builder.set under lock, then submit _commit_sync if the threshold
-        is reached AND no commit is already running.
+        Call cached.set() under lock, then increment _pending_count.
+        The commit thread will flush to the chain on the next interval.
         """
         key_bytes = key.encode('utf-8')
-        should_submit = False
-
         with self._lock:
-            self._builder.set(
-                stream_id=self.stream_id,
-                key=key_bytes,
-                data=value_bytes,
-            )
+            self._cached.set(self.stream_id, key_bytes, value_bytes)
             self._pending_count += 1
-
-            # Submit a new commit only when threshold is crossed AND no commit
-            # is currently running. If a commit is running, the drain loop
-            # will pick up these ops after the current upload finishes.
-            if self._pending_count >= COMMIT_THRESHOLD and not self._commit_running:
-                self._commit_running = True
-                should_submit = True
-
-        if should_submit:
-            try:
-                self._executor.submit(self._commit_sync)
-            except Exception as e:
-                logger.error(f"❌ Failed to submit commit task: {e}", exc_info=True)
-                with self._lock:
-                    self._commit_running = False
-
         return True
 
     # -------------------------------------------------------------------------
@@ -239,36 +144,21 @@ class ZeroGKVStorage(KVStorageInterface):
     # -------------------------------------------------------------------------
 
     async def get(self, key: str) -> Optional[str]:
-        """
-        Get value by key from the local builder state (staged, not yet uploaded).
-
-        NOTE: builder.get is pseudocode — StreamDataBuilder does not expose a
-        get() method in the current SDK. Replace with the correct call when available.
-        """
         try:
             key_bytes = key.encode('utf-8')
-
-            with self._lock:
-                # PSEUDOCODE: builder.get does not exist in the current SDK.
-                value_bytes = self._builder.get(  # type: ignore[attr-defined]
-                    stream_id=self.stream_id,
-                    key=key_bytes,
-                )
-
-            if value_bytes is None or len(value_bytes) == 0:
+            loop = asyncio.get_event_loop()
+            value_bytes = await loop.run_in_executor(
+                None, self._cached.get_bytes, self.stream_id, key_bytes
+            )
+            if not value_bytes:
                 return None
-
             return value_bytes.decode('utf-8')
-
         except Exception as e:
             logger.error(f"❌ Failed to get key {key}: {e}")
             return None
 
     async def put(self, key: str, value: str) -> bool:
-        """
-        Stage a put operation (builder.set).
-        Triggers _commit when COMMIT_THRESHOLD ops accumulate and no commit is running.
-        """
+        """Stage a put operation. Commit happens in the background thread."""
         try:
             return self._stage_operation(key, value.encode('utf-8'))
         except Exception as e:
@@ -276,10 +166,7 @@ class ZeroGKVStorage(KVStorageInterface):
             return False
 
     async def delete(self, key: str) -> bool:
-        """
-        Stage a delete operation (builder.set with empty bytes).
-        Triggers _commit when COMMIT_THRESHOLD ops accumulate and no commit is running.
-        """
+        """Stage a delete operation (empty bytes). Commit happens in the background thread."""
         try:
             return self._stage_operation(key, b'')
         except Exception as e:
@@ -287,27 +174,18 @@ class ZeroGKVStorage(KVStorageInterface):
             return False
 
     async def batch_get(self, keys: List[str]) -> Dict[str, str]:
-        """
-        Batch get values from local builder state.
-
-        NOTE: builder.get is pseudocode — see get() for details.
-        """
         if not keys:
             return {}
 
         result = {}
         try:
+            loop = asyncio.get_event_loop()
             for key in keys:
                 key_bytes = key.encode('utf-8')
-
-                with self._lock:
-                    # PSEUDOCODE: builder.get does not exist in the current SDK.
-                    value_bytes = self._builder.get(  # type: ignore[attr-defined]
-                        stream_id=self.stream_id,
-                        key=key_bytes,
-                    )
-
-                if value_bytes and len(value_bytes) > 0:
+                value_bytes = await loop.run_in_executor(
+                    None, self._cached.get_bytes, self.stream_id, key_bytes
+                )
+                if value_bytes:
                     result[key] = value_bytes.decode('utf-8')
 
             logger.debug(f"✅ Batch get {len(result)}/{len(keys)} keys")
@@ -318,10 +196,7 @@ class ZeroGKVStorage(KVStorageInterface):
             return {}
 
     async def batch_delete(self, keys: List[str]) -> int:
-        """
-        Stage delete (empty bytes) for each key.
-        May trigger a _commit if COMMIT_THRESHOLD is crossed and no commit is running.
-        """
+        """Stage delete for each key. Commit happens in the background thread."""
         if not keys:
             return 0
 
@@ -337,19 +212,14 @@ class ZeroGKVStorage(KVStorageInterface):
 
     async def iterate_all(self) -> AsyncIterator[Tuple[str, str]]:
         """
-        Iterate all key-value pairs using 0G Storage KvIterator.
-
-        Uses KvClient.new_iterator to traverse the entire stream from first to last.
-        All SDK calls are synchronous; they run in the thread pool via run_in_executor
-        to avoid blocking the event loop.
+        Iterate all key-value pairs using CachedKvClient's iterator.
         Empty/deleted entries (empty bytes) are skipped.
         """
         try:
             loop = asyncio.get_event_loop()
 
-            # Create iterator and seek to first key (both are synchronous SDK calls)
             iterator = await loop.run_in_executor(
-                None, self._kv_client.new_iterator, self.stream_id
+                None, self._cached.new_iterator, self.stream_id
             )
             await loop.run_in_executor(None, iterator.seek_to_first)
 
@@ -361,14 +231,11 @@ class ZeroGKVStorage(KVStorageInterface):
                 if not valid:
                     break
 
-                # iterator.key and iterator.data are properties; access via lambda
-                # to keep the call inside the executor thread
                 key_bytes = await loop.run_in_executor(None, lambda: iterator.key)
                 data_bytes = await loop.run_in_executor(None, lambda: iterator.data)
 
                 key = key_bytes.decode('utf-8')
 
-                # Skip empty/deleted entries (0G uses empty bytes for deletion)
                 if data_bytes and len(data_bytes) > 0:
                     value = data_bytes.decode('utf-8')
                     total_count += 1
@@ -392,6 +259,32 @@ class ZeroGKVStorage(KVStorageInterface):
         except Exception as e:
             logger.error(f"❌ ZeroG iterate_all failed: {e}", exc_info=True)
             raise
+
+    def close(self) -> None:
+        """
+        Stop the commit thread, flush any remaining pending ops, then
+        release CachedKvClient resources.
+        """
+        self._stop_event.set()
+        self._commit_thread.join(timeout=5)
+
+        # Final flush: commit any ops staged after the last interval
+        with self._lock:
+            pending = self._pending_count
+            self._pending_count = 0
+
+        if pending > 0:
+            try:
+                self._cached.commit()
+                logger.info(f"✅ Final commit on close ({pending} pending ops)")
+            except Exception as e:
+                logger.error(f"❌ Final commit on close failed: {e}", exc_info=True)
+
+        try:
+            self._cached.close()
+            logger.info("✅ ZeroGKVStorage closed")
+        except Exception as e:
+            logger.error(f"❌ Failed to close CachedKvClient: {e}")
 
 
 __all__ = ["ZeroGKVStorage"]

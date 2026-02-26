@@ -40,16 +40,12 @@ class KVStorageLifespan(LifespanProvider):
             KV_STORAGE_TYPE: "inmemory", "redis", or "zerog" (default: "inmemory")
 
         For ZeroG Storage, also requires:
-            ZEROG_NODES: Comma-separated write nodes
-            ZEROG_READ_NODE: Read node URL
+            ZEROG_KV_URL: KV node URL for reads/writes
             ZEROG_RPC_URL: RPC endpoint URL
             ZEROG_STREAM_ID: Unified stream ID
             ZEROG_WALLET_KEY: Wallet private key
-            ZEROG_TIMEOUT: Command timeout in seconds (optional, default: 30)
-            ZEROG_MAX_RETRIES: Max retry attempts (optional, default: 3)
-            ZEROG_USE_INDEXER: Use IndexerClient or NodeUploader (optional, default: true)
-            ZEROG_INDEXER_URL: Indexer service URL (required if USE_INDEXER=true)
-            ZEROG_FLOW_ADDRESS: Flow contract address (required if USE_INDEXER=true)
+            ZEROG_INDEXER_URL: Indexer service URL
+            ZEROG_FLOW_ADDRESS: Flow contract address
         """
         kv_type = os.getenv("KV_STORAGE_TYPE", "inmemory").lower()
 
@@ -63,21 +59,24 @@ class KVStorageLifespan(LifespanProvider):
                 )
 
                 # Read configuration from environment variables
-                nodes = os.getenv("ZEROG_NODES")
+                kv_url = os.getenv("ZEROG_KV_URL")
                 stream_id = os.getenv("ZEROG_STREAM_ID")
                 rpc_url = os.getenv("ZEROG_RPC_URL")
-                read_node = os.getenv("ZEROG_READ_NODE")
+                indexer_url = os.getenv("ZEROG_INDEXER_URL")
+                flow_address = os.getenv("ZEROG_FLOW_ADDRESS")
 
                 # Validate required configuration
                 missing_vars = []
-                if not nodes:
-                    missing_vars.append("ZEROG_NODES")
+                if not kv_url:
+                    missing_vars.append("ZEROG_KV_URL")
                 if not stream_id:
                     missing_vars.append("ZEROG_STREAM_ID")
                 if not rpc_url:
                     missing_vars.append("ZEROG_RPC_URL")
-                if not read_node:
-                    missing_vars.append("ZEROG_READ_NODE")
+                if not indexer_url:
+                    missing_vars.append("ZEROG_INDEXER_URL")
+                if not flow_address:
+                    missing_vars.append("ZEROG_FLOW_ADDRESS")
 
                 if missing_vars:
                     raise ValueError(
@@ -85,38 +84,12 @@ class KVStorageLifespan(LifespanProvider):
                         f"Please set these environment variables or check .env file."
                     )
 
-                # Optional parameters with defaults
-                timeout = int(os.getenv("ZEROG_TIMEOUT", "30"))
-                max_retries = int(os.getenv("ZEROG_MAX_RETRIES", "3"))
-
-                # Read additional optional parameters
-                use_indexer = os.getenv("ZEROG_USE_INDEXER", "true").lower() == "true"
-                indexer_url = os.getenv("ZEROG_INDEXER_URL")
-                flow_address = os.getenv("ZEROG_FLOW_ADDRESS")
-
-                # Validate indexer configuration if use_indexer is enabled
-                if use_indexer:
-                    if not indexer_url:
-                        raise ValueError(
-                            "ZEROG_INDEXER_URL is required when ZEROG_USE_INDEXER=true. "
-                            "Please set this environment variable or check .env file."
-                        )
-                    if not flow_address:
-                        raise ValueError(
-                            "ZEROG_FLOW_ADDRESS is required when ZEROG_USE_INDEXER=true. "
-                            "Please set this environment variable or check .env file."
-                        )
-
                 # Create ZeroGKVStorage instance
                 # Note: ZEROG_WALLET_KEY is read inside ZeroGKVStorage.__init__
                 kv_storage = ZeroGKVStorage(
-                    nodes=nodes,
+                    kv_url=kv_url,
                     stream_id=stream_id,
                     rpc_url=rpc_url,
-                    read_node=read_node,
-                    timeout=timeout,
-                    max_retries=max_retries,
-                    use_indexer=use_indexer,
                     indexer_url=indexer_url,
                     flow_address=flow_address,
                 )
@@ -124,9 +97,8 @@ class KVStorageLifespan(LifespanProvider):
                 logger.info(
                     f"✅ 0G-Storage KV-Storage initialized successfully\n"
                     f"   Stream ID: {stream_id}\n"
-                    f"   Nodes: {nodes.split(',')[0]}... (+{len(nodes.split(',')) - 1} more)\n"
-                    f"   Read Node: {read_node}\n"
-                    f"   Timeout: {timeout}s, Max Retries: {max_retries}"
+                    f"   KV URL: {kv_url}\n"
+                    f"   Indexer URL: {indexer_url}"
                 )
 
             elif kv_type == "redis":
@@ -179,6 +151,8 @@ class KVStorageLifespan(LifespanProvider):
         """Cleanup KV-Storage resources"""
         if self.kv_storage:
             logger.info(f"🔄 Shutting down KV-Storage: {type(self.kv_storage).__name__}")
+            if hasattr(self.kv_storage, 'close'):
+                self.kv_storage.close()
 
 
 __all__ = ["KVStorageLifespan"]
