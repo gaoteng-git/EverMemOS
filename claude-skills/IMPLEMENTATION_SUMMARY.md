@@ -54,7 +54,7 @@ ENABLE_VECTOR_SEARCH=false
 ### What It Does
 
 - Creates `docker-compose.yml` for all services
-- Creates `.env.docker` configuration
+- Creates `.env` configuration
 - Automatically starts Docker containers
 - Includes MongoDB, Elasticsearch, and Milvus with dependencies
 
@@ -67,7 +67,7 @@ ENABLE_VECTOR_SEARCH=false
 - Network configuration
 - Volume persistence
 
-**`.env.docker`:**
+**`.env`:**
 ```bash
 STORAGE_MODE=standard
 USE_MONGODB=true
@@ -213,7 +213,7 @@ The `detect_setup_mode()` function automatically recommends:
 
 - Line 76-82: `detect_env_file()` method
 - Automatically detects configuration file
-- Priority order: `.env.docker` > `.env.production` > `.env.lite` > `.env`
+- Priority order: `.env` > `.env.production` > `.env.lite` > `.env`
 
 ### Start Command Enhancement
 
@@ -257,10 +257,10 @@ python3 setup.py --mode standard
 docker ps
 
 # Start EverMemOS
-python3 service_manager.py start --env-file .env.docker
+python3 service_manager.py start --env-file .env
 
 # Or manually:
-ENV_FILE=.env.docker uv run python src/run.py
+ENV_FILE=.env uv run python src/run.py
 ```
 
 ### Full Mode (Production)
@@ -313,7 +313,7 @@ curl http://localhost:9200   # Elasticsearch
 # Milvus on 19530
 
 # Check configuration
-cat .env.docker
+cat .env
 
 # Start EverMemOS
 python3 service_manager.py start

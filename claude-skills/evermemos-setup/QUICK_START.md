@@ -17,7 +17,7 @@ That's it! No modes, no choices. Just works.
 3. ✅ Installs Docker Compose (asks permission first)
 4. ✅ Installs uv and dependencies
 5. ✅ Creates docker-compose.yml
-6. ✅ Creates .env.docker configuration
+6. ✅ Creates .env configuration
 7. ✅ Starts MongoDB, Elasticsearch, Milvus
 8. ✅ Verifies all services running
 
@@ -90,7 +90,7 @@ docker-compose restart
 - **Milvus**: localhost:19530
 - **Redis**: localhost:6379
 
-Configuration: `.env.docker`
+Configuration: `.env`
 
 ---
 

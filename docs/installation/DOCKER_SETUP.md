@@ -458,7 +458,7 @@ services:
       - MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASSWORD:-memsys123}
 ```
 
-Then create `.env.docker`:
+Then create `.env`:
 ```bash
 MONGO_USER=admin
 MONGO_PASSWORD=secretpassword

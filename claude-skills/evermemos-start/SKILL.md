@@ -288,7 +288,7 @@ python3 scripts/service_manager.py start --foreground
 `data/evermemos.log` - Service logs
 
 ### Configuration
-`.env.docker` or `.env` - Environment configuration
+`.env` or `.env` - Environment configuration
 
 ## Integration with Other Skills
 

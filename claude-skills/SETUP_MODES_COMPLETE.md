@@ -21,7 +21,7 @@
 ### ✅ Standard Mode
 - [x] `setup_standard_mode()` function implemented
 - [x] `docker-compose.yml` generation
-- [x] `.env.docker` configuration generation
+- [x] `.env` configuration generation
 - [x] MongoDB 6.0 service configured
 - [x] Elasticsearch 8.11.0 service configured
 - [x] Milvus 2.3.3 with dependencies (etcd, MinIO)
@@ -115,7 +115,7 @@ SERVER_PORT=1995
 
 **Creates:**
 - `docker-compose.yml` - Full service stack
-- `.env.docker` - Docker-based configuration
+- `.env` - Docker-based configuration
 - `data/` directory
 
 **Docker Services:**
@@ -191,7 +191,7 @@ METRICS_PORT=9090
    ```python
    def detect_env_file(self) -> Optional[str]:
        """Detect which environment file to use"""
-       for env_file in [".env.docker", ".env.production", ".env.lite", ".env"]:
+       for env_file in [".env", ".env.production", ".env.lite", ".env"]:
            if (self.project_dir / env_file).exists():
                return env_file
        return None
@@ -214,7 +214,7 @@ METRICS_PORT=9090
 
 3. **Command-line Argument** (Lines 279-285)
    ```bash
-   --env-file .env.docker
+   --env-file .env
    ```
 
 ---
@@ -278,7 +278,7 @@ python3 setup.py --mode standard
 
 # What happens:
 # ✓ Creates docker-compose.yml
-# ✓ Creates .env.docker
+# ✓ Creates .env
 # ✓ Starts Docker services:
 #   - MongoDB on 27017
 #   - Elasticsearch on 9200
@@ -290,7 +290,7 @@ docker ps  # Should show 5 containers
 # Start EverMemOS
 python3 service_manager.py start
 # or
-ENV_FILE=.env.docker uv run python src/run.py
+ENV_FILE=.env uv run python src/run.py
 ```
 
 ### Mode 3: Full (Production)
@@ -321,7 +321,7 @@ ENV_FILE=.env.production uv run python src/run.py
 
 | Setting | Lite | Standard | Full |
 |---------|------|----------|------|
-| **File** | .env.lite | .env.docker | .env.production |
+| **File** | .env.lite | .env | .env.production |
 | **Storage** | SQLite | MongoDB | MongoDB |
 | **Search** | None | Elasticsearch | Elasticsearch |
 | **Vector** | None | Milvus | Milvus |

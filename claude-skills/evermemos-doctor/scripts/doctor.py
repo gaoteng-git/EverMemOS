@@ -109,7 +109,7 @@ class Doctor:
 
     def check_configuration(self) -> bool:
         """Check configuration files"""
-        env_files = [".env", ".env.lite", ".env.docker", ".env.production"]
+        env_files = [".env", ".env.lite", ".env.production"]
         found = False
 
         for env_file in env_files:

@@ -65,7 +65,7 @@ No parameters needed - the setup wizard handles everything automatically.
 - Set up Docker networks and volumes
 
 ### 6. Configuration
-- Create `.env.docker` configuration file
+- Create `.env` configuration file
 - Set up data directories
 - Configure service connection strings
 - Set optimal defaults for Docker environment
@@ -122,7 +122,7 @@ This will:
 - Check if Docker is installed (auto-install if user agrees)
 - Check if Docker Compose is installed (auto-install if user agrees)
 - Create docker-compose.yml
-- Create .env.docker configuration
+- Create .env configuration
 - Start all Docker services
 - Verify everything is working
 
@@ -158,7 +158,7 @@ Would you like to install Docker Compose automatically? (y/n): y
 Creating docker-compose.yml...
 ✅ Docker Compose configuration created
 
-Creating .env.docker configuration...
+Creating .env configuration...
 ✅ Configuration file created
 
 Starting Docker services...
@@ -182,7 +182,7 @@ Services running:
   • Milvus: localhost:19530
   • Redis: localhost:6379
 
-Configuration: .env.docker
+Configuration: .env
 
 Next steps:
   1. Configure API keys in .env file
@@ -236,7 +236,7 @@ The setup creates the following Docker containers:
 
 ### Environment Variables
 
-The `.env.docker` file contains:
+The `.env` file contains:
 
 ```bash
 # MongoDB Configuration
@@ -449,7 +449,7 @@ After successful setup:
 ```
 EverMemOS/
 ├── docker-compose.yml          # Docker services configuration
-├── .env.docker                 # Environment variables
+├── .env                 # Environment variables
 ├── data/                       # Application data directory
 └── [Docker volumes]
     ├── mongodb_data/           # MongoDB data

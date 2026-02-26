@@ -60,25 +60,13 @@ class ServiceManager:
             except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError):
                 pass
 
-        # Detect configuration file being used
-        for env_file in [".env.docker", ".env"]:
-            env_path = self.project_dir / env_file
-            if env_path.exists():
-                status["mode"] = "docker" if env_file == ".env.docker" else "default"
-                break
+        # Check configuration file
+        if (self.project_dir / ".env").exists():
+            status["mode"] = "default"
 
         return status
 
-    def detect_env_file(self) -> Optional[str]:
-        """Detect which environment file to use"""
-        # Priority order: .env.docker (created by setup), .env (default)
-        for env_file in [".env.docker", ".env"]:
-            env_path = self.project_dir / env_file
-            if env_path.exists():
-                return env_file
-        return None
-
-    def start(self, background: bool = True, env_file: Optional[str] = None) -> bool:
+    def start(self, background: bool = True) -> bool:
         """Start EverMemOS service"""
         if self.is_running():
             print("✅ EverMemOS is already running")
@@ -87,19 +75,11 @@ class ServiceManager:
         # Ensure data directory exists
         (self.project_dir / "data").mkdir(exist_ok=True)
 
-        # Detect environment file if not specified
-        if env_file is None:
-            env_file = self.detect_env_file()
+        print(f"ℹ️  Using configuration: .env")
 
-        if env_file:
-            print(f"ℹ️  Using configuration: {env_file}")
-
-        # Prepare command with environment file
+        # Always use .env
         env = os.environ.copy()
-        if env_file:
-            env["ENV_FILE"] = env_file
-
-        cmd = ["uv", "run", "python", "src/run.py"]
+        cmd = ["uv", "run", "python", "src/run.py", "--env-file", ".env"]
 
         if background:
             print("🚀 Starting EverMemOS in background...")
@@ -272,13 +252,6 @@ def main():
         default=None,
         help="Project directory (default: current directory)"
     )
-    parser.add_argument(
-        "--env-file",
-        type=str,
-        default=None,
-        help="Environment file to use (default: auto-detect)"
-    )
-
     args = parser.parse_args()
 
     # Create manager
@@ -286,7 +259,7 @@ def main():
 
     # Execute action
     if args.action == "start":
-        success = manager.start(background=not args.foreground, env_file=args.env_file)
+        success = manager.start(background=not args.foreground)
         sys.exit(0 if success else 1)
 
     elif args.action == "stop":
