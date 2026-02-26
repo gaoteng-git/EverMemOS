@@ -146,10 +146,7 @@ class ZeroGKVStorage(KVStorageInterface):
     async def get(self, key: str) -> Optional[str]:
         try:
             key_bytes = key.encode('utf-8')
-            loop = asyncio.get_event_loop()
-            value_bytes = await loop.run_in_executor(
-                None, self._cached.get_bytes, self.stream_id, key_bytes
-            )
+            value_bytes = self._cached.get_bytes(self.stream_id, key_bytes)
             if not value_bytes:
                 return None
             return value_bytes.decode('utf-8')
@@ -179,12 +176,9 @@ class ZeroGKVStorage(KVStorageInterface):
 
         result = {}
         try:
-            loop = asyncio.get_event_loop()
             for key in keys:
                 key_bytes = key.encode('utf-8')
-                value_bytes = await loop.run_in_executor(
-                    None, self._cached.get_bytes, self.stream_id, key_bytes
-                )
+                value_bytes = self._cached.get_bytes(self.stream_id, key_bytes)
                 if value_bytes:
                     result[key] = value_bytes.decode('utf-8')
 
