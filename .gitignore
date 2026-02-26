@@ -207,7 +207,7 @@ src/memory_layer/memory_extractor/profile_memory_extractor keep llm merge.py
 #LLM related
 AGENTS.mk
 docs/api_docs/profile_extraction_fields.md
-.claude/settings.local.json
+.claude/
 .cursor/*
 
 #tmp_data
