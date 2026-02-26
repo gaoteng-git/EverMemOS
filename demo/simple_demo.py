@@ -27,7 +27,7 @@ async def main():
     # ========== Step 1: Store Conversations ==========
     print("\n📝 Step 1: Store Conversations")
     memory.print_separator()
-    
+
     await memory.store("I love playing soccer, often go to the field on weekends")
     await asyncio.sleep(2)
     
@@ -52,19 +52,19 @@ async def main():
     print("\n⏳ Step 2: Wait for Index Building")
     memory.print_separator()
     await memory.wait_for_index(seconds=10)
-    
+
     # ========== Step 3: Search Memories ==========
     print("\n🔍 Step 3: Search Memories")
     memory.print_separator()
     
     print("\n💬 Query 1: What sports does the user like?")
-    await memory.search("What sports does the user like?")
-    
+    await memory.search("What sports does the user like?", user_id="")
+
     print("\n💬 Query 2: What is the user's favorite team?")
-    await memory.search("What is the user's favorite team?")
-    
+    await memory.search("What is the user's favorite team?", user_id="")
+
     print("\n💬 Query 3: What are the user's sports hobbies?")
-    await memory.search("What are the user's sports hobbies?")
+    await memory.search("What are the user's sports hobbies?", user_id="")
     
     # ========== Done ==========
     memory.print_summary()

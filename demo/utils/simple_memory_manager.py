@@ -240,7 +240,8 @@ class SimpleMemoryManager:
             return False
 
     async def search(
-        self, query: str, top_k: int = 3, mode: str = "rrf", show_details: bool = True
+        self, query: str, top_k: int = 3, mode: str = "rrf", show_details: bool = True,
+        user_id: str = None,
     ) -> List[Dict[str, Any]]:
         """Search memories
 
@@ -255,6 +256,7 @@ class SimpleMemoryManager:
                 - "rrf": Keyword + Vector + RRF fusion
                 - "agentic": LLM-guided multi-round retrieval
             show_details: Whether to show detailed information (default: True)
+            user_id: Filter by user_id. "" = group memories only, None = all memories.
 
         Returns:
             List of memories
@@ -266,6 +268,8 @@ class SimpleMemoryManager:
             "retrieve_method": mode,
             "group_id": self.group_id,
         }
+        if user_id is not None:
+            payload["user_id"] = user_id
 
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
