@@ -1336,9 +1336,14 @@ class MemoryManager:
         # Sort memories within each group by timestamp, and calculate importance score
         group_scores = []
         for group_id, group_data in memories_by_group.items():
-            # Sort memories by timestamp
-            group_data['memories'].sort(
-                key=lambda m: m.timestamp if m.timestamp else ''
+            # Sort (memory, score) pairs together so scores stay in sync with memories
+            paired = sorted(
+                zip(group_data['memories'], group_data['scores']),
+                key=lambda pair: pair[0].timestamp if pair[0].timestamp else '',
+            )
+            group_data['memories'], group_data['scores'] = (
+                [m for m, _ in paired],
+                [s for _, s in paired],
             )
 
             # Calculate importance score
