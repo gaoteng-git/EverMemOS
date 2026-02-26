@@ -12,19 +12,45 @@ Environment Variables Required:
 
 Concurrency Model:
 - Single CachedKvClient shared across all coroutines/threads.
-- One threading.Lock (_lock) serializes staged-write operations:
-    cached.set (put/delete) and _pending_count updates.
+- SDK methods set(), get_bytes(), and commit() are all thread-safe.
 - A dedicated background daemon thread (_commit_thread) wakes up every
   COMMIT_INTERVAL seconds. If _pending_count > 0, it calls cached.commit()
   (non-blocking: actual upload happens inside the SDK) and resets the counter;
   otherwise it skips the interval entirely.
-- Lock is NOT held during commit(); it is only held during cached.set() calls.
+- _pending_count is an _AtomicInt; increment() and get_and_reset() are each
+  individually atomic, so there is no race between the writer and commit thread.
 """
 
 import asyncio
 import os
 import threading
 from typing import Optional, Dict, List, Tuple, AsyncIterator
+
+
+class _AtomicInt:
+    """Minimal thread-safe integer counter.
+
+    increment() and get_and_reset() are each atomic operations.
+    """
+
+    __slots__ = ("_value", "_lock")
+
+    def __init__(self) -> None:
+        self._value: int = 0
+        self._lock = threading.Lock()
+
+    def increment(self) -> None:
+        with self._lock:
+            self._value += 1
+
+    def get_and_reset(self) -> int:
+        """Return current value and atomically reset to 0."""
+        with self._lock:
+            value, self._value = self._value, 0
+            return value
+
+    def __bool__(self) -> bool:
+        return bool(self._value)
 
 from core.observation.logger import get_logger
 from core.di.decorators import component
@@ -79,11 +105,8 @@ class ZeroGKVStorage(KVStorageInterface):
             upload_option=UploadOption(skip_tx=False),
         )
 
-        # Lock protecting cached.set() calls and _pending_count.
-        self._lock = threading.Lock()
-
-        # Number of ops staged since the last commit. Protected by _lock.
-        self._pending_count: int = 0
+        # Atomic counter: ops staged since the last commit.
+        self._pending_count = _AtomicInt()
 
         # Background commit thread
         self._stop_event = threading.Event()
@@ -112,11 +135,9 @@ class ZeroGKVStorage(KVStorageInterface):
         the counter. If _pending_count == 0, skips the interval silently.
         """
         while not self._stop_event.wait(COMMIT_INTERVAL):
-            with self._lock:
-                if self._pending_count == 0:
-                    continue
-                pending = self._pending_count
-                self._pending_count = 0
+            pending = self._pending_count.get_and_reset()
+            if not pending:
+                continue
 
             try:
                 self._cached.commit()
@@ -130,13 +151,12 @@ class ZeroGKVStorage(KVStorageInterface):
 
     def _stage_operation(self, key: str, value_bytes: bytes) -> bool:
         """
-        Call cached.set() under lock, then increment _pending_count.
+        Call cached.set() then increment _pending_count.
         The commit thread will flush to the chain on the next interval.
         """
         key_bytes = key.encode('utf-8')
-        with self._lock:
-            self._cached.set(self.stream_id, key_bytes, value_bytes)
-            self._pending_count += 1
+        self._cached.set(self.stream_id, key_bytes, value_bytes)
+        self._pending_count.increment()
         return True
 
     # -------------------------------------------------------------------------
