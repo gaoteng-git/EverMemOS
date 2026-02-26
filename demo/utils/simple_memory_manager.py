@@ -88,13 +88,13 @@ class SimpleMemoryManager:
         """Initialize the manager
 
         Args:
-            base_url: API server address (default: from API_BASE_URL env or http://localhost:8001)
+            base_url: API server address (default: from API_BASE_URL env or http://localhost:1995)
             group_id: Group ID (default: default_group)
             scene: Scene type (default: "assistant", options: "assistant" or "companion")
         """
         # Use environment variable API_BASE_URL if base_url not provided
         if base_url is None:
-            base_url = os.getenv("API_BASE_URL", "http://localhost:8001")
+            base_url = os.getenv("API_BASE_URL", "http://localhost:1995")
         self.base_url = base_url
         self.group_id = group_id
         self.group_name = "Simple Demo Group"

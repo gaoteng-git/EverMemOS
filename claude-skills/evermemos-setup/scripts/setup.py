@@ -708,8 +708,8 @@ REDIS_SSL=false
 KV_STORAGE_TYPE=inmemory
 
 # Server Configuration
-MEMSYS_PORT=8001
-API_BASE_URL=http://localhost:8001
+MEMSYS_PORT=1995
+API_BASE_URL=http://localhost:1995
 
 # Logging
 LOG_LEVEL=INFO
@@ -812,7 +812,7 @@ MEMORY_LANGUAGE=en
         # Ensure env vars are set so hooks know where to reach the backend
         if "env" not in settings:
             settings["env"] = {}
-        settings["env"].setdefault("EVERMEMOS_BASE_URL", "http://localhost:8001")
+        settings["env"].setdefault("EVERMEMOS_BASE_URL", "http://localhost:1995")
         settings["env"].setdefault("EVERMEMOS_USER_ID", "claude_code_user")
         settings["env"].setdefault("EVERMEMOS_GROUP_ID", "session_2026")
 
