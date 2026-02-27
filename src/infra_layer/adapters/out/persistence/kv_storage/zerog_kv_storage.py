@@ -24,6 +24,7 @@ Concurrency Model:
 import asyncio
 import os
 import threading
+from datetime import datetime
 from typing import Optional, Dict, List, Tuple, AsyncIterator
 
 
@@ -117,11 +118,23 @@ class ZeroGKVStorage(KVStorageInterface):
         )
         self._commit_thread.start()
 
+        # Per-instance operation log file under /tmp
+        dt_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self._op_log_path = f"/tmp/log_EverMemOS_ZeroGKVStorage_{dt_str}.txt"
+        self._op_log_lock = threading.Lock()
+        self._op_log_file = open(self._op_log_path, 'w', encoding='utf-8')
+        self._op_log_file.write(
+            f"[{datetime.now().isoformat()}] ZeroGKVStorage initialized:"
+            f" stream_id={stream_id}, kv_url={kv_url}\n"
+        )
+        self._op_log_file.flush()
+
         logger.info(
             f"✅ ZeroGKVStorage initialized: stream_id={stream_id}, "
             f"kv_url={kv_url}, indexer_url={indexer_url}, "
             f"commit_interval={COMMIT_INTERVAL}s"
         )
+        logger.info(f"📄 ZeroGKVStorage op log: {self._op_log_path}")
 
     # -------------------------------------------------------------------------
     # Internal: time-based commit loop
@@ -142,8 +155,21 @@ class ZeroGKVStorage(KVStorageInterface):
             try:
                 self._cached.commit()
                 logger.info(f"✅ Commit triggered ({pending} pending ops)")
+                self._write_op_log(f"commit triggered ({pending} pending ops)")
             except Exception as e:
                 logger.error(f"❌ Commit failed: {e}", exc_info=True)
+
+    # -------------------------------------------------------------------------
+    # Internal: write a line to the per-instance operation log file
+    # -------------------------------------------------------------------------
+
+    def _write_op_log(self, msg: str) -> None:
+        with self._op_log_lock:
+            try:
+                self._op_log_file.write(f"[{datetime.now().isoformat()}] {msg}\n")
+                self._op_log_file.flush()
+            except Exception:
+                pass
 
     # -------------------------------------------------------------------------
     # Internal: stage a set/delete operation
@@ -164,18 +190,26 @@ class ZeroGKVStorage(KVStorageInterface):
     # -------------------------------------------------------------------------
 
     async def get(self, key: str) -> Optional[str]:
+        logger.info(f"get key={key}")
+        self._write_op_log(f"get key={key}")
         try:
             key_bytes = key.encode('utf-8')
             value_bytes = self._cached.get_bytes(self.stream_id, key_bytes)
             if not value_bytes:
+                self._write_op_log(f"get value=None")
                 return None
-            return value_bytes.decode('utf-8')
+            value = value_bytes.decode('utf-8')
+            self._write_op_log(f"get value={value}")
+            return value
         except Exception as e:
             logger.error(f"❌ Failed to get key {key}: {e}")
             return None
 
     async def put(self, key: str, value: str) -> bool:
         """Stage a put operation. Commit happens in the background thread."""
+        logger.info(f"put key={key}")
+        self._write_op_log(f"put key={key}")
+        self._write_op_log(f"put value={value}")
         try:
             return self._stage_operation(key, value.encode('utf-8'))
         except Exception as e:
@@ -184,6 +218,8 @@ class ZeroGKVStorage(KVStorageInterface):
 
     async def delete(self, key: str) -> bool:
         """Stage a delete operation (empty bytes). Commit happens in the background thread."""
+        logger.info(f"delete key={key}")
+        self._write_op_log(f"delete key={key}")
         try:
             return self._stage_operation(key, b'')
         except Exception as e:
@@ -191,6 +227,8 @@ class ZeroGKVStorage(KVStorageInterface):
             return False
 
     async def batch_get(self, keys: List[str]) -> Dict[str, str]:
+        logger.info(f"batch_get keys={keys}")
+        self._write_op_log(f"batch_get keys={keys}")
         if not keys:
             return {}
 
@@ -202,7 +240,7 @@ class ZeroGKVStorage(KVStorageInterface):
                 if value_bytes:
                     result[key] = value_bytes.decode('utf-8')
 
-            logger.debug(f"✅ Batch get {len(result)}/{len(keys)} keys")
+            logger.info(f"✅ Batch get {len(result)}/{len(keys)} keys")
             return result
 
         except Exception as e:
@@ -211,6 +249,8 @@ class ZeroGKVStorage(KVStorageInterface):
 
     async def batch_delete(self, keys: List[str]) -> int:
         """Stage delete for each key. Commit happens in the background thread."""
+        logger.info(f"batch_delete keys={keys}")
+        self._write_op_log(f"batch_delete keys={keys}")
         if not keys:
             return 0
 
@@ -229,6 +269,7 @@ class ZeroGKVStorage(KVStorageInterface):
         Iterate all key-value pairs using CachedKvClient's iterator.
         Empty/deleted entries (empty bytes) are skipped.
         """
+        logger.info("iterate_all")
         try:
             loop = asyncio.get_event_loop()
 
@@ -260,7 +301,7 @@ class ZeroGKVStorage(KVStorageInterface):
                 await loop.run_in_executor(None, iterator.next)
 
                 if (total_count + skipped_count) % 1000 == 0 and (total_count + skipped_count) > 0:
-                    logger.debug(
+                    logger.info(
                         f"📊 ZeroG iterate progress: {total_count} yielded, "
                         f"{skipped_count} skipped (empty/deleted)"
                     )
@@ -289,6 +330,15 @@ class ZeroGKVStorage(KVStorageInterface):
             logger.info("✅ ZeroGKVStorage closed")
         except Exception as e:
             logger.error(f"❌ Failed to close CachedKvClient: {e}")
+
+        with self._op_log_lock:
+            try:
+                self._op_log_file.write(
+                    f"[{datetime.now().isoformat()}] ZeroGKVStorage closed\n"
+                )
+                self._op_log_file.close()
+            except Exception:
+                pass
 
 
 __all__ = ["ZeroGKVStorage"]
