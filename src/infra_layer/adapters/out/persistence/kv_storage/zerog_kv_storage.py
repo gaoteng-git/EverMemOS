@@ -21,7 +21,6 @@ Concurrency Model:
   individually atomic, so there is no race between the writer and commit thread.
 """
 
-import asyncio
 import os
 import threading
 from datetime import datetime
@@ -271,23 +270,15 @@ class ZeroGKVStorage(KVStorageInterface):
         """
         logger.info("iterate_all")
         try:
-            loop = asyncio.get_event_loop()
-
-            iterator = await loop.run_in_executor(
-                None, self._cached._kv_client.new_iterator, "0x" + self.stream_id
-            )
-            await loop.run_in_executor(None, iterator.seek_to_first)
+            iterator = self._cached._kv_client.new_iterator(self.stream_id)
+            iterator.seek_to_first()
 
             total_count = 0
             skipped_count = 0
 
-            while True:
-                valid = await loop.run_in_executor(None, iterator.valid)
-                if not valid:
-                    break
-
-                key_bytes = await loop.run_in_executor(None, lambda: iterator.key)
-                data_bytes = await loop.run_in_executor(None, lambda: iterator.data)
+            while iterator.valid():
+                key_bytes = iterator.key
+                data_bytes = iterator.data
 
                 key = key_bytes.decode('utf-8')
 
@@ -298,7 +289,7 @@ class ZeroGKVStorage(KVStorageInterface):
                 else:
                     skipped_count += 1
 
-                await loop.run_in_executor(None, iterator.next)
+                iterator.next()
 
                 if (total_count + skipped_count) % 1000 == 0 and (total_count + skipped_count) > 0:
                     logger.info(
