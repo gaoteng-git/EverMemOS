@@ -22,9 +22,17 @@ Concurrency Model:
 """
 
 import os
+import random
 import threading
+
+# Fixed encryption key derived from a hardcoded seed.
+# Deterministic across restarts so previously written data remains readable.
+# TODO: replace with a proper key from environment variable before production.
+_rng = random.Random(0x4576_724D_656D_4F53)  # seed = "EverMemOS" in hex
+_ENCRYPTION_KEY: bytes = bytes(_rng.getrandbits(8) for _ in range(32))
 from datetime import datetime
 from typing import Optional, Dict, List, Tuple, AsyncIterator
+
 
 
 class _AtomicInt:
@@ -103,6 +111,7 @@ class ZeroGKVStorage(KVStorageInterface):
             max_queue_size=max_queue_size,
             max_cache_entries=max_cache_entries,
             upload_option=UploadOption(skip_tx=False),
+            encryption_key=_ENCRYPTION_KEY,
         )
 
         # Atomic counter: ops staged since the last commit.
