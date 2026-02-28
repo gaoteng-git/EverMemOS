@@ -1,21 +1,21 @@
 """
-Storage Document Count Test
+Storage Document Count Tool
 
 Connects to MongoDB, Milvus, and Elasticsearch independently and prints
 the document/entity count for every collection / index.
 
 Run:
-    uv run pytest tests/test_storage_docs_count.py -v -s
+    uv run python demo/tools/storage_docs_count.py
+    python3 demo/tools/storage_docs_count.py
 """
 
+import asyncio
 import os
 import sys
-import pytest
-import pytest_asyncio
 from pathlib import Path
 
-src_path = Path(__file__).parent.parent / "src"
-sys.path.insert(0, str(src_path))
+# Allow running from project root without bootstrap
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
 
 # ---------------------------------------------------------------------------
@@ -24,10 +24,7 @@ sys.path.insert(0, str(src_path))
 
 def count_mongodb() -> dict[str, int]:
     """Return {collection_name: doc_count} for all known collections."""
-    from dotenv import load_dotenv
     import pymongo
-
-    load_dotenv()
 
     host = os.getenv("MONGODB_HOST", "localhost")
     port = os.getenv("MONGODB_PORT", "27017")
@@ -43,7 +40,6 @@ def count_mongodb() -> dict[str, int]:
     client = pymongo.MongoClient(uri)
     db = client[db_name]
 
-    # All known collection names from document model Settings.name
     collections = [
         "episodic_memories",
         "event_log_records",
@@ -156,18 +152,10 @@ async def count_elasticsearch() -> dict[str, int]:
 
 
 # ---------------------------------------------------------------------------
-# Test
+# Main
 # ---------------------------------------------------------------------------
 
-@pytest.fixture(autouse=True)
-def init_database():
-    """Override conftest.py autouse fixture — this test needs no DB init."""
-    yield
-
-
-@pytest.mark.asyncio
-async def test_storage_docs_count():
-    """Print document counts for MongoDB, Milvus, and Elasticsearch."""
+async def main():
     from dotenv import load_dotenv
     load_dotenv()
 
@@ -226,3 +214,7 @@ async def test_storage_docs_count():
         print(f"  !! Elasticsearch connection failed: {e}")
 
     print("\n" + "=" * 60)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
