@@ -16,12 +16,18 @@ from core.oxm.constants import MAGIC_ALL
 from infra_layer.adapters.out.persistence.document.request.memory_request_log import (
     MemoryRequestLog,
 )
+from infra_layer.adapters.out.persistence.kv_storage.dual_storage_mixin import (
+    DualStorageMixin,
+)
 
 logger = get_logger(__name__)
 
 
 @repository("memory_request_log_repository", primary=True)
-class MemoryRequestLogRepository(BaseRepository[MemoryRequestLog]):
+class MemoryRequestLogRepository(
+    DualStorageMixin,  # 添加双存储支持 - 自动拦截 MongoDB 调用
+    BaseRepository[MemoryRequestLog],
+):
     """
     Memory Request Log Repository
 
@@ -78,7 +84,7 @@ class MemoryRequestLogRepository(BaseRepository[MemoryRequestLog]):
             MemoryRequestLog or None
         """
         try:
-            result = await MemoryRequestLog.find_one(
+            result = await self.model.find_one(
                 {"request_id": request_id}, session=session
             )
             return result
@@ -129,7 +135,7 @@ class MemoryRequestLogRepository(BaseRepository[MemoryRequestLog]):
                     query["created_at"] = {"$lte": end_time}
 
             results = (
-                await MemoryRequestLog.find(query, session=session)
+                await self.model.find(query, session=session)
                 .sort([("created_at", 1)])  # Ascending order by time, oldest first
                 .limit(limit)
                 .to_list()
@@ -206,7 +212,7 @@ class MemoryRequestLogRepository(BaseRepository[MemoryRequestLog]):
             sort_order = 1 if ascending else -1
 
             results = (
-                await MemoryRequestLog.find(query, session=session)
+                await self.model.find(query, session=session)
                 .sort([("created_at", sort_order)])
                 .limit(limit)
                 .to_list()
@@ -244,7 +250,7 @@ class MemoryRequestLogRepository(BaseRepository[MemoryRequestLog]):
         """
         try:
             results = (
-                await MemoryRequestLog.find({"user_id": user_id}, session=session)
+                await self.model.find({"user_id": user_id}, session=session)
                 .sort([("created_at", -1)])
                 .limit(limit)
                 .to_list()
@@ -273,7 +279,7 @@ class MemoryRequestLogRepository(BaseRepository[MemoryRequestLog]):
             Number of deleted records
         """
         try:
-            result = await MemoryRequestLog.find(
+            result = await self.model.find(
                 {"group_id": group_id}, session=session
             ).delete()
             deleted_count = result.deleted_count if result else 0
@@ -318,8 +324,8 @@ class MemoryRequestLogRepository(BaseRepository[MemoryRequestLog]):
             Number of updated records
         """
         try:
-            collection = MemoryRequestLog.get_pymongo_collection()
-            result = await collection.update_many(
+            # Use framework-level update_many() for automatic KV sync
+            result = await self.model.update_many(
                 {"group_id": group_id, "sync_status": -1},
                 {"$set": {"sync_status": 0}},
                 session=session,
@@ -365,8 +371,8 @@ class MemoryRequestLogRepository(BaseRepository[MemoryRequestLog]):
             return 0
 
         try:
-            collection = MemoryRequestLog.get_pymongo_collection()
-            result = await collection.update_many(
+            # Use framework-level update_many() for automatic KV sync
+            result = await self.model.update_many(
                 {
                     "group_id": group_id,
                     "message_id": {"$in": message_ids},
@@ -414,14 +420,15 @@ class MemoryRequestLogRepository(BaseRepository[MemoryRequestLog]):
             Number of updated records
         """
         try:
-            collection = MemoryRequestLog.get_pymongo_collection()
+            # Build query
             query = {"group_id": group_id, "sync_status": {"$in": [-1, 0]}}
 
             # Exclude specific message_ids
             if exclude_message_ids:
                 query["message_id"] = {"$nin": exclude_message_ids}
 
-            result = await collection.update_many(
+            # Use framework-level update_many() for automatic KV sync
+            result = await self.model.update_many(
                 query, {"$set": {"sync_status": 1}}, session=session
             )
             modified_count = result.modified_count if result else 0
@@ -526,7 +533,7 @@ class MemoryRequestLogRepository(BaseRepository[MemoryRequestLog]):
             sort_order = 1 if ascending else -1
 
             results = (
-                await MemoryRequestLog.find(query, session=session)
+                await self.model.find(query, session=session)
                 .sort([("created_at", sort_order)])
                 .skip(skip)
                 .limit(limit)

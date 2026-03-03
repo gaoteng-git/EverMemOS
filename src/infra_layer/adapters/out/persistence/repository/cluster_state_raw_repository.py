@@ -13,12 +13,18 @@ from core.oxm.mongo.base_repository import BaseRepository
 from infra_layer.adapters.out.persistence.document.memory.cluster_state import (
     ClusterState,
 )
+from infra_layer.adapters.out.persistence.kv_storage.dual_storage_mixin import (
+    DualStorageMixin,
+)
 
 logger = get_logger(__name__)
 
 
 @repository("cluster_state_raw_repository", primary=True)
-class ClusterStateRawRepository(BaseRepository[ClusterState]):
+class ClusterStateRawRepository(
+    DualStorageMixin,  # Add dual storage support - automatically intercepts MongoDB calls
+    BaseRepository[ClusterState],
+):
     """
     ClusterState native CRUD repository
 
@@ -27,6 +33,8 @@ class ClusterStateRawRepository(BaseRepository[ClusterState]):
     - load_cluster_state(group_id) -> Optional[Dict]
     - get_cluster_assignments(group_id) -> Dict[str, str]
     - clear(group_id) -> bool
+
+    Dual Storage: DualStorageMixin automatically intercepts all MongoDB operations
     """
 
     def __init__(self):
@@ -55,7 +63,7 @@ class ClusterStateRawRepository(BaseRepository[ClusterState]):
 
     async def get_by_group_id(self, group_id: str) -> Optional[ClusterState]:
         try:
-            return await self.model.find_one(ClusterState.group_id == group_id)
+            return await self.model.find_one({"group_id": group_id})
         except Exception as e:
             logger.error(
                 f"Failed to retrieve cluster state: group_id={group_id}, error={e}"
@@ -66,7 +74,7 @@ class ClusterStateRawRepository(BaseRepository[ClusterState]):
         self, group_id: str, state: Dict[str, Any]
     ) -> Optional[ClusterState]:
         try:
-            existing = await self.model.find_one(ClusterState.group_id == group_id)
+            existing = await self.model.find_one({"group_id": group_id})
 
             if existing:
                 for key, value in state.items():
@@ -89,7 +97,7 @@ class ClusterStateRawRepository(BaseRepository[ClusterState]):
 
     async def get_cluster_assignments(self, group_id: str) -> Dict[str, str]:
         try:
-            cluster_state = await self.model.find_one(ClusterState.group_id == group_id)
+            cluster_state = await self.model.find_one({"group_id": group_id})
             if cluster_state is None:
                 return {}
             return cluster_state.eventid_to_cluster or {}
@@ -101,7 +109,7 @@ class ClusterStateRawRepository(BaseRepository[ClusterState]):
 
     async def delete_by_group_id(self, group_id: str) -> bool:
         try:
-            cluster_state = await self.model.find_one(ClusterState.group_id == group_id)
+            cluster_state = await self.model.find_one({"group_id": group_id})
             if cluster_state:
                 await cluster_state.delete()
                 logger.info(f"Deleted cluster state: group_id={group_id}")

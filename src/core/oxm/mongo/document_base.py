@@ -8,7 +8,8 @@ from datetime import datetime
 from common_utils.datetime_utils import to_timezone
 from beanie import Document, WriteRules
 from pydantic import model_validator, BaseModel
-from typing import Self, List, Optional
+from typing import List, Optional
+from typing_extensions import Self
 from pymongo.asynchronous.client_session import AsyncClientSession
 from pymongo.results import InsertManyResult
 

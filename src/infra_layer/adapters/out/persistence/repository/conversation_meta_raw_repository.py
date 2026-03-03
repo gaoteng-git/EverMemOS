@@ -14,6 +14,9 @@ from core.constants.exceptions import ValidationException
 from infra_layer.adapters.out.persistence.document.memory.conversation_meta import (
     ConversationMeta,
 )
+from infra_layer.adapters.out.persistence.kv_storage.dual_storage_mixin import (
+    DualStorageMixin,
+)
 from memory_layer.profile_manager.config import ScenarioType
 
 logger = logging.getLogger(__name__)
@@ -23,11 +26,16 @@ ALLOWED_SCENES = [e.value for e in ScenarioType]
 
 
 @repository("conversation_meta_raw_repository", primary=True)
-class ConversationMetaRawRepository(BaseRepository[ConversationMeta]):
+class ConversationMetaRawRepository(
+    DualStorageMixin,  # 添加双存储支持 - 自动拦截 MongoDB 调用
+    BaseRepository[ConversationMeta],
+):
     """
     Raw repository layer for conversation metadata
 
     Provides basic database operations for conversation metadata
+
+    Dual Storage: DualStorageMixin automatically intercepts all MongoDB operations
     """
 
     def __init__(self):
@@ -325,7 +333,7 @@ class ConversationMetaRawRepository(BaseRepository[ConversationMeta]):
             result = await self.model.find_one(
                 {"group_id": group_id}, session=session
             ).delete()
-            if result:
+            if result and result.deleted_count > 0:
                 logger.info(
                     "✅ Successfully deleted conversation metadata: group_id=%s",
                     group_id,
